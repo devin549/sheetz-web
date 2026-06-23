@@ -17,9 +17,10 @@ async function assertAssigner() {
   return sb;
 }
 
-// Assign (or unassign) a tech to a job. techId '' or null = unassign.
-// Sets the FK (tech_id, so My Day + the board embed resolve) + denormalized tech_name for fast reads.
-export async function assignTech(jobId, techId) {
+// Assign (or unassign) a tech to a job. techId '' or null = unassign. Optional `hour` (a float,
+// e.g. 13.5 = 1:30pm) reschedules the job to TODAY at that time — used when dragging a job onto
+// the grid. Sets the FK (tech_id, so My Day + the board embed resolve) + denormalized tech_name.
+export async function assignTech(jobId, techId, hour) {
   let sb;
   try { sb = await assertAssigner(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
   if (!jobId) return { ok: false, msg: 'No job.' };
@@ -34,6 +35,11 @@ export async function assignTech(jobId, techId) {
     tech_name: techName,
     assigned_at: techId ? new Date().toISOString() : null,
   };
+  if (hour != null && !Number.isNaN(Number(hour))) {
+    const d = new Date();
+    d.setHours(Math.floor(hour), Math.round((hour % 1) * 60), 0, 0);
+    patch.scheduled_at = d.toISOString();
+  }
   const { error } = await sb.from('jobs').update(patch).eq('id', jobId);
   if (error) return { ok: false, msg: error.message };
   revalidatePath('/board');
