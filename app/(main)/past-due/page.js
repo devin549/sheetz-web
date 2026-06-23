@@ -3,6 +3,7 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
 import PastDueList from './PastDueList';
+import AccountingBot from './AccountingBot';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,6 +65,13 @@ export default async function PastDue() {
     return { cid: r.cid, name: c.name || 'Unknown customer', cbNumber: c.cb_number || null, phone: c.phone || '', total: Math.round(r.total), invoices, oldestDays: daysSince(r.oldest), buckets: cb };
   });
 
+  // recent collections ledger for the books bot (best-effort — table may not exist yet)
+  let recent = [];
+  if (can(role, 'seeFinancials')) {
+    const { data } = await sb.from('ar_activity').select('id, action, customer_name, invoice_number, amount, by_email, created_at').order('created_at', { ascending: false }).limit(6);
+    recent = data || [];
+  }
+
   const buckets = [
     { key: 'cur', label: 'Current · 0–30d', v: aging.cur, color: 'var(--green)' },
     { key: 'd60', label: '31–60', v: aging.d60, color: 'var(--accent)' },
@@ -91,6 +99,8 @@ export default async function PastDue() {
         </div>
         <div className="muted" style={{ fontSize: 12, alignSelf: 'center' }}><Link href="/customers">customer lookup →</Link></div>
       </div>
+
+      {can(role, 'seeFinancials') && <AccountingBot recent={recent} />}
 
       <PastDueList customers={customers} canMark={canMark} />
     </div>
