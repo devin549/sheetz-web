@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { markInvoicePaid, markCustomerPaid } from './actions';
 
@@ -12,6 +12,17 @@ function ageColor(days) {
   if (days > 30) return '#e0a800';
   return 'var(--fg-3)';
 }
+const inBucket = (days, b) => {
+  if (b === 'all') return true;
+  if (days == null) return b === 'cur';
+  if (b === 'cur') return days <= 30;
+  if (b === 'd60') return days > 30 && days <= 60;
+  if (b === 'd90') return days > 60 && days <= 90;
+  if (b === 'd90p') return days > 90;
+  return true;
+};
+const BUCKETS = [['all', 'All'], ['cur', '0–30'], ['d60', '31–60'], ['d90', '61–90'], ['d90p', '90+']];
+const ctrl = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '8px 11px', fontSize: 13 };
 
 export default function PastDueList({ customers, canMark }) {
   const router = useRouter();
@@ -20,15 +31,49 @@ export default function PastDueList({ customers, canMark }) {
   const [busyId, setBusyId] = useState(null);
   const [err, setErr] = useState(null);
 
+  const [q, setQ] = useState('');
+  const [bucket, setBucket] = useState('all');
+  const [sort, setSort] = useState('owed');
+
   const toggle = (cid) => setOpen((o) => ({ ...o, [cid]: !o[cid] }));
   const run = (id, fn) => { setBusyId(id); setErr(null); start(async () => { const r = await fn(); setBusyId(null); if (r && !r.ok) setErr(r.msg); else router.refresh(); }); };
 
-  if (!customers.length) return <div className="card"><span className="muted">Nothing past due. 🎉</span></div>;
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    let list = customers.filter((c) => inBucket(c.oldestDays, bucket));
+    if (needle) list = list.filter((c) => `${c.name} ${c.cbNumber || ''} ${c.phone || ''}`.toLowerCase().includes(needle));
+    list = list.slice().sort((a, b) =>
+      sort === 'name' ? String(a.name).localeCompare(String(b.name))
+        : sort === 'oldest' ? (b.oldestDays || 0) - (a.oldestDays || 0)
+          : b.total - a.total);
+    return list;
+  }, [customers, q, bucket, sort]);
+
+  const shown = filtered.reduce((a, c) => a + c.total, 0);
 
   return (
     <>
+      {/* search + filter + sort — QuickBooks-style controls */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', margin: '12px 0' }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔎 Search a customer (name, CB#, phone)…" style={{ ...ctrl, flex: 1, minWidth: 220 }} />
+        <div style={{ display: 'flex', gap: 4 }}>
+          {BUCKETS.map(([k, lbl]) => (
+            <button key={k} onClick={() => setBucket(k)} className="pill" style={{ cursor: 'pointer', fontSize: 11, background: bucket === k ? 'var(--accent)' : 'var(--surface-2)', color: bucket === k ? '#fff' : 'var(--fg-2)', fontWeight: bucket === k ? 800 : 600 }}>{lbl} days</button>
+          ))}
+        </div>
+        <select value={sort} onChange={(e) => setSort(e.target.value)} style={ctrl}>
+          <option value="owed">Sort: Owed (high→low)</option>
+          <option value="oldest">Sort: Oldest first</option>
+          <option value="name">Sort: Name A–Z</option>
+        </select>
+      </div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        Showing <strong>{filtered.length}</strong> customer{filtered.length === 1 ? '' : 's'} · {money(shown)}{(q || bucket !== 'all') ? ' (filtered)' : ''}
+      </div>
+
       {err && <div className="notice" style={{ color: 'var(--red)' }}>{err}</div>}
-      {customers.map((c) => {
+      {!filtered.length && <div className="card"><span className="muted">No customers match — clear the search or filter.</span></div>}
+      {filtered.map((c) => {
         const isOpen = !!open[c.cid];
         return (
           <div key={c.cid} className="card" style={{ padding: 0, overflow: 'hidden' }}>
