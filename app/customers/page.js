@@ -31,7 +31,7 @@ export default async function Customers({ searchParams }) {
     const r = await supabase
       .from('customers')
       .select('id, st_customer_id, name, phone, email, address, type, do_not_service, do_not_mail, lifetime_revenue, lifetime_jobs, last_job_completed')
-      .or(`name.ilike.%${q}%,phone.ilike.%${q}%,email.ilike.%${q}%`)
+      .or(`name.ilike.%${q}%,phone.ilike.%${q}%,email.ilike.%${q}%,address.ilike.%${q}%`)
       .order('lifetime_revenue', { ascending: false })
       .limit(50);
     results = r.data || [];
@@ -47,7 +47,7 @@ export default async function Customers({ searchParams }) {
     <div className="wrap">
       <div className="h1">🔎 Customers</div>
       <p className="muted">
-        {total != null ? total.toLocaleString() + ' customers in your database' : ''} · search by name, phone, or email
+        {total != null ? total.toLocaleString() + ' customers in your database' : ''} · search by name, phone, email, or address
       </p>
 
       <form method="get" style={{ display: 'flex', gap: 8, margin: '12px 0 18px' }}>
