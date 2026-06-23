@@ -52,7 +52,16 @@ async function loadKpis() {
   const trucks = new Set(invStock.map((p) => p.tech_name || 'Unassigned')).size;
   const lowStock = invStock.filter(isLow).length;
   const toolVal = toolRows.reduce((a, t) => a + (Number(t.value) || 0), 0);
-  return { customers: custCount, ar: invRows.total, openInv: invRows.count, aging: invRows.aging, openJobs, urgent, trucks, lowStock, toolVal };
+  const jobsByStatus = { scheduled: 0, enroute: 0, onsite: 0, done: 0, cancelled: 0 };
+  jobRows.forEach((j) => {
+    const s = String(j.status || '').toLowerCase();
+    if (/cancel/.test(s)) jobsByStatus.cancelled++;
+    else if (/done|complete|closed/.test(s)) jobsByStatus.done++;
+    else if (/on_site|onsite/.test(s)) jobsByStatus.onsite++;
+    else if (/enroute|on_my_way|rolling/.test(s)) jobsByStatus.enroute++;
+    else jobsByStatus.scheduled++;
+  });
+  return { customers: custCount, ar: invRows.total, openInv: invRows.count, aging: invRows.aging, openJobs, urgent, trucks, lowStock, toolVal, jobsByStatus };
 }
 
 // Live AR-aging widget — pure CSS bars from real open-invoice data (no chart library).
@@ -75,6 +84,34 @@ function AgingWidget({ aging }) {
               <div style={{ width: `${Math.round((r.v / max) * 100)}%`, height: '100%', background: r.color, minWidth: r.v > 0 ? 3 : 0 }} />
             </div>
             <div style={{ fontSize: 12, fontWeight: 700, textAlign: 'right', color: r.color }}>{money(r.v)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Live jobs-by-status widget — the whole pipeline at a glance.
+function JobsWidget({ s }) {
+  const rows = [
+    { label: 'Scheduled', v: s.scheduled, c: 'var(--fg-2)' },
+    { label: 'En route', v: s.enroute, c: '#ff8a65' },
+    { label: 'On site', v: s.onsite, c: 'var(--green)' },
+    { label: 'Done', v: s.done, c: 'var(--green-bright)' },
+    { label: 'Cancelled', v: s.cancelled, c: 'var(--red)' },
+  ];
+  const max = Math.max(1, ...rows.map((r) => r.v));
+  return (
+    <div className="card card-amber">
+      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10 }}>📋 Jobs by status <span className="muted" style={{ fontWeight: 400, fontSize: 11 }}>· the whole pipeline</span></div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {rows.map((r) => (
+          <div key={r.label} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 40px', gap: 10, alignItems: 'center' }}>
+            <div className="muted" style={{ fontSize: 11 }}>{r.label}</div>
+            <div style={{ background: 'var(--surface-2)', borderRadius: 6, height: 16, overflow: 'hidden' }}>
+              <div style={{ width: `${Math.round((r.v / max) * 100)}%`, height: '100%', background: r.c, minWidth: r.v > 0 ? 3 : 0 }} />
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, textAlign: 'right' }}>{r.v}</div>
           </div>
         ))}
       </div>
@@ -147,7 +184,7 @@ export default async function Home() {
   ].filter((k) => k.show) : [];
 
   return (
-    <div className="wrap">
+    <div className="wrap" style={{ maxWidth: 1180 }}>
       <div className="h1">{title}</div>
       <p className="muted">
         Welcome back, {first}. Signed in as{' '}
@@ -165,7 +202,12 @@ export default async function Home() {
         <div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel and the live numbers fill in here.</div>
       )}
 
-      {kpis && kpis.aging && can(role, 'seeFinancials') && <AgingWidget aging={kpis.aging} />}
+      {kpis && (can(role, 'seeFinancials') || can(role, 'seeAllJobs')) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12, margin: '4px 0' }}>
+          {kpis.aging && can(role, 'seeFinancials') && <AgingWidget aging={kpis.aging} />}
+          {kpis.jobsByStatus && can(role, 'seeAllJobs') && <JobsWidget s={kpis.jobsByStatus} />}
+        </div>
+      )}
 
       {can(role, 'seeReports') && <AskBoard />}
 
