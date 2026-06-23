@@ -149,11 +149,18 @@ export async function getCustomerContacts(customerId) {
   if (!user || !can(roleOf(user), 'seeFinancials')) return { ok: false, msg: 'Not allowed.' };
   if (!customerId) return { ok: false, msg: 'No customer.' };
   const sb = getSupabaseAdmin();
-  const [logRes, callRes] = await Promise.all([
+  const [logRes, callRes, mailRes] = await Promise.all([
     sb.from('collections_log').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
     sb.from('pete_calls').select('id, status, summary, recording_url, duration_s, ended_reason, requested_by, approved_by, created_at').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
+    // campaign emails WE sent (tracked) — surfaces "they're getting it / opened it". Cols exist after mig 14/18.
+    sb.from('email_sends').select('id, status, sent_at, opened_at, open_count, created_at, campaign_id').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
   ]);
   if (logRes.error) return { ok: false, msg: logRes.error.message, contacts: [] };
+
+  // subject lines for the sent emails (best-effort)
+  const subjById = {};
+  const campIds = [...new Set((mailRes.data || []).map((m) => m.campaign_id).filter(Boolean))];
+  if (campIds.length) { try { const { data: camps } = await sb.from('email_campaigns').select('id, subject').in('id', campIds); (camps || []).forEach((c) => { subjById[c.id] = c.subject; }); } catch (_) {} }
 
   const logs = logRes.data || [];
   // sign any delivery-receipt scans for viewing (1h URLs)
@@ -171,6 +178,11 @@ export async function getCustomerContacts(customerId) {
     id: 'c' + c.id, kind: 'call', channel: 'call', status: c.status, note: c.summary || '',
     recording_url: c.recording_url || '', duration_s: c.duration_s || null, ended_reason: c.ended_reason || '',
     by_email: c.approved_by || c.requested_by || '', created_at: c.created_at,
+  }));
+  // tracked campaign emails (mig 14/18) — show sent + open status so we know they're getting it.
+  (mailRes.data || []).filter((m) => ['sent', 'failed'].includes(m.status)).forEach((m) => items.push({
+    id: 'm' + m.id, kind: 'email', channel: 'email', status: m.status, note: subjById[m.campaign_id] || '',
+    opened_at: m.opened_at || null, open_count: m.open_count || 0, created_at: m.sent_at || m.created_at,
   }));
   items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   return { ok: true, contacts: items };

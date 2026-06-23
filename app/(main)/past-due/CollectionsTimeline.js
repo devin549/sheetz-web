@@ -110,7 +110,12 @@ export default function CollectionsTimeline({ customerId, oldestDays, address, p
               {c.kind === 'call'
                 ? <>📞 Pete call{c.status ? ` · ${c.status}` : ''}{c.duration_s ? ` · ${c.duration_s}s` : ''}{c.note ? ` · ${c.note}` : (c.ended_reason ? ` · ${c.ended_reason}` : '')}
                     {c.recording_url ? <> · <a href={c.recording_url} target="_blank" rel="noopener" style={{ fontWeight: 700 }}>▶️ recording</a></> : null}</>
-                : <>{ICON[c.channel] || '•'} {c.channel}{c.note ? ` · ${c.note}` : ''}</>}
+                : c.kind === 'email'
+                  ? <>✉️ Email sent{c.note ? ` · ${c.note}` : ''}{' '}
+                      {c.opened_at
+                        ? <span style={{ color: 'var(--green)', fontWeight: 700 }}>· 📭 opened {stamp(c.opened_at)}{c.open_count > 1 ? ` (${c.open_count}×)` : ''}</span>
+                        : <span className="muted">· not opened yet</span>}</>
+                  : <>{ICON[c.channel] || '•'} {c.channel}{c.note ? ` · ${c.note}` : ''}</>}
             </span>
             <span className="muted" style={{ whiteSpace: 'nowrap' }}>{c.by_email ? c.by_email.split('@')[0] + ' · ' : ''}{stamp(c.created_at)}</span>
           </div>
