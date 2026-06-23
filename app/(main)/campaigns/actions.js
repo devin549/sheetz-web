@@ -61,7 +61,10 @@ async function resolveAudience(sb, key) {
   return { recipients, skipped };
 }
 
-// PREVIEW — who would this hit? (no DB writes, no send)
+// PREVIEW — return the full pickable recipient list so the composer can hand-pick a batch.
+// Capped so a 13k all-customers list can’t blow up the response; whole-audience mode (createCampaign
+// with no includeIds) is unaffected by the cap.
+const PREVIEW_CAP = 2000;
 export async function previewAudience(audience) {
   const { user, role } = await me();
   if (!user || !canCompose(role)) return { ok: false, msg: 'Your role can’t build campaigns.' };
@@ -69,7 +72,11 @@ export async function previewAudience(audience) {
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Server not configured.' };
   const { recipients, skipped } = await resolveAudience(sb, audience);
-  return { ok: true, count: recipients.length, skipped, sample: recipients.slice(0, 8).map((r) => ({ name: r.name, email: r.email })) };
+  const truncated = recipients.length > PREVIEW_CAP;
+  return {
+    ok: true, count: recipients.length, skipped, truncated,
+    recipients: recipients.slice(0, PREVIEW_CAP).map((r) => ({ id: r.customer_id, name: r.name, email: r.email })),
+  };
 }
 
 // DRAFT WITH HANK — AI writes a subject + body for the chosen audience.
@@ -99,8 +106,10 @@ export async function draftCampaignAI(audience, brief) {
 }
 
 // CREATE — snapshot the recipient list into email_sends (queued) + a pending_approval campaign.
-// This does NOT send. An approver must release it.
-export async function createCampaign({ subject, body, audience }) {
+// This does NOT send. An approver must release it. `includeIds` (customer ids) = the hand-picked
+// batch; omit/null to use the whole audience. Emails + do_not_mail are ALWAYS re-validated server-
+// side (the client only picks which of the resolved recipients to include).
+export async function createCampaign({ subject, body, audience, includeIds }) {
   const { user, role, email } = await me();
   if (!user || !canCompose(role)) return { ok: false, msg: 'Your role can’t build campaigns.' };
   const subj = String(subject || '').trim(); const bod = String(body || '').trim();
@@ -112,18 +121,28 @@ export async function createCampaign({ subject, body, audience }) {
   const { recipients, skipped } = await resolveAudience(sb, audience);
   if (!recipients.length) return { ok: false, msg: 'That audience has 0 mailable customers right now.' };
 
+  // hand-picked batch → keep only the chosen customer ids (server still owns the email/do_not_mail truth)
+  let chosen = recipients;
+  if (Array.isArray(includeIds)) {
+    const set = new Set(includeIds);
+    chosen = recipients.filter((r) => set.has(r.customer_id));
+    if (!chosen.length) return { ok: false, msg: 'No recipients selected — pick at least one.' };
+  }
+  const deselected = recipients.length - chosen.length;
+
   const { data: camp, error } = await sb.from('email_campaigns').insert({
-    subject: subj, body: bod, audience, audience_label: audienceLabel(audience),
-    status: 'pending_approval', recipient_count: recipients.length, skipped_count: skipped, created_by: email,
+    subject: subj, body: bod, audience,
+    audience_label: deselected > 0 ? `${audienceLabel(audience)} · batch of ${chosen.length}` : audienceLabel(audience),
+    status: 'pending_approval', recipient_count: chosen.length, skipped_count: skipped, created_by: email,
   }).select('id').single();
   if (error) return { ok: false, msg: error.message };
 
   // snapshot recipients (batched insert) so the list can’t shift between approval and send
-  const rows = recipients.map((r) => ({ campaign_id: camp.id, customer_id: r.customer_id, customer_name: r.name, to_email: r.email, status: 'queued' }));
+  const rows = chosen.map((r) => ({ campaign_id: camp.id, customer_id: r.customer_id, customer_name: r.name, to_email: r.email, status: 'queued' }));
   for (let i = 0; i < rows.length; i += 500) { await sb.from('email_sends').insert(rows.slice(i, i + 500)); }
 
   revalidatePath('/campaigns');
-  return { ok: true, id: camp.id, count: recipients.length, skipped };
+  return { ok: true, id: camp.id, count: chosen.length, skipped, deselected };
 }
 
 // APPROVE + SEND — internal-approver only. Sends every queued recipient, logs each result.

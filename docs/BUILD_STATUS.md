@@ -62,7 +62,10 @@ locked here. Each needs a key/provider; none ship as fire-and-forget.
   can't shift; **every send logged** (sent/failed/skipped) + campaign audit in `email_campaigns`
   (mig 14). 🪄 "Draft with Hank" writes subject+body via the role's Claude key; `{{name}}` personalized
   per recipient. Provider = Resend REST (`lib/email.js`), no SDK dep — works in draft/approve mode now;
-  **actual send gated on `EMAIL_API_KEY` + `EMAIL_FROM`** in Vercel. Batches of 50. _Setup owed: run
+  **actual send gated on `EMAIL_API_KEY` + `EMAIL_FROM`** in Vercel. Batches of 50. **Pick-a-batch:**
+  "Preview & pick" shows the full recipient checklist (search, select-all/none, live count) → hand-pick
+  exactly who goes out, or tick "entire audience" for the full blast. Server re-validates email/
+  do_not_mail (client only chooses which resolved recipients to include). _Setup owed: run
   `supabase/14_email_campaigns.sql`; add `EMAIL_API_KEY`/`EMAIL_FROM` when ready to send for real._
 - ✅ **Lawyer packet** — `/past-due/packet/[cid]` assembles a print-clean collections/lien referral:
   letterhead + attorney block (Fore **or** McKinstry, `?firm=` toggle) + debtor (name/CB#/address/phone/email)
