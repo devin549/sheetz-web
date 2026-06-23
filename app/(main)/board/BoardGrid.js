@@ -4,18 +4,21 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { assignTech } from './actions';
 import { ACCENT, STATUS_DOT, crewColor, initials, priorityOf, hourLabel, money, fmtTime } from './boardTokens';
+import JobPanel from './JobPanel';
 
 // Layout — absolute px-per-hour grid, the same model the live board uses so the now-line and
 // drop-targeting are computed straight from mouse position.
 const TECH_COL = 150, HEADER_H = 30, ROW_H = 50, PX_PER_HOUR = 58, HOURS = 24;
 const GRID_W = HOURS * PX_PER_HOUR;
 
-export default function BoardGrid({ techs, jobs, tray, techStatus, nowHour, canAssign }) {
+export default function BoardGrid({ techs, jobs, tray, techStatus, nowHour, canAssign, canStatus }) {
   const router = useRouter();
   const gridRef = useRef(null);
   const bodyRef = useRef(null);
   const [pending, start] = useTransition();
   const [drop, setDrop] = useState(null); // { rowIdx, hour } live drop indicator
+  const [sel, setSel] = useState(null);   // selected job → detail panel
+  const techName = (id) => { const t = techs.find((x) => x.id === id); return t ? t.name : ''; };
 
   // group techs into crews → flat render rows (crew header rows keep the floor(y/ROW_H) math valid)
   const crews = {};
@@ -68,11 +71,12 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, nowHour, canA
       <div
         draggable={draggable}
         onDragStart={draggable ? (e) => dragStart(e, j.id) : undefined}
-        title={`${j.customer} · ${fmtTime(j.scheduledISO)}${j.job_type ? ' · ' + j.job_type : ''}${draggable ? ' · drag to move' : ''}`}
+        onClick={() => setSel(j)}
+        title={`${j.customer} · ${fmtTime(j.scheduledISO)}${j.job_type ? ' · ' + j.job_type : ''} · click for details`}
         style={{
           position: 'absolute', left, top: 5, height: ROW_H - 14, width: PX_PER_HOUR * 0.92,
           background: 'var(--surface-2)', borderLeft: `3px solid ${pr ? pr.color : STATUS_DOT[j.statusKey]}`,
-          borderRadius: 4, padding: '3px 5px', overflow: 'hidden', cursor: draggable ? 'grab' : 'default', zIndex: 2,
+          borderRadius: 4, padding: '3px 5px', overflow: 'hidden', cursor: 'pointer', zIndex: 2,
         }}
       >
         <div style={{ fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -153,7 +157,8 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, nowHour, canA
           const typeBits = [j.job_type, j.amount ? money(j.amount) : null].filter(Boolean).join(' · ');
           return (
             <div key={j.id} draggable={canAssign} onDragStart={canAssign ? (e) => dragStart(e, j.id) : undefined}
-              className="card" style={{ borderLeft: `3px solid ${pr ? pr.color : (j.techId ? ACCENT : 'var(--red)')}`, cursor: canAssign ? 'grab' : 'default' }}>
+              onClick={() => setSel(j)}
+              className="card" style={{ borderLeft: `3px solid ${pr ? pr.color : (j.techId ? ACCENT : 'var(--red)')}`, cursor: 'pointer' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
                 <span style={{ fontWeight: 700, fontSize: 13 }}>{pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.customer}</span>
                 <span className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{j.scheduledISO ? fmtTime(j.scheduledISO) : 'no time'}</span>
@@ -164,6 +169,8 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, nowHour, canA
           );
         })}
       </div>
+
+      {sel && <JobPanel job={sel} techName={techName(sel.techId)} canStatus={canStatus} canAssign={canAssign} onClose={() => setSel(null)} />}
     </>
   );
 }

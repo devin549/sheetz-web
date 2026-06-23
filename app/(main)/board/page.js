@@ -10,13 +10,14 @@ export const dynamic = 'force-dynamic';
 export default async function Board() {
   const { role } = await requireHref('/board');
   const canAssign = can(role, 'assignJobs');
+  const canStatus = can(role, 'changeStatus');
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">⚡ Dispatch Live</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel to read jobs.</div></div>;
   }
   const sb = getSupabaseAdmin();
 
   const run = (extra) => sb.from('jobs')
-    .select('id, status, priority, scheduled_at, tech_id' + extra + ', customers(name, address), techs(name)')
+    .select('id, status, priority, scheduled_at, tech_id' + extra + ', customers(name, address, phone), techs(name)')
     .order('scheduled_at', { ascending: true });
   let res = await run(', job_number, job_type, amount, tech_name');
   if (res.error && /column .* does not exist/i.test(res.error.message || '')) res = await run('');
@@ -55,6 +56,7 @@ export default async function Board() {
 
     const base = {
       id: j.id, customer: (j.customers && j.customers.name) || 'Customer', address: (j.customers && j.customers.address) || '',
+      phone: (j.customers && j.customers.phone) || '', job_number: j.job_number || '',
       status: j.status, statusKey: sk, priority: j.priority, amount: amt, job_type: j.job_type || '', scheduledISO: j.scheduled_at, techId: j.tech_id || null,
     };
     if (j.tech_id && when) gridJobs.push({ ...base, startHour: when.getHours() + when.getMinutes() / 60 });
@@ -108,7 +110,7 @@ export default async function Board() {
         </span>
       </div>
 
-      <BoardGrid techs={techs} jobs={gridJobs} tray={tray} techStatus={techStatus} nowHour={nowHour} canAssign={canAssign} />
+      <BoardGrid techs={techs} jobs={gridJobs} tray={tray} techStatus={techStatus} nowHour={nowHour} canAssign={canAssign} canStatus={canStatus} />
 
       <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>
         Drag a tray job onto a tech&apos;s row to schedule it (snaps to 15 min); drag a block to move it.

@@ -16,6 +16,32 @@ async function assertAssigner() {
   if (!sb) throw new Error('Server not configured.');
   return sb;
 }
+async function assertStatusChanger() {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user || !can(roleOf(user), 'changeStatus')) throw new Error('Your role can’t change job status.');
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error('Server not configured.');
+  return sb;
+}
+
+// Change a job's status (en route / on site / done / scheduled / hold). Stamps the matching
+// timestamp. Role-gated (changeStatus). Mirrors cbDispatchBoard_updateJobStatus.
+const VALID_STATUS = ['scheduled', 'enroute', 'on_site', 'done', 'hold', 'cancelled'];
+export async function updateJobStatus(jobId, status) {
+  let sb;
+  try { sb = await assertStatusChanger(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!jobId || !VALID_STATUS.includes(status)) return { ok: false, msg: 'Bad request.' };
+  const patch = { status };
+  const nowISO = new Date().toISOString();
+  if (status === 'enroute') patch.enroute_at = nowISO;
+  if (status === 'on_site') patch.started_at = nowISO;
+  if (status === 'done') patch.completed_at = nowISO;
+  const { error } = await sb.from('jobs').update(patch).eq('id', jobId);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/board');
+  return { ok: true };
+}
 
 // Assign (or unassign) a tech to a job. techId '' or null = unassign. Optional `hour` (a float,
 // e.g. 13.5 = 1:30pm) reschedules the job to TODAY at that time — used when dragging a job onto
