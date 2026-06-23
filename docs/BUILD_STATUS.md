@@ -36,7 +36,7 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | My Truck (fleet + detail) | /my-truck | ✅ live (read) | ⏳ actions: request transfer, loan a tool |
 | Shop (reorder + restock) | /shop | ✅ live (read) | ⏳ self-issue review queue (Reed) |
 | Customers search | /customers | ✅ live | 13k ST base, CB numbers |
-| Accounts Receivable | /past-due | ✅ live | **QuickBooks-grade aging TABLE** (per-customer 0-30/31-60/61-90/90+ columns + total), search/filter/sort, expand→invoices, **Mark paid** → logged to `ar_activity` ledger (mig 12). **📒 Books Bot** AI watches AR + ledger (who to chase / 90+ / summarize). ⏳ statement PDF, partial payments, Stripe pay-link, due-date aging |
+| Accounts Receivable | /past-due | ✅ live | QuickBooks aging table + search/filter/sort + Mark-paid→`ar_activity` + Books Bot. **Collections cascade** (ported from `_CollectionsLog`+Lien Watch, mig 13): per-customer **address** + contact **timeline** (text/email/call/certified/lawyer-packet) w/ dunning-ladder next-action + lien escalation. ⏳ actually-send drafts (email/SMS provider, gated), statement PDF, partial payments, Stripe pay-link |
 | Light/dark + blinking alerts | (global) | ✅ live | toggle in topbar |
 | AI — per-role Claude keys | lib/anthropic.js | ✅ wired | one key per position (owner/gm/office/accounting/sales/marketing/tech/helper + fallbacks); model `claude-opus-4-8`; usage logged to `ai_usage` (mig 11) for GM/Owner rollup |
 | AI — Ask the Board (Hank) | / (home) | ✅ live | seeReports roles; answers plain-English Qs from live jobs/AR/customers. Needs an `ANTHROPIC_KEY_*` in Vercel |
