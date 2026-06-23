@@ -61,6 +61,37 @@ export async function markCustomerPaid(customerId) {
   return { ok: true };
 }
 
+// ── Collections cascade (ported from _CollectionsLog + Lien Watch) ──
+const CHANNELS = ['text', 'email', 'call', 'letter', 'certified', 'packet'];
+const bucketOf = (days) => (days == null ? '0-30' : days > 180 ? '180+' : days > 90 ? '90-180' : days > 60 ? '61-90' : days > 30 ? '31-60' : '0-30');
+
+// Log one contact attempt on a customer's account.
+export async function logContact(customerId, channel, note) {
+  let sb, email;
+  try { ({ sb, email } = await assertCanMark()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!customerId || !CHANNELS.includes(channel)) return { ok: false, msg: 'Bad request.' };
+  // balance + aging at time of contact (for the record)
+  const { data: invs } = await sb.from('invoices').select('balance, invoice_date').eq('customer_id', customerId).eq('status', 'open');
+  let bal = 0, oldest = null;
+  (invs || []).forEach((i) => { bal += Number(i.balance) || 0; if (i.invoice_date) { const t = new Date(i.invoice_date).getTime(); if (!Number.isNaN(t) && (oldest == null || t < oldest)) oldest = t; } });
+  const days = oldest ? Math.floor((Date.now() - oldest) / 86400000) : null;
+  const { error } = await sb.from('collections_log').insert({ customer_id: customerId, channel, direction: 'out', note: note || '', amount: Math.round(bal), aging_bucket: bucketOf(days), by_email: email });
+  if (error) return { ok: false, msg: error.message };
+  return { ok: true };
+}
+
+// A customer's collections timeline (newest first).
+export async function getCustomerContacts(customerId) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user || !can(roleOf(user), 'seeFinancials')) return { ok: false, msg: 'Not allowed.' };
+  if (!customerId) return { ok: false, msg: 'No customer.' };
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb.from('collections_log').select('id, channel, note, amount, aging_bucket, by_email, created_at').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50);
+  if (error) return { ok: false, msg: error.message, contacts: [] };
+  return { ok: true, contacts: data || [] };
+}
+
 // ── The accounting bot — watches AR + the ledger, answers accounting questions ──
 async function arContext(sb) {
   const days = (t) => (t ? Math.floor((Date.now() - t) / 86400000) : null);

@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { markInvoicePaid, markCustomerPaid } from './actions';
+import CollectionsTimeline from './CollectionsTimeline';
 
 function money(n) { return '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
 function ageColor(days) {
@@ -106,7 +107,8 @@ export default function PastDueList({ customers, canMark }) {
                 {/* expanded detail */}
                 {isOpen && (
                   <div style={{ padding: '8px 14px 12px', background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+                    <CollectionsTimeline customerId={c.cid} oldestDays={c.oldestDays} address={c.address} canLog={canMark} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, margin: '10px 0 6px' }}>
                       <span className="muted" style={{ fontSize: 12 }}>{c.phone ? `📞 ${c.phone}` : ''}</span>
                       {canMark && (
                         <button onClick={() => run('cust-' + c.cid, () => markCustomerPaid(c.cid))} disabled={pending}
