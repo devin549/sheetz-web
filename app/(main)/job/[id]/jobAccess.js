@@ -28,15 +28,17 @@ export async function loadJob(sb, jobId) {
   return res;
 }
 
-export async function canViewJob(sb, user, role, job) {
+export async function canViewJob(sb, user, profile, role, job) {
   if (!user || !job) return false;
   if (can(role, 'seeAllJobs') || can(role, 'seeQueue') || can(role, 'seeCrew')) return true;
 
-  const email = norm(user.email);
-  const name = norm(user.user_metadata?.name);
+  const email = norm(user.email || profile?.email);
+  const name = norm(user.user_metadata?.name || profile?.name);
   const techName = job.tech_name || job.techs?.name;
+  const myTechId = profile?.tech_id || null;
 
   if (can(role, 'seeOwnOnly')) {
+    if (myTechId && job.tech_id && String(job.tech_id) === String(myTechId)) return true; // exact tech_id link
     if (email && norm(job.tech_email) === email) return true;
     if (sameName(techName, name)) return true;
   }

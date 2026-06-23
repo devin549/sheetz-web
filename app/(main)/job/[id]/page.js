@@ -51,7 +51,7 @@ async function loadPhotos(sb, jobId) {
 }
 
 export default async function JobDetail({ params }) {
-  const { user, role } = await requirePerm('seeAllJobs', 'seeQueue', 'seeOwnOnly', 'seeCrew');
+  const { user, role, profile } = await requirePerm('seeAllJobs', 'seeQueue', 'seeOwnOnly', 'seeCrew');
   const id = params.id;
 
   if (!isAdminConfigured) {
@@ -66,7 +66,7 @@ export default async function JobDetail({ params }) {
   const sb = getSupabaseAdmin();
   const { data: job, error } = await loadJob(sb, id);
   if (error || !job) notFound();
-  if (!(await canViewJob(sb, user, role, job))) notFound();
+  if (!(await canViewJob(sb, user, profile, role, job))) notFound();
 
   const { photos, error: photoError } = await loadPhotos(sb, id);
   const customer = job.customers || {};

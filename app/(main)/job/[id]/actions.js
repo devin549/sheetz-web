@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { revalidatePath } from 'next/cache';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
-import { roleOf } from '@/lib/nav';
+import { loadProfile } from '@/lib/profile';
 import { canArchivePhoto, canUploadPhotos, canViewJob, loadJob } from './jobAccess';
 
 const BUCKET = 'job-photos';
@@ -54,17 +54,18 @@ function extFrom(file) {
 async function getActionContext(jobId) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const role = roleOf(user);
-  const sb = getSupabaseAdmin();
   if (!user) return { ok: false, msg: 'Sign in required.' };
+  const profile = await loadProfile(user);
+  const role = profile.role;
+  const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Server not configured.' };
 
   const { data: job, error } = await loadJob(sb, jobId);
   if (error) return { ok: false, msg: error.message };
   if (!job) return { ok: false, msg: 'Job not found.' };
-  if (!(await canViewJob(sb, user, role, job))) return { ok: false, msg: 'Not allowed for this job.' };
+  if (!(await canViewJob(sb, user, profile, role, job))) return { ok: false, msg: 'Not allowed for this job.' };
 
-  return { ok: true, user, role, sb, job };
+  return { ok: true, user, role, profile, sb, job };
 }
 
 export async function uploadJobPhoto(formData) {

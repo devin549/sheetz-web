@@ -39,20 +39,20 @@ function SetupCard() {
 }
 
 export default async function MyDay({ searchParams }) {
-  const { user, role } = await requireHref('/my-day');
+  const { user, role, profile } = await requireHref('/my-day');
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">📋 My Day</div><SetupCard /></div>;
   }
 
   const supabase = getSupabaseAdmin();
-  const myName = (user.user_metadata && user.user_metadata.name) || '';
-  const myEmail = (user.email || '').toLowerCase();
+  const myName = profile.name || (user.user_metadata && user.user_metadata.name) || '';
+  const myEmail = (profile.email || user.email || '').toLowerCase();
   const seeAll = can(role, 'seeAllJobs');
   const officeFilter = (searchParams?.tech || '').trim();
 
   // Whose jobs: seeAll → everyone; helper → paired tech; else → own.
-  let scopeName = null, scopeLabel = '', subtitle = '', note = null;
+  let scopeTechId = null, scopeName = null, scopeLabel = '', subtitle = '', note = null;
   if (seeAll) {
     scopeName = officeFilter || null;
     scopeLabel = officeFilter ? ` · ${officeFilter}` : '';
@@ -66,20 +66,25 @@ export default async function MyDay({ searchParams }) {
     else if (pair && pair.length && pair[0].tech_name) {
       scopeName = pair[0].tech_name; scopeLabel = ` · with ${pair[0].tech_name}`; subtitle = `riding with ${pair[0].tech_name} today`;
     } else note = { kind: 'helperNone' };
+  } else if (profile.tech_id) {
+    // a tech linked to their tech row — scope by tech_id (exact, no name collisions)
+    scopeTechId = profile.tech_id; scopeName = myName; scopeLabel = myName ? ` · ${myName}` : ''; subtitle = 'your jobs today';
+  } else if (myName) {
+    scopeName = myName; scopeLabel = ` · ${myName}`; subtitle = 'your jobs today';
   } else {
-    if (!myName) note = { kind: 'noName' };
-    else { scopeName = myName; scopeLabel = ` · ${myName}`; subtitle = 'your jobs today'; }
+    note = { kind: 'noName' };
   }
 
   // Load jobs (with the new card fields). job_number/job_type/amount may not exist until
   // 07_jobs_card_fields.sql runs — retry without them so the screen never breaks.
   let jobs = null, error = null;
   if (!note) {
-    const useFilter = !!(scopeName && scopeName.length);
-    const sel = (extra) => 'id, status, priority, scheduled_at' + extra + ', customers(name, address, phone), techs' + (useFilter ? '!inner' : '') + '(name)';
+    const useName = !scopeTechId && !!(scopeName && scopeName.length);
+    const sel = (extra) => 'id, status, priority, scheduled_at, tech_id' + extra + ', customers(name, address, phone), techs' + (useName ? '!inner' : '') + '(name)';
     const run = (extra) => {
       let q = supabase.from('jobs').select(sel(extra)).order('scheduled_at', { ascending: true });
-      if (useFilter) q = q.ilike('techs.name', '%' + scopeName + '%');
+      if (scopeTechId) q = q.eq('tech_id', scopeTechId);
+      else if (useName) q = q.ilike('techs.name', '%' + scopeName + '%');
       return q;
     };
     let res = await run(', job_number, job_type, amount');
