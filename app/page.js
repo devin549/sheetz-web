@@ -10,8 +10,9 @@ export default function Home() {
         the tech iPad <strong>My Day</strong> screen, ported to the new stack to prove the pipeline.
       </p>
 
-      <div style={{ margin: '18px 0' }}>
+      <div style={{ margin: '18px 0', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <Link className="btn" href="/my-day">📋 Tech · My Day →</Link>
+        <Link className="btn" href="/customers">🔎 Customers →</Link>
       </div>
 
       <div className="card">
