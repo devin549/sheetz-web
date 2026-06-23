@@ -1,5 +1,5 @@
 /* CB / Sheetz theme — dark amber, never neon (matches the iPad/board brand). */
-:root {
+:root, html[data-theme="dark"] {
   --bg: #14100a;
   --surface-1: #1e1810;
   --surface-2: #2a2216;
@@ -11,7 +11,25 @@
   --fg-2: #c9bfa8;
   --fg-3: #8a8068;
   --green: #4caf50;
+  --green-bright: #66bb6a;
   --red: #ef5350;
+}
+
+/* Light mode — same CB amber, warm cream (never stark white). */
+html[data-theme="light"] {
+  --bg: #faf6ee;
+  --surface-1: #ffffff;
+  --surface-2: #f1ead9;
+  --border: #e2d8c4;
+  --amber: #b07410;
+  --amber-bright: #c9871a;
+  --amber-dim: #c2a25e;
+  --fg-1: #2a2216;
+  --fg-2: #5a4f3a;
+  --fg-3: #8a7f66;
+  --green: #2e7d32;
+  --green-bright: #2e7d32;
+  --red: #c62828;
 }
 
 * { box-sizing: border-box; }

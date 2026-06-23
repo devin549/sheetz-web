@@ -1,4 +1,6 @@
 import './globals.css';
+import { cookies } from 'next/headers';
+import ThemeToggle from '@/components/ThemeToggle';
 
 export const metadata = {
   title: 'Sheetz — CB',
@@ -12,8 +14,10 @@ export const viewport = {
 };
 
 export default function RootLayout({ children }) {
+  // Read the saved theme server-side so there's no flash of the wrong mode.
+  const theme = cookies().get('theme')?.value === 'light' ? 'light' : 'dark';
   return (
-    <html lang="en">
+    <html lang="en" data-theme={theme}>
       <body>
         <div className="topbar">
           <span className="logo">🚐</span>
@@ -21,6 +25,7 @@ export default function RootLayout({ children }) {
             <div className="title">Sheetz</div>
             <div className="sub">Clog Busterz · web app (Vercel + Supabase)</div>
           </div>
+          <ThemeToggle />
         </div>
         {children}
       </body>
