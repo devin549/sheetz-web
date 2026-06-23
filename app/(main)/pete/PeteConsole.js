@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { PURPOSES } from '@/lib/pete';
 import { queueCall, approveAndCall, cancelCall } from './actions';
+import { personName } from '@/lib/people';
 
 const ctrl = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 13, width: '100%' };
 const lbl = { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: 'var(--fg-3)', margin: '12px 0 5px', display: 'block' };
@@ -100,7 +101,7 @@ export default function PeteConsole({ prefill, calls, canApprove, vapiReady, has
                 {c.customer_name || c.to_phone} <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>· {c.purpose}{c.is_test ? ' · 🔒 test' : ''}</span>
               </div>
               <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>
-                {c.to_phone}{c.requested_by ? ` · by ${c.requested_by.split('@')[0]}` : ''} · {when(c.created_at)}
+                {c.to_phone}{c.requested_by ? ` · by ${personName(c.requested_by)}` : ''} · {when(c.created_at)}
                 {c.duration_s ? ` · ${c.duration_s}s` : ''}{c.ended_reason ? ` · ${c.ended_reason}` : ''}
               </div>
               {c.summary && <div style={{ fontSize: 12.5, marginTop: 5, color: 'var(--fg-2)' }}>📝 {c.summary}</div>}

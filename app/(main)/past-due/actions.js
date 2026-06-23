@@ -107,6 +107,55 @@ export async function markCustomerPaid(customerId) {
   return { ok: true };
 }
 
+// ── Customer search + merge (clean up import duplicates like "On Course" / "Oncourse") ──
+export async function searchCustomers(q) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user || !can(roleOf(user), 'seeFinancials')) return { ok: false, msg: 'Not allowed.' };
+  const needle = String(q || '').trim();
+  if (needle.length < 2) return { ok: true, results: [] };
+  const sb = getSupabaseAdmin();
+  const { data } = await sb.from('customers').select('id, name, cb_number').ilike('name', `%${needle}%`).limit(12);
+  return { ok: true, results: data || [] };
+}
+
+// Merge a DUPLICATE customer into a KEEPER: moves invoices/notes/timeline/calls/jobs onto the
+// keeper, then removes the duplicate. Gated to financial seats.
+export async function mergeCustomers(keepId, dupeId) {
+  let sb, email;
+  try { ({ sb, email } = await assertCanMark()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!keepId || !dupeId) return { ok: false, msg: 'Pick both customers.' };
+  if (keepId === dupeId) return { ok: false, msg: 'Pick two different customers.' };
+  const { data: keep } = await sb.from('customers').select('name').eq('id', keepId).maybeSingle();
+  const { data: dupe } = await sb.from('customers').select('name').eq('id', dupeId).maybeSingle();
+  if (!keep || !dupe) return { ok: false, msg: 'Customer not found.' };
+
+  const moved = {};
+  const reassign = async (table) => {
+    try { const { data } = await sb.from(table).update({ customer_id: keepId }).eq('customer_id', dupeId).select('id'); moved[table] = (data || []).length; }
+    catch (_) { /* table may not exist yet — skip */ }
+  };
+  for (const t of ['invoices', 'collections_log', 'pete_calls', 'email_sends', 'ar_activity', 'jobs']) await reassign(t);
+
+  // ar_notes is keyed by customer_id (one per customer) — combine the text, then drop the dupe row.
+  try {
+    const { data: dn } = await sb.from('ar_notes').select('note').eq('customer_id', dupeId).maybeSingle();
+    if (dn?.note) {
+      const { data: kn } = await sb.from('ar_notes').select('note').eq('customer_id', keepId).maybeSingle();
+      const combined = [kn?.note, dn.note].filter(Boolean).join(' · ').slice(0, 500);
+      await sb.from('ar_notes').upsert({ customer_id: keepId, note: combined, updated_by: email, updated_at: new Date().toISOString() }, { onConflict: 'customer_id' });
+    }
+    await sb.from('ar_notes').delete().eq('customer_id', dupeId);
+  } catch (_) {}
+
+  const { error } = await sb.from('customers').delete().eq('id', dupeId);
+  if (error) return { ok: false, msg: 'Moved the records, but couldn’t remove the duplicate: ' + error.message };
+
+  try { await sb.from('ar_activity').insert({ action: 'customers_merged', customer_id: keepId, customer_name: keep.name, invoice_number: `merged: ${dupe.name}`, by_email: email }); } catch (_) {}
+  revalidatePath('/past-due');
+  return { ok: true, keep: keep.name, dupe: dupe.name, moved };
+}
+
 // ── AR import (CSV/paste from a ServiceTitan export → real customers + open invoices) ──
 // Non-exported helpers (a 'use server' file may only EXPORT async fns; module consts are fine).
 function parseCsv(text) {

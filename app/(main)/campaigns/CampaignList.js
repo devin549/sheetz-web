@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { approveAndSend, cancelCampaign, sendTestToMe } from './actions';
+import { personName } from '@/lib/people';
 
 const STATUS = {
   pending_approval: { t: 'Pending approval', c: 'var(--amber)', bg: 'rgba(255,129,36,.14)' },
@@ -41,8 +42,8 @@ export default function CampaignList({ campaigns, canApprove, emailReady }) {
               <div style={{ fontWeight: 700, fontSize: 14 }}>{c.subject}</div>
               <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>
                 {c.audience_label} · {c.recipient_count?.toLocaleString()} recipients{c.skipped_count ? ` · ${c.skipped_count} skipped` : ''}
-                {c.created_by ? ` · by ${c.created_by.split('@')[0]}` : ''} · {when(c.created_at)}
-                {c.status === 'sent' && <span style={{ color: 'var(--green)' }}> · ✅ {c.send_ok} sent{c.send_fail ? `, ⚠️ ${c.send_fail} failed` : ''}{c.approved_by ? ` · approved by ${c.approved_by.split('@')[0]}` : ''}</span>}
+                {c.created_by ? ` · by ${personName(c.created_by)}` : ''} · {when(c.created_at)}
+                {c.status === 'sent' && <span style={{ color: 'var(--green)' }}> · ✅ {c.send_ok} sent{c.send_fail ? `, ⚠️ ${c.send_fail} failed` : ''}{c.approved_by ? ` · approved by ${personName(c.approved_by)}` : ''}</span>}
                 {c.status === 'sent' && c.send_ok > 0 && <span style={{ color: 'var(--info-text)' }}> · 📭 {c.opened || 0} opened{c.send_ok ? ` (${Math.round(((c.opened || 0) / c.send_ok) * 100)}%)` : ''}</span>}
               </div>
             </div>

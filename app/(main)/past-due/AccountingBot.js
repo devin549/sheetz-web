@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { askAccounting } from './actions';
+import { personName } from '@/lib/people';
 
 function money(n) { return '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
 function ago(iso) {
@@ -44,7 +45,7 @@ export default function AccountingBot({ recent }) {
         {(recent || []).map((a) => (
           <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0', fontSize: 12 }}>
             <span>✓ <strong>{money(a.amount)}</strong> {a.action === 'customer_paid' ? 'cleared for' : 'paid ·'} {a.customer_name || 'customer'}{a.invoice_number ? ` (#${a.invoice_number})` : ''}</span>
-            <span className="muted" style={{ whiteSpace: 'nowrap' }}>{a.by_email ? a.by_email.split('@')[0] + ' · ' : ''}{ago(a.created_at)}</span>
+            <span className="muted" style={{ whiteSpace: 'nowrap' }}>{a.by_email ? personName(a.by_email) + ' · ' : ''}{ago(a.created_at)}</span>
           </div>
         ))}
       </div>

@@ -14,7 +14,10 @@ export default async function ImportAr() {
     <div className="wrap" style={{ maxWidth: 880 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <div className="h1" style={{ marginBottom: 2 }}>⬆️ Import A/R</div>
-        <Link href="/past-due" style={{ fontSize: 13 }}>← Back to A/R</Link>
+        <div style={{ display: 'flex', gap: 14, fontSize: 13 }}>
+          <Link href="/past-due/merge">🔁 Merge duplicates</Link>
+          <Link href="/past-due">← Back to A/R</Link>
+        </div>
       </div>
       <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>Paste a customer + open-invoice export (e.g. from ServiceTitan) to load real A/R, so reports are current.</div>
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { logContact, logCertified, attachDeliveryProof, getCustomerContacts } from './actions';
+import { personName } from '@/lib/people';
 
 // Dunning ladder → next action by age (ported from the Accounting Sheet AR cascade).
 function nextActionFor(days) {
@@ -117,7 +118,7 @@ export default function CollectionsTimeline({ customerId, oldestDays, address, p
                         : <span className="muted">· not opened yet</span>}</>
                   : <>{ICON[c.channel] || '•'} {c.channel}{c.note ? ` · ${c.note}` : ''}</>}
             </span>
-            <span className="muted" style={{ whiteSpace: 'nowrap' }}>{c.by_email ? c.by_email.split('@')[0] + ' · ' : ''}{stamp(c.created_at)}</span>
+            <span className="muted" style={{ whiteSpace: 'nowrap' }}>{c.by_email ? personName(c.by_email) + ' · ' : ''}{stamp(c.created_at)}</span>
           </div>
           {c.kind === 'log' && c.channel === 'certified' && canLog && (
             <DeliveryProof rawId={c.rawId} proofUrl={c.proof_url} deliveredAt={c.delivered_at} onDone={load} />

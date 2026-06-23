@@ -3,6 +3,7 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
 import { COMPANY } from '@/lib/company';
+import { personName } from '@/lib/people';
 import PrintButton from '../PrintButton';
 
 export const dynamic = 'force-dynamic';
@@ -171,7 +172,7 @@ export default async function LawyerPacket({ params, searchParams }) {
                 <tr key={idx}>
                   <td style={P.td}>{fmtStamp(c.created_at)}</td>
                   <td style={P.td}>{CH[c.channel] || c.channel}{c.duration_s ? ` · ${c.duration_s}s` : ''}</td>
-                  <td style={P.td}>{c.by ? String(c.by).split('@')[0] : '—'}</td>
+                  <td style={P.td}>{c.by ? personName(c.by) : '—'}</td>
                   <td style={P.td}>{c.note || '—'}</td>
                   <td style={{ ...P.td, fontSize: 10.5, wordBreak: 'break-all' }}>{c.proof ? (/^https?:/.test(c.proof) ? <a href={c.proof} style={{ color: '#0645ad' }}>{c.proof}</a> : c.proof) : '—'}</td>
                 </tr>
