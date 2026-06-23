@@ -29,6 +29,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   const [menu, setMenu] = useState(null); // {x,y,job} right-click menu
   const [cancelT, setCancelT] = useState(null);
   const [durT, setDurT] = useState(null);
+  const [hover, setHover] = useState(null); // {job,x,y} — desktop hover info card
   const techName = (id) => { const t = techs.find((x) => x.id === id); return t ? t.name : ''; };
   const refresh = () => router.refresh();
 
@@ -126,10 +127,12 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   }
   function dragStart(e, jobId) { e.dataTransfer.setData('text/job-id', jobId); e.dataTransfer.effectAllowed = 'move'; }
 
-  // hour lines (stronger) + 15-min slot lines (lighter) — matches the live board's slotMinutes:15
-  const QUARTER = PX_PER_HOUR / 4;
-  const laneBg = `repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px ${PX_PER_HOUR}px), repeating-linear-gradient(to right, color-mix(in oklab, var(--border) 45%, transparent) 0 1px, transparent 1px ${QUARTER}px)`;
+  // hour lines only — the 15-min slot lines are hidden for a cleaner grid
+  const laneBg = `repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px ${PX_PER_HOUR}px)`;
   const Dot = ({ k }) => <span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_DOT[k] || 'var(--fg-3)', display: 'inline-block' }} />;
+
+  // A job is LATE if its start time has passed and it isn't rolling/on-site/done/cancelled.
+  const isLate = (j) => !['enroute', 'on_site', 'done', 'cancelled'].includes(j.statusKey) && startHourOf(j.scheduledISO) < nowHour;
 
   function JobBlock({ j, draggable }) {
     const pr = priorityOf(j.priority);
@@ -138,21 +141,25 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
     const dur = live ? resizeView.curDur : (j.duration_min || 60);
     const width = Math.max(22, (dur / 60) * PX_PER_HOUR - 2);
     const canResize = (canStatus || canAssign) && j.statusKey !== 'done';
+    const late = isLate(j);
     return (
       <div
         draggable={draggable}
         onDragStart={draggable ? (e) => { if (suppressDrag.current) { e.preventDefault(); return; } dragStart(e, j.id); } : undefined}
         onClick={() => { if (didResize.current) { didResize.current = false; return; } setSel(j); }}
         onContextMenu={(e) => openMenu(e, j)}
-        title={`${j.customer} · ${fmtTime(j.scheduledISO)} · ${dur}m${j.job_type ? ' · ' + j.job_type : ''} · click for details · right-click for actions`}
+        onMouseEnter={(e) => setHover({ job: j, x: e.clientX, y: e.clientY })}
+        onMouseMove={(e) => setHover((h) => (h && h.job.id === j.id ? { job: j, x: e.clientX, y: e.clientY } : h))}
+        onMouseLeave={() => setHover(null)}
         style={{
           position: 'absolute', left, top: 5, height: ROW_H - 14, width,
-          background: live ? 'color-mix(in oklab, var(--accent) 14%, var(--surface-2))' : 'var(--surface-2)',
-          borderLeft: `3px solid ${pr ? pr.color : STATUS_DOT[j.statusKey]}`,
+          background: live ? 'color-mix(in oklab, var(--accent) 14%, var(--surface-2))' : (late ? 'color-mix(in oklab, var(--red) 14%, var(--surface-2))' : 'var(--surface-2)'),
+          borderLeft: `3px solid ${late ? 'var(--red)' : (pr ? pr.color : STATUS_DOT[j.statusKey])}`,
           borderRadius: 4, padding: '3px 5px', overflow: 'hidden', cursor: 'pointer', zIndex: live ? 5 : 2,
         }}
       >
-        <div style={{ fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {late && <span className="alert-dot" style={{ position: 'absolute', top: 4, right: 4, margin: 0 }} aria-hidden="true" />}
+        <div style={{ fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: late ? 'var(--red)' : 'var(--fg-1)' }}>
           {pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.customer}
         </div>
         <div className="muted" style={{ fontSize: 9 }}>{fmtTime(j.scheduledISO)}{live ? ` · ${dur}m` : (j.amount ? ' · ' + money(j.amount) : '')}</div>
@@ -246,6 +253,19 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
           );
         })}
       </div>
+
+      {/* hover info card (desktop) — see the job without clicking */}
+      {hover && (
+        <div className="cb-hovercard" style={{ position: 'fixed', left: Math.min(hover.x + 14, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 250), top: hover.y + 14, zIndex: 80, width: 230, pointerEvents: 'none', background: 'var(--surface-1)', border: '1px solid var(--border-strong)', borderRadius: 10, padding: '10px 12px', boxShadow: '0 6px 20px rgba(0,0,0,.3)' }}>
+          <div style={{ fontWeight: 800, fontSize: 13 }}>{hover.job.customer}{isLate(hover.job) && <span className="pill pill-red" style={{ marginLeft: 6, fontSize: 9 }}>LATE</span>}</div>
+          <div className="muted" style={{ fontSize: 11.5, marginTop: 3 }}>🕐 {fmtTime(hover.job.scheduledISO)} · {hover.job.duration_min || 60}m · <span style={{ textTransform: 'capitalize' }}>{String(hover.job.statusKey || 'scheduled').replace('_', ' ')}</span></div>
+          {hover.job.address && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>📍 {hover.job.address}</div>}
+          {(hover.job.job_type || hover.job.amount) && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>🔧 {[hover.job.job_type, hover.job.amount ? money(hover.job.amount) : null].filter(Boolean).join(' · ')}</div>}
+          {techName(hover.job.techId) && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>👷 {techName(hover.job.techId)}</div>}
+          {hover.job.phone && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>📞 {hover.job.phone}</div>}
+          <div className="muted" style={{ fontSize: 10, marginTop: 6, opacity: 0.7 }}>click = details · right-click = actions</div>
+        </div>
+      )}
 
       {sel && <JobPanel job={sel} techName={techName(sel.techId)} canStatus={canStatus} canAssign={canAssign} onClose={() => setSel(null)} />}
       <ContextMenu menu={menu} onClose={() => setMenu(null)} onAction={onMenuAction} canMutate={canStatus || canAssign} />
