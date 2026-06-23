@@ -31,8 +31,9 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | Team (add hire, set role) | /team | ✅ live | manageUsers only; server-enforced |
 | Home command center | / | ✅ live | role-aware KPIs + Owner-Sheet tile map |
 | Theme | globals.css | ✅ live | **EXACT live-board palette** ported (#0e1116 cool dark + #FF6B00 accent, cream light) from `dispatchboard_index.html` — app-wide, `--amber` aliased to accent |
-| Dispatch Board | /board | ✅ live | Dispatch-Live look + drag-drop + NOW line + detail PANEL + status changes + **right-click ContextMenu** (open/duration/en route/on site/complete/call/reassign/send-to-queue/cancel, role-gated) + **Cancel-with-reason** (12-reason taxonomy → cancellations log) + **Set-duration** modal — all ported exactly from the script. ✅ **moveJob hardening**: `assignTech` now refuses to move done/cancelled jobs + writes a **move-audit row** to `job_moves` (mig 17, action=assign/reassign/unassign/reschedule). ⏳ realtime, Map/Roster/Week, global search, clickable filters, day-nav, full left-nav, Job Booking |
-| My Day (TECH IPAD home) | /my-day | ✅ live | **Field-only nav** (tech+helper `seeOwnOnly`; removed from owner/office). Self-scoped: tech→own, helper→paired, office→all (+?tech). **Tech field actions:** big touch status buttons 🚚 En route → 📍 On site → ✓ Complete (`updateMyJobStatus`, stamps enroute/started/completed) + 🧭 Navigate (maps) + 📞 Call. ⏳ rail sub-tabs (Bids/Chat/Hank/Pay/Races/Record/Cal/PTO), week view, search, on-shift toggle, gamification strip |
+| Dispatch Board | /board | ✅ live | Dispatch-Live look + drag-drop + NOW line + detail PANEL + status changes + **right-click ContextMenu** (open/duration/en route/on site/complete/call/reassign/send-to-queue/cancel, role-gated) + **Cancel-with-reason** (12-reason taxonomy → cancellations log) + **Set-duration** modal — all ported exactly from the script. ✅ **moveJob hardening**: `assignTech` now refuses to move done/cancelled jobs + writes a **move-audit row** to `job_moves` (mig 17, action=assign/reassign/unassign/reschedule). ✅ **Map / Roster / Week / Capacity** secondary views (ported from `dispatchboard_views.html`, crew-grouped since our data has no zone yet) via a client tab switcher. ⏳ realtime, global search, clickable filters, day-nav, full left-nav, Job Booking |
+| My Day (TECH IPAD home) | /my-day | ✅ live | **Field-only nav** (tech+helper `seeOwnOnly`; removed from owner/office). Self-scoped: tech→own, helper→paired, office→all (+?tech). **Tech field actions:** big touch status buttons 🚚 En route → 📍 On site → ✓ Complete (`updateMyJobStatus`, stamps enroute/started/completed) + 🧭 Navigate (maps) + 📞 Call + 📷 **Job file** link. ⏳ rail sub-tabs (Bids/Chat/Hank/Pay/Races/Record/Cal/PTO), week view, search, on-shift toggle, gamification strip |
+| Job File / CB Cam | /job/[id] | ✅ live | Per-job photo spine through a **private Supabase Storage** bucket (`job-photos`) + `job_photos` table. Header (customer/tech/amount/status) + signed-URL gallery: kinds (before/during/after/receipt/damage/equipment/closeout), tags, caption, **customer-visible packet** flag, upload + archive, role/helper access gate. Linked from My Day + board panel. **Run `supabase/23_job_photo_spine.sql` first.** ⏳ HEIC server-side preview, equipment data-plate decode, close-gate on failed photo |
 | My Truck (fleet + detail) | /my-truck | ✅ live (read) | ⏳ actions: request transfer, loan a tool |
 | Shop (reorder + restock) | /shop | ✅ live (read) | ⏳ self-issue review queue (Reed) |
 | Customers search | /customers | ✅ live | 13k ST base, CB numbers |
@@ -130,6 +131,10 @@ tracking; run `supabase/18_email_opens.sql`). **19 ar_notes — ⏳ NOT RUN YET*
 notes = Ashley's Notes column; run `supabase/19_ar_notes.sql`). **All (14–19) bundled in
 `supabase/RUN_ALL_PENDING_14_15_16.sql` for one paste.** Email opens also need `APP_URL` in Vercel
 (or auto via Vercel's production URL) so the tracking pixel has a public origin.
+**23 job_photo_spine — ⏳ NOT RUN YET** (Job File photo spine: `job_photos` table + private
+`job-photos` Storage bucket; run `supabase/23_job_photo_spine.sql`). RLS is enabled with **no
+policies by design** — only the server's service-role client touches photos (via signed URLs),
+so anon/authenticated are denied by default; do not add permissive policies.
 
 **AR = Ashley's book (port of her ST AR report; ST being abandoned):** per-customer **📝 Notes**
 (editable, shows inline on the row; "DO NOT SERVICE" flags red) + **📄 AR aging report** at

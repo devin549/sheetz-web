@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { updateMyJobStatus } from './actions';
 
 function fmtTime(iso) { if (!iso) return '—'; try { return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch { return '—'; } }
@@ -65,6 +66,9 @@ export default function JobCard({ job, seeAll, canAct }) {
           {cust.address && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {cust.address}</div>}
           {typeBits && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>🔧 {typeBits}</div>}
           {seeAll && t.name && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>👷 {t.name}</div>}
+          <div style={{ marginTop: 8 }}>
+            <Link href={`/job/${job.id}`} className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>📷 Job file / photos</Link>
+          </div>
         </div>
         <span className={pill.cls} style={pill.color ? { color: pill.color } : undefined}>{pill.label}</span>
       </div>

@@ -19,6 +19,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# local agent/audit output
+.audits/
+.npm-cache/
+
 # local env files (NEVER commit real keys)
 .env
 .env*.local
