@@ -54,11 +54,16 @@ The tech iPad is a whole SPA. My Day is the home tab. Pieces, by status:
 ## 🎯 WOW features (committed — Devin's headline asks, do NOT drop)
 The reason 7 months of bridging matters — the moments that make the team go "whoa." All three are
 locked here. Each needs a key/provider; none ship as fire-and-forget.
-- ⏳ **Mass email button** — send a campaign/notice to many customers at once. ⚠️ GUARDRAIL (non-
-  negotiable, per the no-auto-send rule / zero-value payroll incident): it is **draft → preview the
-  list + copy → ONE internal approver (Ashley/Tracey/Devin) clicks Send → every send logged to an
-  audit table**. NEVER a one-click blast. Needs an email provider (Resend/SendGrid) + `EMAIL_API_KEY`.
-  Honor `do_not_mail` on customers. Batch + rate-limit.
+- ✅ **Mass email button** — `/campaigns` (nav "📣 Mass Email"). **Guardrail enforced in code**
+  (separation of duties): *compose* seats (marketing/sales/office/GM/owner via `canCompose`) draft +
+  preview the exact list; only an *approver* (`APPROVER_ROLES` = owner/GM/Tracey-OM/Ashley-accounting)
+  can click **Approve & Send**. Audiences: past-due / 90+ / all-with-email. `do_not_mail` + empty/dupe
+  emails auto-skipped (counted, shown). Recipient list snapshotted into `email_sends` at submit so it
+  can't shift; **every send logged** (sent/failed/skipped) + campaign audit in `email_campaigns`
+  (mig 14). 🪄 "Draft with Hank" writes subject+body via the role's Claude key; `{{name}}` personalized
+  per recipient. Provider = Resend REST (`lib/email.js`), no SDK dep — works in draft/approve mode now;
+  **actual send gated on `EMAIL_API_KEY` + `EMAIL_FROM`** in Vercel. Batches of 50. _Setup owed: run
+  `supabase/14_email_campaigns.sql`; add `EMAIL_API_KEY`/`EMAIL_FROM` when ready to send for real._
 - ✅ **Lawyer packet** — `/past-due/packet/[cid]` assembles a print-clean collections/lien referral:
   letterhead + attorney block (Fore **or** McKinstry, `?firm=` toggle) + debtor (name/CB#/address/phone/email)
   + amount-due summary + aging + full invoice schedule + collections-history table (good-faith attempts)
@@ -101,4 +106,5 @@ Widgets are native here — building them out is a first-class goal, not a nice-
 02 customers ST cols · 03 CB numbers · 04 invoices AR · 05 truck+tools · 06 helper_assign · 07 job card
 fields · 08 jobs harden · 09 techs_crew · 10 cancellations+duration · 11 ai_usage · 12 ar_activity ·
 13 collections_log — **all run ✅ (6/23)**. (Note: helper_assignments uses `time_window`, not `window`
-— reserved word.) Later: leads, bookings, truck_transfers+tool_loans, realtime.
+— reserved word.) **14 email_campaigns + email_sends — ⏳ NOT RUN YET** (mass-email audit tables; run
+`supabase/14_email_campaigns.sql`). Later: leads, bookings, truck_transfers+tool_loans, realtime.
