@@ -5,6 +5,7 @@ import { can } from '@/lib/roles';
 import BoardSurface from './BoardSurface';
 import LiveClock from './LiveClock';
 import DateNav from './DateNav';
+import EtaBanner from './EtaBanner';
 import { ACCENT, statusKey, money } from './boardTokens';
 
 export const dynamic = 'force-dynamic';
@@ -63,6 +64,18 @@ export default async function Board({ searchParams }) {
     if (!pRes.error) (pRes.data || []).forEach((p) => { photoCount[p.job_id] = (photoCount[p.job_id] || 0) + 1; });
   }
 
+  // Open ETA reports (tech said running late, office hasn't handled it). Guarded — table may be absent.
+  let etaReports = [];
+  const jobInfo = {};
+  rawJobs.forEach((j) => { jobInfo[j.id] = { customer: (j.customers && j.customers.name) || 'Customer', phone: (j.customers && j.customers.phone) || '', tech: j.tech_name || (j.techs && j.techs.name) || '' }; });
+  if (jobIds.length) {
+    const er = await sb.from('job_eta_updates')
+      .select('id, job_id, minutes, note, needs_help, new_eta, created_by_name, created_at')
+      .in('job_id', jobIds).is('ack_at', null).order('created_at', { ascending: false });
+    if (!er.error) etaReports = er.data || [];
+  }
+  const canContact = can(role, 'contactCustomer');
+
   const gridJobs = [], tray = [], techStatus = {};
   const rank = { onsite: 3, enroute: 2, late: 2, hold: 1, scheduled: 0, done: -1 };
   let dayRevenue = 0;
@@ -97,6 +110,8 @@ export default async function Board({ searchParams }) {
           <Link href="/my-day" className="muted" style={{ fontSize: 12 }}>My Day →</Link>
         </span>
       </div>
+
+      <EtaBanner reports={etaReports} jobInfo={jobInfo} canContact={canContact} />
 
       <BoardSurface techs={techs} jobs={gridJobs} tray={tray} techStatus={techStatus} canAssign={canAssign} canStatus={canStatus} dateStr={dateStr} />
 

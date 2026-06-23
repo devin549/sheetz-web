@@ -81,6 +81,42 @@ export async function updateJobStatus(jobId, status) {
   return { ok: true };
 }
 
+// Office acknowledges a tech's ETA report (seen + handled). Gated to contact-customer seats.
+async function assertContact() {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const profile = await loadProfile(user);
+  if (!user || !can(profile.role, 'contactCustomer')) throw new Error('Not allowed.');
+  const sb = getSupabaseAdmin();
+  if (!sb) throw new Error('Server not configured.');
+  return { sb, user, profile };
+}
+export async function acknowledgeEta(etaId) {
+  let ctx;
+  try { ctx = await assertContact(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!etaId) return { ok: false, msg: 'No report.' };
+  const { error } = await ctx.sb.from('job_eta_updates')
+    .update({ ack_by: ctx.user.id, ack_by_name: ctx.profile.name || ctx.user.email, ack_at: new Date().toISOString() })
+    .eq('id', etaId);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/board');
+  return { ok: true };
+}
+// Office marks the customer notified (after it actually called/texted them) → acks + logs.
+export async function notifyEta(etaId) {
+  let ctx;
+  try { ctx = await assertContact(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!etaId) return { ok: false, msg: 'No report.' };
+  const nowISO = new Date().toISOString();
+  const { error } = await ctx.sb.from('job_eta_updates')
+    .update({ customer_notified: true, ack_by: ctx.user.id, ack_by_name: ctx.profile.name || ctx.user.email, ack_at: nowISO })
+    .eq('id', etaId);
+  if (error) return { ok: false, msg: error.message };
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile.name || ctx.user.email, role: ctx.profile.role, action: 'eta.notify', entity: 'eta', entity_id: String(etaId), detail: {} }); } catch (_) {}
+  revalidatePath('/board');
+  return { ok: true };
+}
+
 // Assign (or unassign) a tech to a job. techId '' or null = unassign. Optional `hour` (a float,
 // e.g. 13.5 = 1:30pm) reschedules the job to TODAY at that time — used when dragging a job onto
 // the grid. Sets the FK (tech_id, so My Day + the board embed resolve) + denormalized tech_name.

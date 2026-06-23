@@ -41,3 +41,38 @@ export async function updateMyJobStatus(jobId, status) {
   revalidatePath('/my-day');
   return { ok: true };
 }
+
+// Tech reports a delay from the field. Writes a STRUCTURED EVENT only — it never touches the
+// customer. The office sees it on the board and controls any customer message (the no-auto-send rule).
+export async function reportEta(jobId, minutes, note, needsHelp, newEtaISO) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const profile = await loadProfile(user);
+  if (!user || !can(profile.role, 'changeStatus')) return { ok: false, msg: 'Your role can’t report ETA.' };
+  const mins = Math.max(0, Math.min(480, Math.round(Number(minutes) || 0)));
+  if (!jobId || (!mins && !needsHelp)) return { ok: false, msg: 'Pick how late (or ask for office help).' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+
+  const { data: job } = await sb.from('jobs').select('id, tech_id').eq('id', jobId).maybeSingle();
+  if (!job) return { ok: false, msg: 'Job not found.' };
+  if (!can(profile.role, 'seeAllJobs') && can(profile.role, 'seeOwnOnly') && profile.tech_id) {
+    if (String(job.tech_id) !== String(profile.tech_id)) return { ok: false, msg: 'That job isn’t assigned to you.' };
+  }
+
+  const newEta = newEtaISO && !Number.isNaN(Date.parse(newEtaISO)) ? new Date(newEtaISO).toISOString() : null;
+  const { error } = await sb.from('job_eta_updates').insert({
+    job_id: String(jobId), minutes: mins, note: String(note || '').slice(0, 400) || null,
+    needs_help: !!needsHelp, new_eta: newEta, created_by: user.id, created_by_name: profile.name || user.email,
+  });
+  if (error) return { ok: false, msg: error.message };
+  try {
+    await sb.from('audit_log').insert({
+      actor_id: user.id, actor_name: profile.name || user.email, role: profile.role,
+      action: 'eta.report', entity: 'job', entity_id: String(jobId), detail: { minutes: mins, needs_help: !!needsHelp },
+    });
+  } catch (_) {}
+  revalidatePath('/my-day');
+  revalidatePath('/board');
+  return { ok: true, msg: needsHelp ? 'Office pinged for help.' : `Reported +${mins} min to the office.` };
+}
