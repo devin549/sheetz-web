@@ -28,7 +28,7 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | Account / change password | /account | ✅ live | everyone; sets own password |
 | Team (add hire, set role) | /team | ✅ live | manageUsers only; server-enforced |
 | Home command center | / | ✅ live | role-aware KPIs + Owner-Sheet tile map |
-| Dispatch Board | /board | ✅ live | **Dispatch-Live look** (24h time grid, #FF6B00 accent + exact status dots from `dispatchboard_data.html`, chrome ON/EN counts, 4 KPI cards w/ bars, dot filter chips, crew-colored rows + avatars + per-tech status, EMG/URG priority chips, Jobs Tray + assign). ⏳ drag-onto-grid, realtime, Map/Roster/Week/Capacity, trade+skill badges + util%, goal targets, BU filter, global search, full left-nav |
+| Dispatch Board | /board | ✅ live | Dispatch-Live look + **drag-drop assign** (tray→tech row, snaps 15min; drag blocks to move) + **live NOW line** (px-per-hour layout adapted from live `dispatchboard_timegrid.html`). ⏳ realtime auto-refresh, Map/Roster/Week/Capacity, trade+skill badges + util%, goal targets, BU filter, global search, full left-nav |
 | My Day | /my-day | ✅ live | self-scoped: tech→own jobs, helper→paired tech, office→all (+?tech) |
 | My Truck (fleet + detail) | /my-truck | ✅ live (read) | ⏳ actions: request transfer, loan a tool |
 | Shop (reorder + restock) | /shop | ✅ live (read) | ⏳ self-issue review queue (Reed) |
