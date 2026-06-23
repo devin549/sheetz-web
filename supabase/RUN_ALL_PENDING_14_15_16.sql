@@ -6,7 +6,7 @@
 -- Unlocks: 📣 Mass Email (14) · 📞 Plunger Pete AI calling (15) · 📜 Certified-mail
 -- demand letter + scanned delivery-receipt proof (16) · 🗂️ board move audit (17) ·
 -- 📭 email open tracking (18) · 📝 per-customer A/R notes (19) · 🚫 doubtful/bad-debt (20) ·
--- 📊 email send counter (21).
+-- 📊 email send counter (21) · 🧾 price-book proposals (22).
 -- ════════════════════════════════════════════════════════════════════════════
 
 
@@ -136,6 +136,26 @@ create table if not exists public.email_events (
 );
 create index if not exists email_events_created_idx on public.email_events (created_at desc);
 alter table public.email_events enable row level security;
+
+
+-- ── 22 · Price-book proposals (Good/Better/Best estimates; accept ≠ charge) ──
+create table if not exists public.proposals (
+  id              text primary key,
+  job_id          text,
+  customer        text,
+  is_member       boolean default false,
+  tax_rate        numeric default 0,
+  status          text not null default 'draft',
+  recommended_key text,
+  selected_key    text,
+  accepted_total  numeric,
+  tiers           jsonb,
+  created_by      text,
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
+);
+create index if not exists proposals_created_idx on public.proposals (created_at desc);
+alter table public.proposals enable row level security;
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Done. Expected result: no errors. Verify (optional):
