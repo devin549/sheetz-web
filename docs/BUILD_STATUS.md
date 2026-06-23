@@ -28,7 +28,7 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | Account / change password | /account | ✅ live | everyone; sets own password |
 | Team (add hire, set role) | /team | ✅ live | manageUsers only; server-enforced |
 | Home command center | / | ✅ live | role-aware KPIs + Owner-Sheet tile map |
-| Dispatch Board | /board | ✅ live (read) | status lanes (unassigned/scheduled/enroute/onsite/done); ⏳ drag-drop + realtime |
+| Dispatch Board | /board | ✅ live | status lanes + **assign/reassign tech per card**; ⏳ drag-drop + realtime auto-refresh |
 | My Day | /my-day | ✅ live | self-scoped: tech→own jobs, helper→paired tech, office→all (+?tech) |
 | My Truck (fleet + detail) | /my-truck | ✅ live (read) | ⏳ actions: request transfer, loan a tool |
 | Shop (reorder + restock) | /shop | ✅ live (read) | ⏳ self-issue review queue (Reed) |
@@ -91,5 +91,6 @@ Widgets are native here — building them out is a first-class goal, not a nice-
 
 ## Migrations run (Supabase SQL editor)
 02 customers ST cols · 03 CB numbers · 04 invoices AR · 05 truck+tools · 06 helper_assign · 07 job card
-fields · **08 jobs harden (PENDING — run next; fixes enroute CHECK + adds board columns)**.
-Pending to run: **06 + 07 + 08** (08 unblocks the board's tech assignment + status flow).
+fields · 08 jobs harden — **all run ✅ (6/22)**. (Note: helper_assignments uses `time_window`, not
+`window` — reserved word.) Next migrations: 09 job_activity+work_orders, 10 leads, 11 bookings,
+12 truck_transfers+tool_loans, 13 realtime.
