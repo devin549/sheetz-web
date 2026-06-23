@@ -5,7 +5,51 @@ import { createClient } from '@/lib/supabase/server';
 import { roleOf } from '@/lib/nav';
 import { can } from '@/lib/roles';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
+import { isEmailConfigured, sendOne } from '@/lib/email';
+import { COMPANY } from '@/lib/company';
 import { revalidatePath } from 'next/cache';
+
+const fmtUsd = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function renderStatementHtml({ name, list, total }) {
+  const rows = list.map((i) => `<tr><td style="padding:4px 8px;border-bottom:1px solid #eee">${i.date || ''}</td><td style="padding:4px 8px;border-bottom:1px solid #eee">#${i.num || ''}</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">${fmtUsd(i.bal)}</td></tr>`).join('');
+  return `<!doctype html><html><body style="margin:0;background:#f4f3ef;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a">
+  <div style="max-width:600px;margin:0 auto;padding:24px"><div style="background:#fff;border:1px solid #e3e0d8;border-radius:10px;overflow:hidden">
+    <div style="background:#FF6B00;color:#fff;padding:14px 20px;font-weight:800;font-size:16px">${COMPANY.name}</div>
+    <div style="padding:22px 20px;font-size:14px">
+      <p>Hi ${name || 'there'},</p>
+      <p>Here is your current statement of account. Your balance due is <strong>${fmtUsd(total)}</strong> across ${list.length} open invoice${list.length === 1 ? '' : 's'}.</p>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin:10px 0">
+        <thead><tr><th style="text-align:left;padding:4px 8px;border-bottom:2px solid #ccc">Date</th><th style="text-align:left;padding:4px 8px;border-bottom:2px solid #ccc">Invoice</th><th style="text-align:right;padding:4px 8px;border-bottom:2px solid #ccc">Amount</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="2" style="padding:6px 8px;font-weight:800;border-top:2px solid #ccc">Total due</td><td style="padding:6px 8px;text-align:right;font-weight:800;border-top:2px solid #ccc">${fmtUsd(total)}</td></tr></tfoot>
+      </table>
+      <p>Questions or want to set up a payment plan? Call us at <strong>${COMPANY.phone}</strong> or just reply to this email.</p>
+      <p>Thank you,<br>${COMPANY.name}</p>
+    </div>
+    <div style="padding:14px 20px;border-top:1px solid #eee;font-size:11px;color:#888">${COMPANY.name} · ${COMPANY.phone} · ${COMPANY.email}</div>
+  </div></div></body></html>`;
+}
+
+// Email a customer their statement (1:1 office send — gated to financial seats, logged to the
+// timeline + ledger). Uses your EMAIL_FROM (e.g. billing@clogbusterzplumbing.com).
+export async function emailStatement(customerId) {
+  let sb, email;
+  try { ({ sb, email } = await assertCanMark()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!customerId) return { ok: false, msg: 'No customer.' };
+  if (!isEmailConfigured) return { ok: false, msg: 'Add EMAIL_API_KEY (Resend) + EMAIL_FROM in Vercel to email statements.' };
+  const { data: cust } = await sb.from('customers').select('name, email').eq('id', customerId).maybeSingle();
+  if (!cust) return { ok: false, msg: 'Customer not found.' };
+  if (!cust.email) return { ok: false, msg: 'This customer has no email on file.' };
+  const { data: invs } = await sb.from('invoices').select('invoice_number, invoice_date, balance').eq('customer_id', customerId).eq('status', 'open');
+  const list = (invs || []).map((i) => ({ num: i.invoice_number, date: i.invoice_date, bal: Number(i.balance) || 0 })).sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+  const total = list.reduce((a, i) => a + i.bal, 0);
+  const r = await sendOne({ to: cust.email, subject: `Statement of Account — ${COMPANY.name} — ${fmtUsd(total)} due`, html: renderStatementHtml({ name: cust.name, list, total }) });
+  if (!r.ok) return { ok: false, msg: r.error };
+  try { await sb.from('collections_log').insert({ customer_id: customerId, channel: 'email', direction: 'out', note: `Statement emailed (${fmtUsd(total)})`, amount: Math.round(total), by_email: email }); } catch (_) {}
+  try { await sb.from('ar_activity').insert({ action: 'statement_emailed', customer_id: customerId, customer_name: cust.name, amount: Math.round(total), by_email: email }); } catch (_) {}
+  revalidatePath('/past-due');
+  return { ok: true, msg: `✅ Statement emailed to ${cust.email}.` };
+}
 
 // Only financial seats (owner/accounting/gm) may mark AR paid — never read-only viewer.
 async function assertCanMark() {
