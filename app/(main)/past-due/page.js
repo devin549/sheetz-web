@@ -58,7 +58,10 @@ export default async function PastDue() {
     const c = cmap[r.cid] || {};
     const invoices = r.invoices.slice().sort((a, b) => new Date(a.invoice_date || 0) - new Date(b.invoice_date || 0))
       .map((i) => ({ id: i.id, invoice_number: i.invoice_number, invoice_date: i.invoice_date, balance: Number(i.balance) || 0, city: i.city || '', days: daysSince(i.invoice_date ? new Date(i.invoice_date).getTime() : null) }));
-    return { cid: r.cid, name: c.name || 'Unknown customer', cbNumber: c.cb_number || null, phone: c.phone || '', total: Math.round(r.total), invoices, oldestDays: daysSince(r.oldest) };
+    // per-customer aging split (QuickBooks columns)
+    const cb = { cur: 0, d60: 0, d90: 0, d90p: 0 };
+    invoices.forEach((i) => { const d = i.days || 0; if (d > 90) cb.d90p += i.balance; else if (d > 60) cb.d90 += i.balance; else if (d > 30) cb.d60 += i.balance; else cb.cur += i.balance; });
+    return { cid: r.cid, name: c.name || 'Unknown customer', cbNumber: c.cb_number || null, phone: c.phone || '', total: Math.round(r.total), invoices, oldestDays: daysSince(r.oldest), buckets: cb };
   });
 
   const buckets = [
