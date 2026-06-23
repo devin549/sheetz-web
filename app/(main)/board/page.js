@@ -3,6 +3,7 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
 import BoardGrid from './BoardGrid';
+import LiveClock from './LiveClock';
 import { ACCENT, STATUS_DOT, statusKey, money } from './boardTokens';
 
 export const dynamic = 'force-dynamic';
@@ -59,10 +60,9 @@ export default async function Board() {
       phone: (j.customers && j.customers.phone) || '', job_number: j.job_number || '',
       status: j.status, statusKey: sk, priority: j.priority, amount: amt, job_type: j.job_type || '', scheduledISO: j.scheduled_at, techId: j.tech_id || null,
     };
-    if (j.tech_id && when) gridJobs.push({ ...base, startHour: when.getHours() + when.getMinutes() / 60 });
+    if (j.tech_id && when) gridJobs.push(base);
     else tray.push(base);
   });
-  const nowHour = now.getHours() + now.getMinutes() / 60;
 
   const Dot = ({ k }) => <span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_DOT[k] || 'var(--fg-3)', display: 'inline-block' }} />;
   const chip = (label, n, k) => <span className="pill" style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}>{k && <Dot k={k} />}{label} <strong>{n}</strong></span>;
@@ -80,7 +80,7 @@ export default async function Board() {
     <div className="wrap" style={{ maxWidth: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div className="h1" style={{ margin: 0, color: ACCENT }}>⚡ Dispatch Live</div>
-        <span className="muted" style={{ fontSize: 13 }}>{now.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} · {now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+        <LiveClock />
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <span className="pill" style={{ fontSize: 11 }}><Dot k="onsite" /> ON {counts.onsite}</span>
           <span className="pill" style={{ fontSize: 11 }}><Dot k="enroute" /> EN {counts.enroute}</span>
@@ -110,7 +110,7 @@ export default async function Board() {
         </span>
       </div>
 
-      <BoardGrid techs={techs} jobs={gridJobs} tray={tray} techStatus={techStatus} nowHour={nowHour} canAssign={canAssign} canStatus={canStatus} />
+      <BoardGrid techs={techs} jobs={gridJobs} tray={tray} techStatus={techStatus} canAssign={canAssign} canStatus={canStatus} />
 
       <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>
         Drag a tray job onto a tech&apos;s row to schedule it (snaps to 15 min); drag a block to move it.

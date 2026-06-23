@@ -11,7 +11,14 @@ import JobPanel from './JobPanel';
 const TECH_COL = 150, HEADER_H = 30, ROW_H = 50, PX_PER_HOUR = 58, HOURS = 24;
 const GRID_W = HOURS * PX_PER_HOUR;
 
-export default function BoardGrid({ techs, jobs, tray, techStatus, nowHour, canAssign, canStatus }) {
+// fractional hour (0–24) of an ISO time, in the VIEWER's local timezone (so placement matches the
+// times shown on the cards — both use the browser clock, not Vercel's UTC).
+function startHourOf(iso) { try { const d = new Date(iso); return d.getHours() + d.getMinutes() / 60; } catch { return 0; } }
+
+export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, canStatus }) {
+  // "now" in the browser's timezone, re-checked each minute so the now-line tracks the real clock.
+  const [nowHour, setNowHour] = useState(() => { const n = new Date(); return n.getHours() + n.getMinutes() / 60; });
+  useEffect(() => { const id = setInterval(() => { const n = new Date(); setNowHour(n.getHours() + n.getMinutes() / 60); }, 30000); return () => clearInterval(id); }, []);
   const router = useRouter();
   const gridRef = useRef(null);
   const bodyRef = useRef(null);
@@ -31,12 +38,16 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, nowHour, canA
   const byTech = {};
   jobs.forEach((j) => { (byTech[j.techId] = byTech[j.techId] || []).push(j); });
 
-  // auto-center on "now" once
+  // auto-center on "now" once on mount
+  const didScroll = useRef(false);
   useEffect(() => {
+    if (didScroll.current) return;
     const g = gridRef.current; if (!g) return;
+    didScroll.current = true;
+    const n = new Date(); const h = n.getHours() + n.getMinutes() / 60;
     const laneW = g.clientWidth - TECH_COL;
-    g.scrollLeft = Math.max(0, (nowHour - 1) * PX_PER_HOUR - laneW / 3);
-  }, [nowHour]);
+    g.scrollLeft = Math.max(0, (h - 1) * PX_PER_HOUR - laneW / 3);
+  }, []);
 
   function locate(e) {
     const body = bodyRef.current; if (!body) return null;
@@ -66,7 +77,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, nowHour, canA
 
   function JobBlock({ j, draggable }) {
     const pr = priorityOf(j.priority);
-    const left = j.startHour * PX_PER_HOUR;
+    const left = startHourOf(j.scheduledISO) * PX_PER_HOUR;
     return (
       <div
         draggable={draggable}
