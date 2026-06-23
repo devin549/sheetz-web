@@ -6,7 +6,10 @@ import { revalidatePath } from 'next/cache';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
+import { can } from '@/lib/roles';
 import { canArchivePhoto, canUploadPhotos, canViewJob, loadJob } from './jobAccess';
+
+const FAIL_CODES = new Set(['blurry', 'wrong_area', 'no_after_proof', 'unfinished', 'missing_equipment', 'customer_issue', 'other']);
 
 const BUCKET = 'job-photos';
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -151,4 +154,58 @@ export async function archiveJobPhoto(photoId, jobId) {
   revalidatePath('/board');
   revalidatePath('/my-day');
   return { ok: true, msg: 'Photo archived.' };
+}
+
+// Supervisor QA: pass/fail a single photo with an optional reason + note. A failed photo blocks
+// closeout until it's corrected (re-shot) or a supervisor overrides. Latest review per photo wins.
+export async function reviewPhoto(photoId, jobId, result, failReason, note) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!can(ctx.role, 'qaReview')) return { ok: false, msg: 'Your role can’t review QA.' };
+  if (!['pass', 'fail'].includes(result)) return { ok: false, msg: 'Pass or fail?' };
+  const reason = result === 'fail' ? (FAIL_CODES.has(failReason) ? failReason : null) : null;
+  if (result === 'fail' && !reason) return { ok: false, msg: 'Pick a fail reason.' };
+
+  const cleanPhoto = cleanText(photoId, 80);
+  const { data: photo } = await ctx.sb.from('job_photos').select('id').eq('id', cleanPhoto).eq('job_id', ctx.job.id).maybeSingle();
+  if (!photo) return { ok: false, msg: 'Photo not found on this job.' };
+
+  const { error } = await ctx.sb.from('job_photo_reviews').insert({
+    photo_id: cleanPhoto, job_id: String(ctx.job.id), result, fail_reason: reason,
+    manager_note: cleanText(note, 500) || null, reviewed_by: ctx.user.id,
+    reviewed_by_name: ctx.profile?.name || ctx.user.email,
+  });
+  if (error) return { ok: false, msg: error.message };
+  try {
+    await ctx.sb.from('audit_log').insert({
+      actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role,
+      action: 'qa.' + result, entity: 'photo', entity_id: cleanPhoto, detail: { job_id: String(ctx.job.id), reason },
+    });
+  } catch (_) {}
+  revalidatePath(`/job/${ctx.job.id}`);
+  revalidatePath('/supervisor/jobs');
+  return { ok: true, msg: result === 'pass' ? 'Marked pass.' : 'Marked fail — closeout stays blocked until it’s fixed.' };
+}
+
+// Supervisor override: force a job to 'done' despite an incomplete closeout. Reason is required
+// and logged to the audit trail (the no-shortcut rule).
+export async function overrideCloseout(jobId, reason) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!can(ctx.role, 'qaOverride')) return { ok: false, msg: 'Only a supervisor can override closeout.' };
+  const note = cleanText(reason, 500);
+  if (note.length < 4) return { ok: false, msg: 'Add a reason for the override.' };
+
+  const { error } = await ctx.sb.from('jobs').update({ status: 'done', completed_at: new Date().toISOString() }).eq('id', ctx.job.id);
+  if (error) return { ok: false, msg: error.message };
+  try {
+    await ctx.sb.from('audit_log').insert({
+      actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role,
+      action: 'closeout.override', entity: 'job', entity_id: String(ctx.job.id), detail: { reason: note },
+    });
+  } catch (_) {}
+  revalidatePath(`/job/${ctx.job.id}`);
+  revalidatePath('/board');
+  revalidatePath('/supervisor/jobs');
+  return { ok: true, msg: 'Closeout overridden — job marked complete.' };
 }

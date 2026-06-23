@@ -2,28 +2,31 @@
 
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
-import { roleOf } from '@/lib/nav';
+import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
+import { closeoutReason } from '@/lib/qa';
 import { revalidatePath } from 'next/cache';
 import { CANCEL_REASONS } from './boardTokens';
 
-// Re-check the caller can assign jobs on every call — a server action is a public RPC, so
-// guarding only the page/nav isn't enough.
+// Re-check the caller's perms on every call — a server action is a public RPC, so guarding only
+// the page/nav isn't enough. Role + scope come from the profile (server-authoritative).
 async function assertAssigner() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user || !can(roleOf(user), 'assignJobs')) throw new Error('Not allowed.');
+  const profile = await loadProfile(user);
+  if (!user || !can(profile.role, 'assignJobs')) throw new Error('Not allowed.');
   const sb = getSupabaseAdmin();
   if (!sb) throw new Error('Server not configured.');
-  return { sb, email: (user.email || '') };
+  return { sb, email: (user.email || ''), profile };
 }
 async function assertStatusChanger() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user || !can(roleOf(user), 'changeStatus')) throw new Error('Your role can’t change job status.');
+  const profile = await loadProfile(user);
+  if (!user || !can(profile.role, 'changeStatus')) throw new Error('Your role can’t change job status.');
   const sb = getSupabaseAdmin();
   if (!sb) throw new Error('Server not configured.');
-  return { sb, email: (user.email || '') };
+  return { sb, email: (user.email || ''), profile };
 }
 
 // Cancel a job WITH a reason → status=cancelled + log to cancellations (feeds the AI win-back
@@ -59,9 +62,14 @@ export async function setDuration(jobId, durationMin) {
 // timestamp. Role-gated (changeStatus). Mirrors cbDispatchBoard_updateJobStatus.
 const VALID_STATUS = ['scheduled', 'enroute', 'on_site', 'done', 'hold', 'cancelled'];
 export async function updateJobStatus(jobId, status) {
-  let sb;
-  try { sb = await assertStatusChanger(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  let sb, profile;
+  try { ({ sb, profile } = await assertStatusChanger()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
   if (!jobId || !VALID_STATUS.includes(status)) return { ok: false, msg: 'Bad request.' };
+  // Close-gate: block 'done' until the media rule is met — unless this role can override.
+  if (status === 'done' && !can(profile.role, 'qaOverride')) {
+    const { data: job } = await sb.from('jobs').select('id, job_type').eq('id', jobId).maybeSingle();
+    if (job) { const reason = await closeoutReason(sb, job); if (reason) return { ok: false, msg: reason, blocked: 'closeout' }; }
+  }
   const patch = { status };
   const nowISO = new Date().toISOString();
   if (status === 'enroute') patch.enroute_at = nowISO;

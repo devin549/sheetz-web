@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
+import { closeoutReason } from '@/lib/qa';
 import { revalidatePath } from 'next/cache';
 
 // Tech updates a job's status from the iPad in the field (Rolling/En route → On site → Complete).
@@ -17,10 +18,18 @@ export async function updateMyJobStatus(jobId, status) {
   if (!jobId || !VALID.includes(status)) return { ok: false, msg: 'Bad request.' };
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Server not configured.' };
+  // Load the job once for the scope + close-gate checks.
+  const { data: job } = await sb.from('jobs').select('id, tech_id, job_type').eq('id', jobId).maybeSingle();
+  if (!job) return { ok: false, msg: 'Job not found.' };
   // Scope: a field-only tech can only touch their OWN job — office/dispatch can touch any.
   if (!can(profile.role, 'seeAllJobs') && can(profile.role, 'seeOwnOnly') && profile.tech_id) {
-    const { data: owned } = await sb.from('jobs').select('tech_id').eq('id', jobId).maybeSingle();
-    if (!owned || String(owned.tech_id) !== String(profile.tech_id)) return { ok: false, msg: 'That job isn’t assigned to you.' };
+    if (String(job.tech_id) !== String(profile.tech_id)) return { ok: false, msg: 'That job isn’t assigned to you.' };
+  }
+  // Close-gate: a tech can't mark a job done until the closeout media rule is met (no override here —
+  // overrides are a supervisor action). Fails open until the QA/photo tables are migrated.
+  if (status === 'done' && !can(profile.role, 'qaOverride')) {
+    const reason = await closeoutReason(sb, job);
+    if (reason) return { ok: false, msg: reason, blocked: 'closeout' };
   }
   const patch = { status };
   const nowISO = new Date().toISOString();
