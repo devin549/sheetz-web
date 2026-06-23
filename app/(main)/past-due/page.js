@@ -55,6 +55,15 @@ export default async function PastDue() {
     (custs || []).forEach((c) => { cmap[c.id] = c; });
   }
 
+  // Ashley's per-customer A/R notes (table may not exist before migration 19 — skip safely)
+  const noteMap = {};
+  try {
+    for (let i = 0; i < ids.length; i += 300) {
+      const { data: notes } = await sb.from('ar_notes').select('customer_id, note').in('customer_id', ids.slice(i, i + 300));
+      (notes || []).forEach((n) => { if (n.note) noteMap[n.customer_id] = n.note; });
+    }
+  } catch (_) {}
+
   const customers = ranked.map((r) => {
     const c = cmap[r.cid] || {};
     const invoices = r.invoices.slice().sort((a, b) => new Date(a.invoice_date || 0) - new Date(b.invoice_date || 0))
@@ -62,7 +71,7 @@ export default async function PastDue() {
     // per-customer aging split (QuickBooks columns)
     const cb = { cur: 0, d60: 0, d90: 0, d90p: 0 };
     invoices.forEach((i) => { const d = i.days || 0; if (d > 90) cb.d90p += i.balance; else if (d > 60) cb.d90 += i.balance; else if (d > 30) cb.d60 += i.balance; else cb.cur += i.balance; });
-    return { cid: r.cid, name: c.name || 'Unknown customer', cbNumber: c.cb_number || null, phone: c.phone || '', email: c.email || '', address: c.address || '', total: Math.round(r.total), invoices, oldestDays: daysSince(r.oldest), buckets: cb };
+    return { cid: r.cid, name: c.name || 'Unknown customer', cbNumber: c.cb_number || null, phone: c.phone || '', email: c.email || '', address: c.address || '', note: noteMap[r.cid] || '', total: Math.round(r.total), invoices, oldestDays: daysSince(r.oldest), buckets: cb };
   });
 
   // recent collections ledger for the books bot (best-effort — table may not exist yet)
@@ -79,7 +88,10 @@ export default async function PastDue() {
       {/* tight header — the numbers live in the clickable summary below */}
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <div className="h1" style={{ marginBottom: 2 }}>💰 Accounts Receivable</div>
-        <div className="muted" style={{ fontSize: 12 }}><Link href="/customers">customer lookup →</Link></div>
+        <div className="muted" style={{ fontSize: 12, display: 'flex', gap: 14 }}>
+          <Link href="/past-due/report" target="_blank">📄 AR aging report</Link>
+          <Link href="/customers">customer lookup →</Link>
+        </div>
       </div>
       <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>{money(total)} open · {count.toLocaleString()} invoices · {custCount.toLocaleString()} customers</div>
 

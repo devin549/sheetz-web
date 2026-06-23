@@ -124,7 +124,13 @@ fields · 08 jobs harden · 09 techs_crew · 10 cancellations+duration · 11 ai_
 proof/delivered cols + `collections-evidence` storage bucket; run `supabase/16_certified_proof.sql`).
 **17 job_moves — ⏳ NOT RUN YET** (board move/activity audit; run `supabase/17_job_moves.sql`).
 **18 email_opens — ⏳ NOT RUN YET** (email_sends opened_at/open_count for ST/FieldEdge-style open
-tracking; run `supabase/18_email_opens.sql`). **All (14–18) bundled in
+tracking; run `supabase/18_email_opens.sql`). **19 ar_notes — ⏳ NOT RUN YET** (per-customer A/R
+notes = Ashley's Notes column; run `supabase/19_ar_notes.sql`). **All (14–19) bundled in
 `supabase/RUN_ALL_PENDING_14_15_16.sql` for one paste.** Email opens also need `APP_URL` in Vercel
 (or auto via Vercel's production URL) so the tracking pixel has a public origin.
+
+**AR = Ashley's book (port of her ST AR report; ST being abandoned):** per-customer **📝 Notes**
+(editable, shows inline on the row; "DO NOT SERVICE" flags red) + **📄 AR aging report** at
+`/past-due/report` — printable full-book aging (Customer · Current · 30 · 60 · 90 · Over 90 · Total ·
+Notes + grand totals), matching her exact columns. Her real book totals ~$290k.
 Later: leads, bookings, truck_transfers+tool_loans, realtime.

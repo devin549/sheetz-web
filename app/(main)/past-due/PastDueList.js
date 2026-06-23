@@ -2,8 +2,30 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { markInvoicePaid, markCustomerPaid } from './actions';
+import { markInvoicePaid, markCustomerPaid, setArNote } from './actions';
 import CollectionsTimeline from './CollectionsTimeline';
+
+// Ashley's per-customer A/R note ("Sent to Attorney 4/22", "DO NOT SERVICE", "Pays Weekly"…).
+function ArNote({ customerId, note, canEdit, onSaved }) {
+  const [val, setVal] = useState(note || '');
+  const [busy, start] = useTransition();
+  const [saved, setSaved] = useState(false);
+  if (!canEdit) return note ? <div className="muted" style={{ fontSize: 12 }}>📝 {note}</div> : null;
+  return (
+    <div style={{ margin: '8px 0' }}>
+      <div className="muted" style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>📝 A/R note</div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+        <textarea value={val} onChange={(e) => { setVal(e.target.value); setSaved(false); }} rows={2}
+          placeholder="e.g. Sent to Attorney 4/22 · DO NOT SERVICE · Pays Weekly · Retainage"
+          style={{ flex: 1, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '7px 10px', fontSize: 12.5, fontFamily: 'var(--sans)', resize: 'vertical' }} />
+        <button onClick={() => start(async () => { const r = await setArNote(customerId, val); if (r?.ok) { setSaved(true); onSaved && onSaved(); } })} disabled={busy}
+          style={{ background: saved ? 'var(--green)' : 'var(--accent)', color: '#fff', border: 0, borderRadius: 7, padding: '7px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          {busy ? 'Saving…' : saved ? '✓ Saved' : 'Save note'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function money(n) { return '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
 function ageColor(days) {
@@ -137,11 +159,14 @@ export default function PastDueList({ customers, canMark, summary }) {
             return (
               <div key={c.cid} id={'cust-' + c.cid}>
                 <div onClick={() => toggle(c.cid)} style={{ display: 'grid', gridTemplateColumns: COLS, gap: 8, padding: '9px 14px', borderBottom: '1px solid var(--border)', alignItems: 'center', cursor: 'pointer', background: isOpen ? 'var(--surface-1)' : 'transparent' }}>
-                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    <span style={{ color: 'var(--fg-3)', fontSize: 11, marginRight: 6 }}>{isOpen ? '▾' : '▸'}</span>
-                    <span style={{ fontWeight: 700, fontSize: 13 }}>{c.name}</span>
-                    {c.cbNumber && <span className="muted" style={{ fontSize: 10, marginLeft: 6 }}>CB-{c.cbNumber}</span>}
-                    {c.oldestDays != null && <span style={{ fontSize: 10, marginLeft: 6, color: ageColor(c.oldestDays) }}>· {c.oldestDays}d</span>}
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ color: 'var(--fg-3)', fontSize: 11, marginRight: 6 }}>{isOpen ? '▾' : '▸'}</span>
+                      <span style={{ fontWeight: 700, fontSize: 13 }}>{c.name}</span>
+                      {c.cbNumber && <span className="muted" style={{ fontSize: 10, marginLeft: 6 }}>CB-{c.cbNumber}</span>}
+                      {c.oldestDays != null && <span style={{ fontSize: 10, marginLeft: 6, color: ageColor(c.oldestDays) }}>· {c.oldestDays}d</span>}
+                    </span>
+                    {c.note && <span style={{ display: 'block', fontSize: 11, color: /do not service|dns/i.test(c.note) ? 'var(--red)' : 'var(--fg-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginLeft: 17 }}>📝 {c.note}</span>}
                   </span>
                   {cell(b.cur, 'var(--green)')}
                   {cell(b.d60, 'var(--accent)')}
@@ -152,6 +177,7 @@ export default function PastDueList({ customers, canMark, summary }) {
 
                 {isOpen && (
                   <div style={{ padding: '8px 14px 12px', background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
+                    <ArNote customerId={c.cid} note={c.note} canEdit={canMark} onSaved={() => router.refresh()} />
                     <CollectionsTimeline customerId={c.cid} oldestDays={c.oldestDays} address={c.address} phone={c.phone} email={c.email} canLog={canMark} />
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, margin: '10px 0 6px' }}>
                       <span className="muted" style={{ fontSize: 12 }}>{c.phone ? `📞 ${c.phone}` : ''}</span>

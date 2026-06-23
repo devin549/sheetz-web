@@ -61,6 +61,19 @@ export async function markCustomerPaid(customerId) {
   return { ok: true };
 }
 
+// Per-customer A/R note (Ashley's Notes column): "Sent to Attorney 4/22", "DO NOT SERVICE", etc.
+export async function setArNote(customerId, note) {
+  let sb, email;
+  try { ({ sb, email } = await assertCanMark()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!customerId) return { ok: false, msg: 'No customer.' };
+  const { error } = await sb.from('ar_notes').upsert(
+    { customer_id: customerId, note: String(note || '').slice(0, 500), updated_by: email, updated_at: new Date().toISOString() },
+    { onConflict: 'customer_id' });
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/past-due');
+  return { ok: true };
+}
+
 // ── Collections cascade (ported from _CollectionsLog + Lien Watch) ──
 const CHANNELS = ['text', 'email', 'call', 'letter', 'certified', 'packet'];
 const bucketOf = (days) => (days == null ? '0-30' : days > 180 ? '180+' : days > 90 ? '90-180' : days > 60 ? '61-90' : days > 30 ? '31-60' : '0-30');

@@ -1,11 +1,11 @@
 -- ════════════════════════════════════════════════════════════════════════════
--- CB Sheetz — ALL PENDING MIGRATIONS (14 + 15 + 16 + 17 + 18) in one paste.
+-- CB Sheetz — ALL PENDING MIGRATIONS (14 + 15 + 16 + 17 + 18 + 19) in one paste.
 -- Run ONCE in Supabase → SQL Editor → paste → Run. Safe to re-run (idempotent:
 -- every statement is `if not exists` / `on conflict do nothing`).
 --
 -- Unlocks: 📣 Mass Email (14) · 📞 Plunger Pete AI calling (15) · 📜 Certified-mail
 -- demand letter + scanned delivery-receipt proof (16) · 🗂️ board move audit (17) ·
--- 📭 email open tracking (18).
+-- 📭 email open tracking (18) · 📝 per-customer A/R notes (19).
 -- ════════════════════════════════════════════════════════════════════════════
 
 
@@ -107,6 +107,16 @@ alter table public.email_sends
   add column if not exists opened_at      timestamptz,
   add column if not exists last_opened_at timestamptz,
   add column if not exists open_count     integer default 0;
+
+
+-- ── 19 · Per-customer A/R notes (Ashley's "Notes" column) ────────────────────
+create table if not exists public.ar_notes (
+  customer_id uuid primary key,
+  note        text,
+  updated_by  text,
+  updated_at  timestamptz default now()
+);
+alter table public.ar_notes enable row level security;
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Done. Expected result: no errors. Verify (optional):
