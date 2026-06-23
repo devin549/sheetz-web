@@ -77,10 +77,16 @@ Widgets are native here — building them out is a first-class goal, not a nice-
 5. ⏳ **Booking / intake**, then the AI/API layer per `API_INTEGRATIONS_BY_ROLE.md`.
 
 ## Open loops / owed
+- [ ] **Rotate `SUPABASE_SERVICE_ROLE_KEY`** (pasted in chat once) — do first, update Vercel, redeploy.
 - [ ] Run `supabase/06_helper_assign.sql` in Supabase (helper pairings table).
-- [ ] Rotate `SUPABASE_SERVICE_ROLE_KEY` once staff are on per-user auth (it was pasted in chat).
+- [ ] **Fix `jobs` status CHECK** — seed inserts `enroute` but CHECK rejects it; broaden in migration 08.
+- [ ] Add **CI** (`.github/workflows/ci.yml`: Linux `next build` + gitleaks) + **branch protection** on main.
+- [ ] gitleaks **pre-commit hook** locally.
+- [ ] Add `app/api/` + a `(public)` route group; **fix middleware matcher** (let `book|portal|api/leads|api/stripe/webhook|api/twilio` through).
+- [ ] Go **Vercel Pro** before Stripe goes live (Phase 2).
 - [ ] Devin's own login password — change it on /account (was set in chat earlier).
 - [ ] 2FA (Supabase MFA) — the board has email-2FA; port when ready.
+- See **`INFRA_GAME_PLAN.md`** for the full Supabase/Vercel/GitHub plan + tomorrow's first moves.
 
 ## Migrations run (Supabase SQL editor)
 02 customers ST cols · 03 CB numbers · 04 invoices AR · 05 truck+tools · **06 helper_assign (PENDING)**.
