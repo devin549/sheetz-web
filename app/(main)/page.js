@@ -25,16 +25,23 @@ async function loadKpis() {
     sb.from('customers').select('*', { count: 'exact', head: true }).then((r) => r.count || 0).catch(() => 0),
     (async () => {
       let total = 0, count = 0, from = 0;
+      const aging = { cur: 0, d60: 0, d90: 0, d90p: 0 }; // 0-30 / 31-60 / 61-90 / 90+
+      const now = Date.now();
       while (true) {
-        const { data } = await sb.from('invoices').select('balance').eq('status', 'open').range(from, from + 999);
+        const { data } = await sb.from('invoices').select('balance, invoice_date').eq('status', 'open').range(from, from + 999);
         if (!data || !data.length) break;
-        data.forEach((d) => { total += Number(d.balance) || 0; });
+        data.forEach((d) => {
+          const b = Number(d.balance) || 0;
+          total += b;
+          const days = d.invoice_date ? (now - new Date(d.invoice_date).getTime()) / 86400000 : 0;
+          if (days > 90) aging.d90p += b; else if (days > 60) aging.d90 += b; else if (days > 30) aging.d60 += b; else aging.cur += b;
+        });
         count += data.length;
         if (data.length < 1000) break;
         from += 1000;
       }
-      return { total, count };
-    })().catch(() => ({ total: 0, count: 0 })),
+      return { total, count, aging };
+    })().catch(() => ({ total: 0, count: 0, aging: { cur: 0, d60: 0, d90: 0, d90p: 0 } })),
     sb.from('jobs').select('status, priority').then((r) => r.data || []).catch(() => []),
     sb.from('truck_inventory').select('tech_name, qty, reorder_point').then((r) => r.data || []).catch(() => []),
     sb.from('tools').select('value').then((r) => r.data || []).catch(() => []),
@@ -44,7 +51,34 @@ async function loadKpis() {
   const trucks = new Set(invStock.map((p) => p.tech_name || 'Unassigned')).size;
   const lowStock = invStock.filter(isLow).length;
   const toolVal = toolRows.reduce((a, t) => a + (Number(t.value) || 0), 0);
-  return { customers: custCount, ar: invRows.total, openInv: invRows.count, openJobs, urgent, trucks, lowStock, toolVal };
+  return { customers: custCount, ar: invRows.total, openInv: invRows.count, aging: invRows.aging, openJobs, urgent, trucks, lowStock, toolVal };
+}
+
+// Live AR-aging widget — pure CSS bars from real open-invoice data (no chart library).
+function AgingWidget({ aging }) {
+  const rows = [
+    { key: 'cur', label: 'Current · 0–30d', v: aging.cur, color: 'var(--green)' },
+    { key: 'd60', label: '31–60 days', v: aging.d60, color: 'var(--amber)' },
+    { key: 'd90', label: '61–90 days', v: aging.d90, color: '#e65100' },
+    { key: 'd90p', label: '90+ days', v: aging.d90p, color: 'var(--red)' },
+  ];
+  const max = Math.max(1, ...rows.map((r) => r.v));
+  return (
+    <div className="card card-amber">
+      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 10 }}>📊 AR aging <span className="muted" style={{ fontWeight: 400, fontSize: 11 }}>· what’s owed, by age</span></div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {rows.map((r) => (
+          <div key={r.key} style={{ display: 'grid', gridTemplateColumns: '110px 1fr 70px', gap: 10, alignItems: 'center' }}>
+            <div className="muted" style={{ fontSize: 11 }}>{r.label}</div>
+            <div style={{ background: 'var(--surface-2)', borderRadius: 6, height: 16, overflow: 'hidden' }}>
+              <div style={{ width: `${Math.round((r.v / max) * 100)}%`, height: '100%', background: r.color, minWidth: r.v > 0 ? 3 : 0 }} />
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, textAlign: 'right', color: r.color }}>{money(r.v)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function Kpi({ value, label, href, color, blink }) {
@@ -128,6 +162,8 @@ export default async function Home() {
       {wantsKpis && !kpis && (
         <div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel and the live numbers fill in here.</div>
       )}
+
+      {kpis && kpis.aging && can(role, 'seeFinancials') && <AgingWidget aging={kpis.aging} />}
 
       <h3 style={{ margin: '22px 0 8px', fontSize: 12, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
         Command center
