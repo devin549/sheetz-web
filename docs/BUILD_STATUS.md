@@ -28,7 +28,7 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | Account / change password | /account | ✅ live | everyone; sets own password |
 | Team (add hire, set role) | /team | ✅ live | manageUsers only; server-enforced |
 | Home command center | / | ✅ live | role-aware KPIs + Owner-Sheet tile map |
-| Dispatch Board | /board | ✅ live | status lanes + **assign/reassign tech per card**; ⏳ drag-drop + realtime auto-refresh |
+| Dispatch Board | /board | ✅ live | **time-grid scheduler** (tech×hour, crew groups, now-hour, KPI strip, filter-chip counts, view toggles, Jobs Tray + assign). ⏳ drag job onto grid, realtime, Map/Roster/Week views, goal bars, BU filter, global search |
 | My Day | /my-day | ✅ live | self-scoped: tech→own jobs, helper→paired tech, office→all (+?tech) |
 | My Truck (fleet + detail) | /my-truck | ✅ live (read) | ⏳ actions: request transfer, loan a tool |
 | Shop (reorder + restock) | /shop | ✅ live (read) | ⏳ self-issue review queue (Reed) |
