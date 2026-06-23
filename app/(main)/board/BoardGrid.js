@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { assignTech, updateJobStatus } from './actions';
+import { assignTech, updateJobStatus, setDuration } from './actions';
 import { ACCENT, STATUS_DOT, crewColor, initials, priorityOf, hourLabel, money, fmtTime } from './boardTokens';
 import JobPanel from './JobPanel';
 import { ContextMenu, CancelModal, DurationModal } from './JobActions';
@@ -31,6 +31,38 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   const [durT, setDurT] = useState(null);
   const techName = (id) => { const t = techs.find((x) => x.id === id); return t ? t.name : ''; };
   const refresh = () => router.refresh();
+
+  // ── edge-resize to stretch a job's duration (live board's resize handle) ──
+  const resizeRef = useRef(null);        // { jobId, startX, startDur, curDur }
+  const suppressDrag = useRef(false);    // block HTML5 drag while resizing
+  const didResize = useRef(false);       // suppress the click-to-open after a resize
+  const [resizeView, setResizeView] = useState(null); // { jobId, curDur } for live width
+  function beginResize(e, job) {
+    e.preventDefault(); e.stopPropagation();
+    const dur = job.duration_min || 60;
+    resizeRef.current = { jobId: job.id, startX: e.clientX, startDur: dur, curDur: dur };
+    suppressDrag.current = true; didResize.current = false;
+    setResizeView({ jobId: job.id, curDur: dur });
+  }
+  useEffect(() => {
+    function move(e) {
+      const r = resizeRef.current; if (!r) return;
+      const deltaH = (e.clientX - r.startX) / PX_PER_HOUR;
+      const dur = Math.max(15, Math.min(720, Math.round((r.startDur + deltaH * 60) / 15) * 15));
+      if (Math.abs(e.clientX - r.startX) > 3) didResize.current = true;
+      r.curDur = dur;
+      setResizeView({ jobId: r.jobId, curDur: dur });
+    }
+    function up() {
+      const r = resizeRef.current; if (!r) return;
+      resizeRef.current = null; setResizeView(null);
+      setTimeout(() => { suppressDrag.current = false; }, 0);
+      if (r.curDur !== r.startDur) start(async () => { await setDuration(r.jobId, r.curDur); router.refresh(); });
+    }
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+  }, [router]);
 
   // right-click menu actions
   const STATUS_OF = { enroute: 'enroute', onsite: 'on_site', done: 'done' };
@@ -94,29 +126,40 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   }
   function dragStart(e, jobId) { e.dataTransfer.setData('text/job-id', jobId); e.dataTransfer.effectAllowed = 'move'; }
 
-  const laneBg = `repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px ${PX_PER_HOUR}px)`;
+  // hour lines (stronger) + 15-min slot lines (lighter) — matches the live board's slotMinutes:15
+  const QUARTER = PX_PER_HOUR / 4;
+  const laneBg = `repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px ${PX_PER_HOUR}px), repeating-linear-gradient(to right, color-mix(in oklab, var(--border) 45%, transparent) 0 1px, transparent 1px ${QUARTER}px)`;
   const Dot = ({ k }) => <span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_DOT[k] || 'var(--fg-3)', display: 'inline-block' }} />;
 
   function JobBlock({ j, draggable }) {
     const pr = priorityOf(j.priority);
     const left = startHourOf(j.scheduledISO) * PX_PER_HOUR;
+    const live = resizeView && resizeView.jobId === j.id;
+    const dur = live ? resizeView.curDur : (j.duration_min || 60);
+    const width = Math.max(22, (dur / 60) * PX_PER_HOUR - 2);
+    const canResize = (canStatus || canAssign) && j.statusKey !== 'done';
     return (
       <div
         draggable={draggable}
-        onDragStart={draggable ? (e) => dragStart(e, j.id) : undefined}
-        onClick={() => setSel(j)}
+        onDragStart={draggable ? (e) => { if (suppressDrag.current) { e.preventDefault(); return; } dragStart(e, j.id); } : undefined}
+        onClick={() => { if (didResize.current) { didResize.current = false; return; } setSel(j); }}
         onContextMenu={(e) => openMenu(e, j)}
-        title={`${j.customer} · ${fmtTime(j.scheduledISO)}${j.job_type ? ' · ' + j.job_type : ''} · click for details · right-click for actions`}
+        title={`${j.customer} · ${fmtTime(j.scheduledISO)} · ${dur}m${j.job_type ? ' · ' + j.job_type : ''} · click for details · right-click for actions`}
         style={{
-          position: 'absolute', left, top: 5, height: ROW_H - 14, width: PX_PER_HOUR * 0.92,
-          background: 'var(--surface-2)', borderLeft: `3px solid ${pr ? pr.color : STATUS_DOT[j.statusKey]}`,
-          borderRadius: 4, padding: '3px 5px', overflow: 'hidden', cursor: 'pointer', zIndex: 2,
+          position: 'absolute', left, top: 5, height: ROW_H - 14, width,
+          background: live ? 'color-mix(in oklab, var(--accent) 14%, var(--surface-2))' : 'var(--surface-2)',
+          borderLeft: `3px solid ${pr ? pr.color : STATUS_DOT[j.statusKey]}`,
+          borderRadius: 4, padding: '3px 5px', overflow: 'hidden', cursor: 'pointer', zIndex: live ? 5 : 2,
         }}
       >
         <div style={{ fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.customer}
         </div>
-        <div className="muted" style={{ fontSize: 9 }}>{fmtTime(j.scheduledISO)}{j.amount ? ' · ' + money(j.amount) : ''}</div>
+        <div className="muted" style={{ fontSize: 9 }}>{fmtTime(j.scheduledISO)}{live ? ` · ${dur}m` : (j.amount ? ' · ' + money(j.amount) : '')}</div>
+        {canResize && (
+          <div onMouseDown={(e) => beginResize(e, j)} title="Drag to set how long it'll take"
+            style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 8, cursor: 'ew-resize', zIndex: 6 }} />
+        )}
       </div>
     );
   }

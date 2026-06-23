@@ -20,7 +20,7 @@ export default async function Board() {
   const run = (extra) => sb.from('jobs')
     .select('id, status, priority, scheduled_at, tech_id' + extra + ', customers(name, address, phone), techs(name)')
     .order('scheduled_at', { ascending: true });
-  let res = await run(', job_number, job_type, amount, tech_name');
+  let res = await run(', job_number, job_type, amount, tech_name, duration_min');
   if (res.error && /column .* does not exist/i.test(res.error.message || '')) res = await run('');
   const rawJobs = res.data || [];
 
@@ -58,6 +58,7 @@ export default async function Board() {
     const base = {
       id: j.id, customer: (j.customers && j.customers.name) || 'Customer', address: (j.customers && j.customers.address) || '',
       phone: (j.customers && j.customers.phone) || '', job_number: j.job_number || '',
+      duration_min: j.duration_min || null,
       status: j.status, statusKey: sk, priority: j.priority, amount: amt, job_type: j.job_type || '', scheduledISO: j.scheduled_at, techId: j.tech_id || null,
     };
     if (j.tech_id && when) gridJobs.push(base);
