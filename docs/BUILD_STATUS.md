@@ -44,6 +44,21 @@ The tech iPad is a whole SPA. My Day is the home tab. Pieces, by status:
 - ⏳ Left-rail sub-screens: Start/End shift, **Bids**, **Chat**, **Hank**, **Pay**, **Races**,
   **Record**, **Vegas**, **Cal**, **PTO**. Each maps to a `CB_Dispatch_*` module — port one at a time.
 
+## 🎯 WOW features (committed — Devin's headline asks, do NOT drop)
+The reason 7 months of bridging matters — the moments that make the team go "whoa." All three are
+locked here. Each needs a key/provider; none ship as fire-and-forget.
+- ⏳ **Mass email button** — send a campaign/notice to many customers at once. ⚠️ GUARDRAIL (non-
+  negotiable, per the no-auto-send rule / zero-value payroll incident): it is **draft → preview the
+  list + copy → ONE internal approver (Ashley/Tracey/Devin) clicks Send → every send logged to an
+  audit table**. NEVER a one-click blast. Needs an email provider (Resend/SendGrid) + `EMAIL_API_KEY`.
+  Honor `do_not_mail` on customers. Batch + rate-limit.
+- ⏳ **Lawyer packet** — one click assembles a collections/legal packet for an overdue account
+  (customer, invoices, aging, comms history, AR cascade record) → PDF for Fore / McKinstry (Devin
+  picks the attorney per case). External send stays gated. Ties to the AR cascade already designed.
+- ⏳ **Plunger Pete — AI calling** — AI voice agent (Vapi/Bland) that calls on collections + warranty
+  + missed-lead follow-up. Needs `VAPI_API_KEY`. Recording URL + outcome logged back to the job/AR.
+  Internal-first (test numbers) before any real customer call.
+
 ## Widgets / next-level CRM (the web stack's edge over Sheets + ServiceTitan)
 Widgets are native here — building them out is a first-class goal, not a nice-to-have.
 - ✅ **AR aging widget** — live CSS bars (0-30/31-60/61-90/90+) on the home, from real invoices.
