@@ -82,8 +82,9 @@ export default async function MyDay({ searchParams }) {
               <div className="time">{fmtTime(j.scheduled_at)}</div>
               <div>
                 <div className="name">
+                  {urgent && <span className="alert-dot" aria-hidden="true" />}
                   {cust.name || 'Customer'}
-                  {urgent && <span className="pill" style={{ marginLeft: 8, color: 'var(--red)' }}>URGENT</span>}
+                  {urgent && <span className="pill pill-red pill-blink" style={{ marginLeft: 8 }}>URGENT</span>}
                 </div>
                 <div className="meta">
                   {cust.address || 'no address'}

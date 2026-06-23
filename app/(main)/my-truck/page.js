@@ -57,7 +57,7 @@ export default async function MyTruck({ searchParams }) {
               </div>
               {r.lowItems.length > 0 && (
                 <div className="meta" style={{ marginTop: 6, color: '#ff8a65' }}>
-                  ⚠ needs restock: {r.lowItems.join(', ')}{r.low > r.lowItems.length ? ` +${r.low - r.lowItems.length} more` : ''}
+                  <span className="alert-dot amber" aria-hidden="true" />needs restock: {r.lowItems.join(', ')}{r.low > r.lowItems.length ? ` +${r.low - r.lowItems.length} more` : ''}
                 </div>
               )}
             </Link>
@@ -98,7 +98,7 @@ export default async function MyTruck({ searchParams }) {
           <div className="card" style={{ padding: 0 }}>
             {parts.map((p) => (
               <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 13 }}>{p.name || p.sku}{p.bin ? <span className="muted" style={{ fontSize: 11 }}> · {p.bin}</span> : ''}</span>
+                <span style={{ fontSize: 13 }}>{isLow(p) && <span className="alert-dot amber" aria-hidden="true" />}{p.name || p.sku}{p.bin ? <span className="muted" style={{ fontSize: 11 }}> · {p.bin}</span> : ''}</span>
                 <span style={{ fontSize: 13, fontWeight: 700, color: isLow(p) ? '#ff8a65' : 'var(--fg-2)', whiteSpace: 'nowrap' }}>{Number(p.qty || 0)} {p.unit || 'ea'}{isLow(p) ? ' ⚠' : ''}</span>
               </div>
             ))}
