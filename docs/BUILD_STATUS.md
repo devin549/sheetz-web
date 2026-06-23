@@ -28,6 +28,7 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | Account / change password | /account | ✅ live | everyone; sets own password |
 | Team (add hire, set role) | /team | ✅ live | manageUsers only; server-enforced |
 | Home command center | / | ✅ live | role-aware KPIs + Owner-Sheet tile map |
+| Dispatch Board | /board | ✅ live (read) | status lanes (unassigned/scheduled/enroute/onsite/done); ⏳ drag-drop + realtime |
 | My Day | /my-day | ✅ live | self-scoped: tech→own jobs, helper→paired tech, office→all (+?tech) |
 | My Truck (fleet + detail) | /my-truck | ✅ live (read) | ⏳ actions: request transfer, loan a tool |
 | Shop (reorder + restock) | /shop | ✅ live (read) | ⏳ self-issue review queue (Reed) |
@@ -89,4 +90,6 @@ Widgets are native here — building them out is a first-class goal, not a nice-
 - See **`INFRA_GAME_PLAN.md`** for the full Supabase/Vercel/GitHub plan + tomorrow's first moves.
 
 ## Migrations run (Supabase SQL editor)
-02 customers ST cols · 03 CB numbers · 04 invoices AR · 05 truck+tools · **06 helper_assign (PENDING)**.
+02 customers ST cols · 03 CB numbers · 04 invoices AR · 05 truck+tools · 06 helper_assign · 07 job card
+fields · **08 jobs harden (PENDING — run next; fixes enroute CHECK + adds board columns)**.
+Pending to run: **06 + 07 + 08** (08 unblocks the board's tech assignment + status flow).
