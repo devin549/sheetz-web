@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
+import { can } from '@/lib/roles';
+import AssignControl from './AssignControl';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +31,8 @@ const LANES = [
 ];
 
 export default async function Board() {
-  await requireHref('/board');
+  const { role } = await requireHref('/board');
+  const canAssign = can(role, 'assignJobs');
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">🗂️ Dispatch Board</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel to read jobs.</div></div>;
@@ -38,11 +41,14 @@ export default async function Board() {
 
   // Rich select with graceful fallback (08_jobs_dispatch_harden.sql may not be run yet).
   const run = (extra) => sb.from('jobs')
-    .select('id, status, priority, scheduled_at' + extra + ', customers(name, address), techs(name)')
+    .select('id, status, priority, scheduled_at, tech_id' + extra + ', customers(name, address), techs(name)')
     .order('scheduled_at', { ascending: true });
   let res = await run(', job_number, job_type, amount, tech_name');
   if (res.error && /column .* does not exist/i.test(res.error.message || '')) res = await run('');
   const { data: jobs, error } = res;
+
+  // Tech list for the assignment picker (only if the user can assign).
+  const techs = canAssign ? ((await sb.from('techs').select('id, name').order('name')).data || []) : [];
 
   // Bucket into lanes.
   const buckets = { unassigned: [], scheduled: [], enroute: [], onsite: [], done: [] };
@@ -101,6 +107,9 @@ export default async function Board() {
                       {j._tech ? `👷 ${j._tech}` : '⚠ needs a tech'}
                       {j.job_number ? <span className="muted" style={{ fontWeight: 400, fontFamily: 'monospace' }}> · #{j.job_number}</span> : null}
                     </div>
+                    {canAssign && lane.key !== 'done' && (
+                      <AssignControl jobId={j.id} techs={techs} currentId={j.tech_id} accent={lane.accent} />
+                    )}
                   </div>
                 );
               })}
