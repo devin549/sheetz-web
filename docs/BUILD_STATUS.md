@@ -29,7 +29,8 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | Account / change password | /account | ✅ live | everyone; sets own password |
 | Team (add hire, set role) | /team | ✅ live | manageUsers only; server-enforced |
 | Home command center | / | ✅ live | role-aware KPIs + Owner-Sheet tile map |
-| Dispatch Board | /board | ✅ live | Dispatch-Live look + **drag-drop assign** (tray→tech row, snaps 15min; drag blocks to move) + **live NOW line** (px-per-hour layout adapted from live `dispatchboard_timegrid.html`). ⏳ realtime auto-refresh, Map/Roster/Week/Capacity, trade+skill badges + util%, goal targets, BU filter, global search, full left-nav |
+| Theme | globals.css | ✅ live | **EXACT live-board palette** ported (#0e1116 cool dark + #FF6B00 accent, cream light) from `dispatchboard_index.html` — app-wide, `--amber` aliased to accent |
+| Dispatch Board | /board | ✅ live | Dispatch-Live look + drag-drop assign + NOW line + **click job → detail PANEL** (status banner, tap-to-call, maps, billing, action bar) + **status changes** (en route/on site/complete, role-gated, optimistic). ⏳ right-click context menu, cancel-with-reason, moveJob hardening (active-tech guard + audit), realtime, Map/Roster/Week, global search, clickable filters, day-nav, full left-nav, Job Booking |
 | My Day | /my-day | ✅ live | self-scoped: tech→own jobs, helper→paired tech, office→all (+?tech) |
 | My Truck (fleet + detail) | /my-truck | ✅ live (read) | ⏳ actions: request transfer, loan a tool |
 | Shop (reorder + restock) | /shop | ✅ live (read) | ⏳ self-issue review queue (Reed) |
