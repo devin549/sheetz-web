@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { roleOf, canSee } from '@/lib/nav';
 import { can, roleMeta } from '@/lib/roles';
+import AskBoard from './ask/AskBoard';
 
 export const dynamic = 'force-dynamic';
 
@@ -165,6 +166,8 @@ export default async function Home() {
       )}
 
       {kpis && kpis.aging && can(role, 'seeFinancials') && <AgingWidget aging={kpis.aging} />}
+
+      {can(role, 'seeReports') && <AskBoard />}
 
       <h3 style={{ margin: '22px 0 8px', fontSize: 12, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
         Command center
