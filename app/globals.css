@@ -1,0 +1,71 @@
+/* CB / Sheetz theme — dark amber, never neon (matches the iPad/board brand). */
+:root {
+  --bg: #14100a;
+  --surface-1: #1e1810;
+  --surface-2: #2a2216;
+  --border: #3a3020;
+  --amber: #d99a2b;
+  --amber-bright: #ffb300;
+  --amber-dim: #7a5a1e;
+  --fg-1: #f3ead8;
+  --fg-2: #c9bfa8;
+  --fg-3: #8a8068;
+  --green: #4caf50;
+  --red: #ef5350;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg-1);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--amber); text-decoration: none; }
+a:hover { color: var(--amber-bright); }
+
+.wrap { max-width: 720px; margin: 0 auto; padding: 18px 16px 48px; }
+
+.topbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--surface-1), var(--bg));
+  position: sticky; top: 0; z-index: 10;
+}
+.topbar .logo { font-size: 22px; }
+.topbar .title { font-weight: 800; font-size: 16px; }
+.topbar .sub { font-size: 11px; color: var(--fg-3); }
+
+.card {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+}
+.card-amber { border-color: var(--amber-dim); }
+
+.job {
+  display: grid; grid-template-columns: 64px 1fr auto; gap: 12px; align-items: center;
+}
+.job .time { font-weight: 800; color: var(--amber); font-size: 14px; }
+.job .name { font-weight: 700; font-size: 15px; color: var(--fg-1); }
+.job .meta { font-size: 12px; color: var(--fg-3); margin-top: 2px; }
+.pill {
+  font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 9px;
+  background: var(--surface-2); color: var(--fg-2); white-space: nowrap;
+}
+.pill-green { background: rgba(76,175,80,.14); color: var(--green); }
+
+.muted { color: var(--fg-3); font-size: 13px; }
+.h1 { font-size: 22px; font-weight: 800; margin: 14px 0 4px; }
+.notice {
+  background: rgba(217,154,43,.08); border: 1px solid var(--amber-dim);
+  border-radius: 12px; padding: 16px 18px; margin: 14px 0; font-size: 13px; line-height: 1.55;
+}
+.notice code { background: var(--surface-2); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+.btn {
+  display: inline-block; background: var(--amber); color: #1a1206; font-weight: 800;
+  padding: 11px 18px; border-radius: 10px; font-size: 14px; border: none; cursor: pointer;
+}
