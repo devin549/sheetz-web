@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getSupabase, isSupabaseConfigured } from '@/lib/supabaseClient';
+import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireRole } from '@/lib/guard';
 
 // Always read fresh (no static caching) — this is live job data.
@@ -28,7 +28,7 @@ export default async function MyDay({ searchParams }) {
   await requireRole(['owner', 'tech']);
   const tech = (searchParams?.tech || '').trim();
 
-  if (!isSupabaseConfigured) {
+  if (!isAdminConfigured) {
     return (
       <div className="wrap">
         <div className="h1">📋 My Day</div>
@@ -37,7 +37,7 @@ export default async function MyDay({ searchParams }) {
     );
   }
 
-  const supabase = getSupabase();
+  const supabase = getSupabaseAdmin();
   // Reads YOUR real relational schema: jobs link to customers + techs by id.
   const sel = 'id, status, priority, scheduled_at, customers(name, address), techs' + (tech ? '!inner' : '') + '(name)';
   let query = supabase.from('jobs').select(sel).order('scheduled_at', { ascending: true });
