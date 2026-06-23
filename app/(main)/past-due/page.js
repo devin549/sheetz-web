@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { requireRole } from '@/lib/guard';
+import { requireHref } from '@/lib/guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +17,7 @@ function ageColor(dateStr) {
 }
 
 export default async function PastDue() {
-  await requireRole(['owner', 'office']);
+  await requireHref('/past-due');
   if (!isAdminConfigured) {
     return (
       <div className="wrap">

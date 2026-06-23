@@ -1,11 +1,10 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { roleOf } from '@/lib/nav';
+import { roleOf, canSee } from '@/lib/nav';
+import { can, roleMeta } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
-
-const ROLE_LABEL = { owner: 'Owner', office: 'Office', tech: 'Tech' };
 
 function money(n) {
   const v = Number(n || 0);
@@ -16,8 +15,9 @@ function isLow(p) {
   const rp = p.reorder_point != null ? Number(p.reorder_point) : 3;
   return Number(p.qty || 0) <= rp;
 }
+const isField = (r) => ['owner', 'admin', 'tech', 'foreman', 'fs'].includes(r);
 
-// Pull the live numbers the owner/office home shows. Server-side (service_role) — RLS-safe.
+// Live numbers for the home strip. Server-side (service_role) — RLS-safe.
 async function loadKpis() {
   if (!isAdminConfigured) return null;
   const sb = getSupabaseAdmin();
@@ -39,18 +39,12 @@ async function loadKpis() {
     sb.from('truck_inventory').select('tech_name, qty, reorder_point').then((r) => r.data || []).catch(() => []),
     sb.from('tools').select('value').then((r) => r.data || []).catch(() => []),
   ]);
-
   const openJobs = jobRows.filter((j) => /scheduled|on_site/i.test(String(j.status || ''))).length;
   const urgent = jobRows.filter((j) => /high|urgent|emergency/i.test(String(j.priority || ''))).length;
   const trucks = new Set(invStock.map((p) => p.tech_name || 'Unassigned')).size;
   const lowStock = invStock.filter(isLow).length;
   const toolVal = toolRows.reduce((a, t) => a + (Number(t.value) || 0), 0);
-
-  return {
-    customers: custCount,
-    ar: invRows.total, openInv: invRows.count,
-    openJobs, urgent, trucks, lowStock, toolVal,
-  };
+  return { customers: custCount, ar: invRows.total, openInv: invRows.count, openJobs, urgent, trucks, lowStock, toolVal };
 }
 
 function Kpi({ value, label, href, color, blink }) {
@@ -65,66 +59,73 @@ function Kpi({ value, label, href, color, blink }) {
   return href ? <Link href={href} style={{ textDecoration: 'none', color: 'inherit' }}>{inner}</Link> : inner;
 }
 
-// The Owner Sheet section map — every area has a home so nothing gets "rediscovered".
-// `href` = built & live. `soon` = ported next (links to the role-API checklist meanwhile).
+// Owner Sheet section map — each tile gated by the SAME permission model. Built ones link
+// (canSee → reuses the nav rule); the rest show "porting →" so every role sees its real map.
 function commandTiles(role) {
-  const all = [
-    { icon: '💰', label: 'Money & AR', sub: 'past-due, collections cascade', href: '/past-due', roles: ['owner', 'office'] },
-    { icon: '📋', label: 'Jobs / My Day', sub: 'today’s board, live status', href: '/my-day', roles: ['owner', 'office', 'tech'] },
-    { icon: '👥', label: 'Customers', sub: '13k ST base, CB numbers', href: '/customers', roles: ['owner', 'office'] },
-    { icon: '🚐', label: 'Fleet & Trucks', sub: 'van stock, tools, restock', href: '/my-truck', roles: ['owner', 'tech'] },
-    { icon: '🏪', label: 'Shop', sub: 'reorder list, restock runs', href: '/shop', roles: ['owner', 'shop'] },
-    { icon: '📲', label: 'Booking / Dispatch', sub: 'CSR booking + live board', soon: true, roles: ['owner', 'office'] },
-    { icon: '📈', label: 'Marketing & Intel', sub: 'SerpAPI rank, review tracker', soon: true, roles: ['owner'] },
-    { icon: '🛡️', label: 'Warranty (Pete)', sub: '16-provider claim pipeline', soon: true, roles: ['owner', 'office'] },
-    { icon: '📞', label: 'Call Intelligence', sub: 'listen, summarize, redact', soon: true, roles: ['owner'] },
-    { icon: '🧾', label: 'Accounting / Receipts', sub: 'OCR + classify + match', soon: true, roles: ['owner', 'office'] },
-    { icon: '💸', label: 'Payroll', sub: 'closed-job pay → approval gate', soon: true, roles: ['owner', 'office'] },
-    { icon: '⭐', label: 'Reviews & Reputation', sub: 'watcher + heat detector', soon: true, roles: ['owner'] },
-    { icon: '🧑‍✈️', label: 'Team & Roster', sub: 'supervisors, crews, scorecards', soon: true, roles: ['owner'] },
-    { icon: '🩺', label: 'System Health', sub: 'self-audit + LSA alerts', soon: true, roles: ['owner'] },
-  ];
-  return all.filter((t) => t.roles.includes(role));
+  return [
+    { icon: '💰', label: 'Money & AR', sub: 'past-due, collections', href: '/past-due', show: (r) => canSee('/past-due', r) },
+    { icon: '📋', label: 'Jobs / My Day', sub: 'today’s board, status', href: '/my-day', show: (r) => canSee('/my-day', r) },
+    { icon: '👥', label: 'Customers', sub: '13k base, CB numbers', href: '/customers', show: (r) => canSee('/customers', r) },
+    { icon: '🚐', label: 'Fleet & Trucks', sub: 'van stock, tools', href: '/my-truck', show: (r) => canSee('/my-truck', r) },
+    { icon: '🏪', label: 'Shop', sub: 'reorder, restock runs', href: '/shop', show: (r) => canSee('/shop', r) },
+    { icon: '📲', label: 'Booking / Dispatch', sub: 'book + live board', soon: true, show: (r) => can(r, 'createJobs') || can(r, 'assignJobs') || can(r, 'seeQueue') },
+    { icon: '📈', label: 'Marketing & Intel', sub: 'rank, reviews, leads', soon: true, show: (r) => r === 'marketing' || r === 'gm' || r === 'owner' || r === 'admin' },
+    { icon: '🛡️', label: 'Warranty (Pete)', sub: 'claim pipeline', soon: true, show: (r) => can(r, 'contactCustomer') && can(r, 'seeAllJobs') },
+    { icon: '📞', label: 'Call Intelligence', sub: 'listen, summarize', soon: true, show: (r) => can(r, 'manageUsers') },
+    { icon: '🧾', label: 'Accounting / Receipts', sub: 'OCR + classify', soon: true, show: (r) => can(r, 'seeFinancials') },
+    { icon: '💸', label: 'Payroll', sub: 'closed-job pay → gate', soon: true, show: (r) => can(r, 'seeFinancials') },
+    { icon: '⭐', label: 'Reviews & Reputation', sub: 'watcher + heat', soon: true, show: (r) => can(r, 'seeReports') },
+    { icon: '🧑‍✈️', label: 'Team & Roster', sub: 'crews, scorecards', soon: true, show: (r) => can(r, 'manageUsers') || can(r, 'seeCrew') },
+    { icon: '🩺', label: 'System Health', sub: 'self-audit + alerts', soon: true, show: (r) => r === 'owner' || r === 'admin' },
+  ].filter((t) => t.show(role));
 }
 
 export default async function Home() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const role = roleOf(user);
+  const meta = roleMeta(role);
   const fullName = (user && user.user_metadata && user.user_metadata.name) || (user && user.email) || '';
   const first = String(fullName).split(/[\s@]/)[0] || 'there';
 
-  const showKpis = role === 'owner' || role === 'office';
-  const kpis = showKpis ? await loadKpis() : null;
+  // Show the KPI strip if the role can see anything on it; load once, gate each tile.
+  const wantsKpis = can(role, 'seeFinancials') || can(role, 'seeAllJobs') || isField(role) || role === 'shop';
+  const kpis = wantsKpis ? await loadKpis() : null;
   const tiles = commandTiles(role);
 
-  const title = role === 'owner' ? 'Owner Command Center'
-    : role === 'office' ? 'Office Command Center'
+  const title = (role === 'owner' || role === 'admin') ? 'Owner Command Center'
+    : isField(role) ? 'My Field Day'
       : role === 'shop' ? 'Shop'
-        : 'My Field Day';
+        : `${meta.label} · Command Center`;
+
+  // Each KPI gated by the permission it represents.
+  const kpiDefs = kpis ? [
+    { show: can(role, 'seeFinancials'), el: <Kpi key="ar" value={money(kpis.ar)} label="AR outstanding" href="/past-due" /> },
+    { show: can(role, 'seeFinancials'), el: <Kpi key="inv" value={kpis.openInv.toLocaleString()} label="open invoices" href="/past-due" /> },
+    { show: canSee('/my-day', role), el: <Kpi key="jobs" value={kpis.openJobs} label="open jobs" href="/my-day" /> },
+    { show: canSee('/my-day', role), el: <Kpi key="urg" value={kpis.urgent} label="urgent" href="/my-day" color={kpis.urgent ? 'var(--red)' : 'var(--green)'} blink={kpis.urgent > 0} /> },
+    { show: canSee('/customers', role), el: <Kpi key="cust" value={kpis.customers.toLocaleString()} label="customers" href="/customers" /> },
+    { show: canSee('/my-truck', role), el: <Kpi key="trk" value={kpis.trucks} label="trucks" href="/my-truck" /> },
+    { show: canSee('/shop', role) || isField(role), el: <Kpi key="low" value={kpis.lowStock} label="low stock" href={canSee('/shop', role) ? '/shop' : '/my-truck'} color={kpis.lowStock ? '#ff8a65' : 'var(--green)'} blink={kpis.lowStock > 0} /> },
+    { show: canSee('/my-truck', role), el: <Kpi key="tv" value={money(kpis.toolVal)} label="tools on vans" href="/my-truck" color="var(--green-bright)" /> },
+  ].filter((k) => k.show) : [];
 
   return (
     <div className="wrap">
       <div className="h1">{title}</div>
       <p className="muted">
-        Welcome back, {first}. Signed in as <strong style={{ color: 'var(--amber)' }}>{ROLE_LABEL[role] || role}</strong>.
-        {showKpis ? ' Live snapshot from Supabase:' : ' Pick a screen to get rolling:'}
+        Welcome back, {first}. Signed in as{' '}
+        <strong style={{ color: meta.color }}>{meta.label}</strong>{' '}
+        <span className="muted">· {meta.short}</span>.
+        {kpiDefs.length ? ' Live snapshot:' : ' Pick a screen to get rolling:'}
       </p>
 
-      {showKpis && kpis && (
+      {kpiDefs.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, margin: '14px 0' }}>
-          <Kpi value={money(kpis.ar)} label="AR outstanding" href="/past-due" />
-          <Kpi value={kpis.openInv.toLocaleString()} label="open invoices" href="/past-due" />
-          <Kpi value={kpis.openJobs} label="open jobs" href="/my-day" />
-          <Kpi value={kpis.urgent} label="urgent" href="/my-day" color={kpis.urgent ? 'var(--red)' : 'var(--green)'} blink={kpis.urgent > 0} />
-          <Kpi value={kpis.customers.toLocaleString()} label="customers" href="/customers" />
-          <Kpi value={kpis.trucks} label="trucks" href="/my-truck" />
-          <Kpi value={kpis.lowStock} label="low stock" href="/shop" color={kpis.lowStock ? '#ff8a65' : 'var(--green)'} blink={kpis.lowStock > 0} />
-          <Kpi value={money(kpis.toolVal)} label="tools on vans" href="/my-truck" color="var(--green-bright)" />
+          {kpiDefs.map((k) => k.el)}
         </div>
       )}
-
-      {showKpis && !kpis && (
+      {wantsKpis && !kpis && (
         <div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel and the live numbers fill in here.</div>
       )}
 
@@ -150,8 +151,9 @@ export default async function Home() {
       </div>
 
       <p className="muted" style={{ fontSize: 12, marginTop: 16 }}>
-        Every tile maps to an Owner Sheet area. <strong>Live ✓</strong> is ported and reading real data;
-        <strong> porting →</strong> is next on the list (see <code>docs/API_INTEGRATIONS_BY_ROLE.md</code>).
+        Tiles are gated by your role’s real permissions (ported from the live board).
+        <strong> live ✓</strong> reads real data; <strong>porting →</strong> is next
+        (see <code>docs/API_INTEGRATIONS_BY_ROLE.md</code>).
       </p>
     </div>
   );

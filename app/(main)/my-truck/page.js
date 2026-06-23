@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { requireRole } from '@/lib/guard';
+import { requireHref } from '@/lib/guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +17,7 @@ function Section({ title, children }) {
 }
 
 export default async function MyTruck({ searchParams }) {
-  const { user, role } = await requireRole(['owner', 'tech']);
+  const { user, role } = await requireHref('/my-truck');
   const myName = (user.user_metadata && user.user_metadata.name) || '';
   const techParam = (searchParams && searchParams.tech ? String(searchParams.tech) : '').trim();
   // a tech only ever sees their own truck; an owner sees the fleet, or one tech via ?tech=

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { requireRole } from '@/lib/guard';
+import { requireHref } from '@/lib/guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +17,7 @@ function Section({ title, children }) {
 }
 
 export default async function Shop() {
-  await requireRole(['owner', 'shop']);
+  await requireHref('/shop');
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">🏪 Shop</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel to read inventory.</div></div>;

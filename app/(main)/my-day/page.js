@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { requireRole } from '@/lib/guard';
+import { requireHref } from '@/lib/guard';
 
 // Always read fresh (no static caching) — this is live job data.
 export const dynamic = 'force-dynamic';
@@ -25,7 +25,7 @@ function SetupCard() {
 }
 
 export default async function MyDay({ searchParams }) {
-  await requireRole(['owner', 'tech']);
+  await requireHref('/my-day');
   const tech = (searchParams?.tech || '').trim();
 
   if (!isAdminConfigured) {

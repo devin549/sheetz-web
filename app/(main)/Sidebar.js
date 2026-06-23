@@ -3,12 +3,12 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { navFor } from '@/lib/nav';
-
-const ROLE_LABEL = { owner: 'Owner', office: 'Office', tech: 'Tech' };
+import { roleMeta } from '@/lib/roles';
 
 export default function Sidebar({ role, name }) {
   const path = usePathname();
   const items = navFor(role);
+  const meta = roleMeta(role);
 
   return (
     <aside
@@ -42,7 +42,7 @@ export default function Sidebar({ role, name }) {
 
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 8 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--fg-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-        <div style={{ fontSize: 10, color: 'var(--amber)', marginBottom: 8 }}>{ROLE_LABEL[role] || role}</div>
+        <div style={{ fontSize: 10, color: meta.color, marginBottom: 8 }}>{meta.label}</div>
         <form action="/auth/signout" method="post">
           <button
             type="submit"
