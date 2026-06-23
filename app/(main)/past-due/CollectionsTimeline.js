@@ -37,6 +37,10 @@ export default function CollectionsTimeline({ customerId, oldestDays, address, c
             {STEPS.map(([ch, lbl]) => (
               <button key={ch} onClick={() => logIt(ch)} disabled={pending} className="pill" style={{ cursor: 'pointer', fontSize: 11, border: '1px solid var(--border-strong)', background: 'transparent', color: 'var(--fg-2)' }}>{lbl}</button>
             ))}
+            <a href={`/pete?customer=${customerId}&purpose=collections`} className="pill"
+              style={{ fontSize: 11, fontWeight: 700, textDecoration: 'none', border: '1px solid var(--border-strong)', background: 'transparent', color: 'var(--fg-2)' }}>
+              📞 Call with Pete
+            </a>
             <a href={`/past-due/packet/${customerId}`} target="_blank" rel="noopener" onClick={() => logIt('packet')} className="pill"
               style={{ fontSize: 11, fontWeight: 800, textDecoration: 'none', border: na.lien ? '1px solid var(--red)' : '1px solid var(--border-strong)', background: na.lien ? 'rgba(239,83,80,.14)' : 'transparent', color: na.lien ? 'var(--red)' : 'var(--fg-2)' }}>
               ⚖️ Build lawyer packet

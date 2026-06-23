@@ -70,9 +70,18 @@ locked here. Each needs a key/provider; none ship as fire-and-forget.
   + KY statutory refs (KRS 376 lien / 6-mo window, KRS 413.090/413.120). **🖨️ Print / Save as PDF** (no PDF
   lib — `@media print` hides app chrome → clean white doc in light OR dark). Opened from the AR timeline
   **⚖️ Build lawyer packet** button (logs a `packet` contact). External send still gated.
-- ⏳ **Plunger Pete — AI calling** — AI voice agent (Vapi/Bland) that calls on collections + warranty
-  + missed-lead follow-up. Needs `VAPI_API_KEY`. Recording URL + outcome logged back to the job/AR.
-  Internal-first (test numbers) before any real customer call.
+- ✅ **Plunger Pete — AI calling** — `/pete` ("📞 Plunger Pete"), ported from `Owner_Sheet/
+  CB_Owner_PP_Vapi_v1.js` (Vapi REST `/call`, E.164 normalize, status enum, refusals, transcript log,
+  webhook callback). Purposes: collections / warranty / missed-lead. **Two safety rails in code:**
+  (1) **internal-test-first** — a "test call" only dials numbers on the `PETE_TEST_NUMBERS` allowlist
+  (can’t back-door a real number through test mode); (2) **approver release** — a real customer call
+  sits `queued` until an approver (`canApprovePete` = owner/GM/Tracey-OM/Ashley-accounting) clicks
+  Approve & Call. Every call logged to `pete_calls` (mig 15) w/ recording URL + summary + outcome via
+  the **`/api/vapi` webhook** (secret-verified; middleware now lets `/api/*` through). Collections
+  context (balance + days-late) auto-fed to the assistant. Launchable from the AR timeline (**📞 Call
+  with Pete**, prefilled). Provider gated on `VAPI_API_KEY`/`VAPI_PHONE_NUMBER_ID`/`VAPI_ASSISTANT_ID`
+  (+ `VAPI_WEBHOOK_SECRET`, `PETE_TEST_NUMBERS`). _Setup owed: run `supabase/15_pete_calls.sql`; add the
+  VAPI_* env + point the Vapi assistant Server URL at `/api/vapi?secret=…`._
 
 ## Widgets / next-level CRM (the web stack's edge over Sheets + ServiceTitan)
 Widgets are native here — building them out is a first-class goal, not a nice-to-have.
@@ -107,4 +116,5 @@ Widgets are native here — building them out is a first-class goal, not a nice-
 fields · 08 jobs harden · 09 techs_crew · 10 cancellations+duration · 11 ai_usage · 12 ar_activity ·
 13 collections_log — **all run ✅ (6/23)**. (Note: helper_assignments uses `time_window`, not `window`
 — reserved word.) **14 email_campaigns + email_sends — ⏳ NOT RUN YET** (mass-email audit tables; run
-`supabase/14_email_campaigns.sql`). Later: leads, bookings, truck_transfers+tool_loans, realtime.
+`supabase/14_email_campaigns.sql`). **15 pete_calls — ⏳ NOT RUN YET** (Plunger Pete AI-call log; run
+`supabase/15_pete_calls.sql`). Later: leads, bookings, truck_transfers+tool_loans, realtime.
