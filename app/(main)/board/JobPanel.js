@@ -32,7 +32,7 @@ const KV = ({ k, v }) => (
 const btnGhost = { padding: '7px 12px', fontSize: 12, background: 'var(--bg)', color: 'var(--fg-2)', border: '1px solid var(--border-strong)', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' };
 const btnPrimary = { ...btnGhost, flex: 1, textAlign: 'center', background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)', fontWeight: 800 };
 
-export default function JobPanel({ job, techName, canStatus, canAssign, onClose }) {
+export default function JobPanel({ job, techName, techs = [], canStatus, canAssign, onClose }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [err, setErr] = useState(null);
@@ -49,6 +49,8 @@ export default function JobPanel({ job, techName, canStatus, canAssign, onClose 
   const act = (fn) => start(async () => { const res = await fn(); if (res && !res.ok) setErr(res.msg); else { setErr(null); router.refresh(); onClose(); } });
   const setStatus = (s) => act(() => updateJobStatus(job.id, s));
   const unassign = () => act(() => assignTech(job.id, null));
+  // Reassign to another tech, keeping the same scheduled time.
+  const reassign = (techId) => act(() => assignTech(job.id, techId || null, job.scheduledISO || undefined));
 
   return (
     <>
@@ -76,7 +78,17 @@ export default function JobPanel({ job, techName, canStatus, canAssign, onClose 
         <div style={{ flex: 1, overflow: 'auto' }}>
           <Section label="Assignment">
             <KV k="Assigned to" v={techName || 'Unassigned'} />
-            {techName && canAssign && <button onClick={unassign} disabled={pending} style={{ ...btnGhost, marginTop: 6 }}>Send to queue</button>}
+            {canAssign && (
+              <>
+                <div style={{ fontSize: 10, color: 'var(--fg-3)', margin: '8px 0 4px' }}>Reassign to a tech</div>
+                <select value={job.techId || ''} onChange={(e) => reassign(e.target.value)} disabled={pending}
+                  style={{ width: '100%', padding: '8px 10px', fontSize: 13, background: 'var(--surface-2)', color: 'var(--fg-1)', border: '1px solid var(--border-strong)', borderRadius: 6, cursor: 'pointer' }}>
+                  <option value="">— Unassigned (queue) —</option>
+                  {techs.map((t) => <option key={t.id} value={t.id}>{t.name}{t.crew ? ` · ${t.crew}` : ''}</option>)}
+                </select>
+                {techName && <button onClick={unassign} disabled={pending} style={{ ...btnGhost, marginTop: 6 }}>Send to queue</button>}
+              </>
+            )}
           </Section>
 
           <Section label="Customer">

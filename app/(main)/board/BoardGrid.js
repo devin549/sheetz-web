@@ -94,6 +94,18 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   const rows = [];
   Object.keys(crews).sort().forEach((c) => { rows.push({ kind: 'crew', name: c }); crews[c].forEach((t) => rows.push({ kind: 'tech', tech: t })); });
   const techAtRow = (i) => (rows[i] && rows[i].kind === 'tech' ? rows[i].tech : null);
+  // Forgiving target: if you land on a crew header or just past the edge, snap to the NEAREST tech
+  // row instead of failing (fixes "near the edge it won't work").
+  const nearestTechRow = (idx) => {
+    const n = rows.length; if (!n) return null;
+    let i = Math.max(0, Math.min(n - 1, idx));
+    if (rows[i].kind === 'tech') return rows[i].tech;
+    for (let d = 1; d < n; d++) {
+      if (rows[i - d] && rows[i - d].kind === 'tech') return rows[i - d].tech;
+      if (rows[i + d] && rows[i + d].kind === 'tech') return rows[i + d].tech;
+    }
+    return null;
+  };
 
   // index grid jobs by techId
   const byTech = {};
@@ -155,10 +167,12 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
       const m = moveRef.current; const body = bodyRef.current; if (!m || !body) return;
       setMoveDrag((d) => d && { ...d, mouseX: mx, mouseY: my });
       if (Math.abs(mx - m.sx) > 4 || Math.abs(my - m.sy) > 4) didMove.current = true;
+      // auto-scroll when the cursor nears the grid's left/right edge (reach off-screen hours)
+      const g = gridRef.current;
+      if (g) { const gr = g.getBoundingClientRect(); const EDGE = 70; if (mx > gr.right - EDGE) g.scrollLeft += 22; else if (mx < gr.left + TECH_COL + EDGE) g.scrollLeft = Math.max(0, g.scrollLeft - 22); }
       const r = body.getBoundingClientRect();
       const laneX = mx - r.left - TECH_COL - m.offsetX;
-      const rowIdx = Math.floor((my - r.top) / ROW_H);
-      const tech = techAtRow(rowIdx);
+      const tech = nearestTechRow(Math.floor((my - r.top) / ROW_H)); // forgiving — snaps to closest tech
       if (!tech) { hoverRef.current = null; setMoveHover(null); return; }
       const snapped = Math.round((laneX / PX_PER_HOUR) * 4) / 4;
       const startHour = Math.max(0, Math.min(24 - m.durationHours, snapped));
@@ -342,7 +356,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
         </div>
       )}
 
-      {sel && <JobPanel job={sel} techName={techName(sel.techId)} canStatus={canStatus} canAssign={canAssign} onClose={() => setSel(null)} />}
+      {sel && <JobPanel job={sel} techName={techName(sel.techId)} techs={techs} canStatus={canStatus} canAssign={canAssign} onClose={() => setSel(null)} />}
       <ContextMenu menu={menu} onClose={() => setMenu(null)} onAction={onMenuAction} canMutate={canStatus || canAssign} />
       {cancelT && <CancelModal job={cancelT} onClose={() => setCancelT(null)} onDone={() => { setCancelT(null); refresh(); }} />}
       {durT && <DurationModal job={durT} onClose={() => setDurT(null)} onDone={() => { setDurT(null); refresh(); }} />}
