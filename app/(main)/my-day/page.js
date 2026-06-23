@@ -1,6 +1,12 @@
 import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
+import { can } from '@/lib/roles';
+
+function todayKey() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+}
 
 // Always read fresh (no static caching) — this is live job data.
 export const dynamic = 'force-dynamic';
@@ -25,8 +31,7 @@ function SetupCard() {
 }
 
 export default async function MyDay({ searchParams }) {
-  await requireHref('/my-day');
-  const tech = (searchParams?.tech || '').trim();
+  const { user, role } = await requireHref('/my-day');
 
   if (!isAdminConfigured) {
     return (
@@ -38,22 +43,71 @@ export default async function MyDay({ searchParams }) {
   }
 
   const supabase = getSupabaseAdmin();
-  // Reads YOUR real relational schema: jobs link to customers + techs by id.
-  const sel = 'id, status, priority, scheduled_at, customers(name, address), techs' + (tech ? '!inner' : '') + '(name)';
-  let query = supabase.from('jobs').select(sel).order('scheduled_at', { ascending: true });
-  if (tech) query = query.ilike('techs.name', '%' + tech + '%');
+  const myName = (user.user_metadata && user.user_metadata.name) || '';
+  const myEmail = (user.email || '').toLowerCase();
+  const seeAll = can(role, 'seeAllJobs');           // owner/dispatcher/csr/gm/om/fs/viewer/sales/marketing/accounting
+  const officeFilter = (searchParams?.tech || '').trim();
 
-  const { data: jobs, error } = await query;
+  // Decide WHOSE jobs this person sees.
+  //   seeAll  → everyone (optional ?tech filter)
+  //   helper  → the tech they're paired with TODAY (helper_assignments)
+  //   else    → their own jobs (field tech / foreman)
+  let scopeName = null;     // tech name to filter by (null = all)
+  let scopeLabel = '';      // heading suffix
+  let subtitle = '';
+  let note = null;          // {kind, msg} → show a friendly card instead of jobs
+
+  if (seeAll) {
+    scopeName = officeFilter || null;
+    scopeLabel = officeFilter ? ` · ${officeFilter}` : '';
+    subtitle = officeFilter ? 'one tech' : 'all techs';
+  } else if (role === 'helper') {
+    const { data: pair, error: pErr } = await supabase
+      .from('helper_assignments').select('tech_name')
+      .eq('date_key', todayKey()).ilike('helper_email', myEmail)
+      .order('created_at', { ascending: false }).limit(1);
+    if (pErr) note = { kind: 'helperSetup', msg: pErr.message };
+    else if (pair && pair.length && pair[0].tech_name) {
+      scopeName = pair[0].tech_name;
+      scopeLabel = ` · with ${pair[0].tech_name}`;
+      subtitle = `riding with ${pair[0].tech_name} today`;
+    } else note = { kind: 'helperNone' };
+  } else {
+    if (!myName) note = { kind: 'noName' };
+    else { scopeName = myName; scopeLabel = ` · ${myName}`; subtitle = 'your jobs today'; }
+  }
+
+  // Load jobs unless we're showing a note instead.
+  let jobs = null, error = null;
+  if (!note) {
+    const useFilter = !!(scopeName && scopeName.length);
+    const sel = 'id, status, priority, scheduled_at, customers(name, address), techs' + (useFilter ? '!inner' : '') + '(name)';
+    let query = supabase.from('jobs').select(sel).order('scheduled_at', { ascending: true });
+    if (useFilter) query = query.ilike('techs.name', '%' + scopeName + '%');
+    const res = await query;
+    jobs = res.data; error = res.error;
+  }
 
   return (
     <div className="wrap">
-      <div className="h1">📋 My Day{tech ? ` · ${tech}` : ''}</div>
+      <div className="h1">📋 My Day{scopeLabel}</div>
       <p className="muted">
-        Live from Supabase{tech ? '' : ' · all techs'} ·{' '}
-        {tech ? <Link href="/my-day">show everyone</Link> : <span>add <code>?tech=Name</code> to filter</span>}
+        Live from Supabase{subtitle ? ` · ${subtitle}` : ''}
+        {seeAll && officeFilter ? <> · <Link href="/my-day">show everyone</Link></> : null}
+        {seeAll && !officeFilter ? <> · <span>add <code>?tech=Name</code> to filter</span></> : null}
       </p>
 
-      {error && (
+      {note && note.kind === 'helperNone' && (
+        <div className="card"><span className="muted">No assignment yet — the office sets who you&apos;re riding with each day. Check back once they pair you up.</span></div>
+      )}
+      {note && note.kind === 'helperSetup' && (
+        <div className="notice"><strong>Helper day isn&apos;t set up yet.</strong> Run <code>supabase/06_helper_assign.sql</code> in Supabase, then the office can pair helpers to techs. <div className="muted" style={{ marginTop: 6, fontSize: 11 }}>{note.msg}</div></div>
+      )}
+      {note && note.kind === 'noName' && (
+        <div className="notice"><strong>Your account has no name set.</strong> Ask the office to add your name on the Team screen so we can match your jobs.</div>
+      )}
+
+      {!note && error && (
         <div className="notice">
           <strong>Couldn&apos;t load jobs.</strong> {error.message}
           <div style={{ marginTop: 8 }}>
@@ -63,15 +117,15 @@ export default async function MyDay({ searchParams }) {
         </div>
       )}
 
-      {!error && (!jobs || jobs.length === 0) && (
+      {!note && !error && (!jobs || jobs.length === 0) && (
         <div className="card">
           <span className="muted">
-            No jobs yet. Run <code>supabase/seed.sql</code> in Supabase to drop in a few samples, then refresh.
+            {seeAll ? 'No jobs yet. Run supabase/seed.sql in Supabase to drop in a few samples, then refresh.' : 'Nothing on your schedule today. 🎉'}
           </span>
         </div>
       )}
 
-      {!error && jobs && jobs.map((j) => {
+      {!note && !error && jobs && jobs.map((j) => {
         const cust = j.customers || {};
         const t = j.techs || {};
         const done = /done|complete|closed/i.test(j.status || '');
