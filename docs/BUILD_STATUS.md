@@ -117,4 +117,6 @@ fields · 08 jobs harden · 09 techs_crew · 10 cancellations+duration · 11 ai_
 13 collections_log — **all run ✅ (6/23)**. (Note: helper_assignments uses `time_window`, not `window`
 — reserved word.) **14 email_campaigns + email_sends — ⏳ NOT RUN YET** (mass-email audit tables; run
 `supabase/14_email_campaigns.sql`). **15 pete_calls — ⏳ NOT RUN YET** (Plunger Pete AI-call log; run
-`supabase/15_pete_calls.sql`). Later: leads, bookings, truck_transfers+tool_loans, realtime.
+`supabase/15_pete_calls.sql`). **16 certified_proof — ⏳ NOT RUN YET** (collections_log tracking/
+proof/delivered cols + `collections-evidence` storage bucket; run `supabase/16_certified_proof.sql`).
+Later: leads, bookings, truck_transfers+tool_loans, realtime.

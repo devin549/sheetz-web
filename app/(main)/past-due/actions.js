@@ -80,8 +80,56 @@ export async function logContact(customerId, channel, note) {
   return { ok: true };
 }
 
+// Log a certified-mail send with its USPS tracking number (step 2 of the certified loop).
+export async function logCertified(customerId, trackingNumber) {
+  let sb, email;
+  try { ({ sb, email } = await assertCanMark()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!customerId) return { ok: false, msg: 'No customer.' };
+  const tn = String(trackingNumber || '').trim().slice(0, 40);
+  const { data: invs } = await sb.from('invoices').select('balance, invoice_date').eq('customer_id', customerId).eq('status', 'open');
+  let bal = 0, oldest = null;
+  (invs || []).forEach((i) => { bal += Number(i.balance) || 0; if (i.invoice_date) { const t = new Date(i.invoice_date).getTime(); if (!Number.isNaN(t) && (oldest == null || t < oldest)) oldest = t; } });
+  const days = oldest ? Math.floor((Date.now() - oldest) / 86400000) : null;
+  const row = { customer_id: customerId, channel: 'certified', direction: 'out', note: tn ? `Certified mail · tracking ${tn}` : 'Certified mail sent', amount: Math.round(bal), aging_bucket: bucketOf(days), by_email: email };
+  if (tn) row.tracking_number = tn; // column added in migration 16; only set when present
+  const { error } = await sb.from('collections_log').insert(row);
+  if (error) return { ok: false, msg: error.message };
+  return { ok: true };
+}
+
+// Attach a scanned return-receipt (green card) to a certified-mail entry → proof of delivery
+// (step 3). Accepts a FormData with logId, file, deliveredAt. Needs migration 16 (bucket + columns).
+export async function attachDeliveryProof(formData) {
+  let sb;
+  try { ({ sb } = await assertCanMark()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const logId = formData.get('logId');
+  const file = formData.get('file');
+  const deliveredAt = formData.get('deliveredAt');
+  if (!logId || !file || typeof file === 'string' || !file.size) return { ok: false, msg: 'Pick a scan or photo of the receipt.' };
+  if (file.size > 8 * 1024 * 1024) return { ok: false, msg: 'File too big (max 8MB).' };
+
+  const { data: rowc } = await sb.from('collections_log').select('customer_id').eq('id', logId).maybeSingle();
+  if (!rowc) return { ok: false, msg: 'Timeline entry not found.' };
+
+  const safe = String(file.name || 'receipt').replace(/[^\w.\-]/g, '_').slice(0, 60);
+  const path = `${rowc.customer_id}/${logId}-${safe}`;
+  try {
+    const buf = Buffer.from(await file.arrayBuffer());
+    const { error: upErr } = await sb.storage.from('collections-evidence').upload(path, buf, { contentType: file.type || 'application/octet-stream', upsert: true });
+    if (upErr) return { ok: false, msg: 'Upload failed: ' + upErr.message + ' (run migration 16 first?)' };
+  } catch (e) { return { ok: false, msg: 'Upload error: ' + ((e && e.message) || e) }; }
+
+  const patch = { proof_path: path };
+  if (deliveredAt) patch.delivered_at = deliveredAt;
+  const { error } = await sb.from('collections_log').update(patch).eq('id', logId);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/past-due');
+  return { ok: true };
+}
+
 // A customer's full collections timeline (newest first) — logged contact attempts MERGED with Pete
-// AI calls (so recordings + outcomes sit right in the evidence trail before a certified letter).
+// AI calls (recordings + outcomes) + certified-mail tracking/delivery proof. select('*') keeps this
+// safe before migrations 15/16 add their columns.
 export async function getCustomerContacts(customerId) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -89,13 +137,22 @@ export async function getCustomerContacts(customerId) {
   if (!customerId) return { ok: false, msg: 'No customer.' };
   const sb = getSupabaseAdmin();
   const [logRes, callRes] = await Promise.all([
-    sb.from('collections_log').select('id, channel, note, by_email, created_at').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
+    sb.from('collections_log').select('*').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
     sb.from('pete_calls').select('id, status, summary, recording_url, duration_s, ended_reason, requested_by, approved_by, created_at').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
   ]);
   if (logRes.error) return { ok: false, msg: logRes.error.message, contacts: [] };
 
+  const logs = logRes.data || [];
+  // sign any delivery-receipt scans for viewing (1h URLs)
+  for (const l of logs) {
+    if (l.proof_path) { try { const { data } = await sb.storage.from('collections-evidence').createSignedUrl(l.proof_path, 3600); l._proofUrl = (data && data.signedUrl) || ''; } catch (_) {} }
+  }
+
   const items = [];
-  (logRes.data || []).forEach((l) => items.push({ id: 'l' + l.id, kind: 'log', channel: l.channel, note: l.note || '', by_email: l.by_email, created_at: l.created_at }));
+  logs.forEach((l) => items.push({
+    id: 'l' + l.id, rawId: l.id, kind: 'log', channel: l.channel, note: l.note || '', by_email: l.by_email, created_at: l.created_at,
+    tracking_number: l.tracking_number || '', delivered_at: l.delivered_at || null, proof_url: l._proofUrl || '',
+  }));
   // pete_calls may not exist yet (migration 15) — callRes.data is null then, handled.
   (callRes.data || []).forEach((c) => items.push({
     id: 'c' + c.id, kind: 'call', channel: 'call', status: c.status, note: c.summary || '',

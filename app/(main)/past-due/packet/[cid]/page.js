@@ -46,7 +46,7 @@ export default async function LawyerPacket({ params, searchParams }) {
   const sb = getSupabaseAdmin();
   const { data: cust } = await sb.from('customers').select('id, name, cb_number, phone, email, address').eq('id', cid).maybeSingle();
   const { data: invRows } = await sb.from('invoices').select('id, invoice_number, invoice_date, balance, city, status').eq('customer_id', cid).eq('status', 'open');
-  const { data: log } = await sb.from('collections_log').select('channel, note, by_email, created_at').eq('customer_id', cid).order('created_at', { ascending: true });
+  const { data: log } = await sb.from('collections_log').select('*').eq('customer_id', cid).order('created_at', { ascending: true });
   // Pete AI calls (with recordings) belong in the evidence trail — proof every attempt was exhausted.
   const { data: callLog } = await sb.from('pete_calls').select('status, summary, recording_url, duration_s, ended_reason, requested_by, approved_by, created_at').eq('customer_id', cid).order('created_at', { ascending: true });
 
@@ -63,8 +63,12 @@ export default async function LawyerPacket({ params, searchParams }) {
   const addr = cust?.address || '';
   // Merge logged contacts + Pete calls into one chronological evidence trail.
   const contacts = [
-    ...(log || []).map((l) => ({ kind: 'log', channel: l.channel, note: l.note || '', recording_url: '', by: l.by_email, created_at: l.created_at })),
-    ...(callLog || []).map((c) => ({ kind: 'call', channel: 'AI call (Pete)', note: c.summary || c.ended_reason || (c.status ? `call ${c.status}` : ''), recording_url: c.recording_url || '', by: c.approved_by || c.requested_by || '', created_at: c.created_at, duration_s: c.duration_s })),
+    ...(log || []).map((l) => ({
+      kind: 'log', channel: l.channel,
+      note: [l.note || '', l.delivered_at ? `delivered ${l.delivered_at}` : ''].filter(Boolean).join(' · '),
+      proof: l.proof_path ? 'Signed return receipt on file' : '', by: l.by_email, created_at: l.created_at,
+    })),
+    ...(callLog || []).map((c) => ({ kind: 'call', channel: 'AI call (Pete)', note: c.summary || c.ended_reason || (c.status ? `call ${c.status}` : ''), proof: c.recording_url || '', by: c.approved_by || c.requested_by || '', created_at: c.created_at, duration_s: c.duration_s })),
   ].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   const today = fmtDate(new Date().toISOString());
 
@@ -155,7 +159,7 @@ export default async function LawyerPacket({ params, searchParams }) {
           {/* contact / collections history — the proof of good-faith attempts (incl. AI-call recordings) */}
           <div style={P.label}>Collections history (good-faith contact attempts)</div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr><th style={P.th}>Date &amp; time</th><th style={P.th}>Method</th><th style={P.th}>By</th><th style={P.th}>Note / outcome</th><th style={P.th}>Recording</th></tr></thead>
+            <thead><tr><th style={P.th}>Date &amp; time</th><th style={P.th}>Method</th><th style={P.th}>By</th><th style={P.th}>Note / outcome</th><th style={P.th}>Proof on file</th></tr></thead>
             <tbody>
               {!contacts.length && <tr><td style={P.td} colSpan={5}>No contact logged in the system for this account.</td></tr>}
               {contacts.map((c, idx) => (
@@ -164,12 +168,12 @@ export default async function LawyerPacket({ params, searchParams }) {
                   <td style={P.td}>{CH[c.channel] || c.channel}{c.duration_s ? ` · ${c.duration_s}s` : ''}</td>
                   <td style={P.td}>{c.by ? String(c.by).split('@')[0] : '—'}</td>
                   <td style={P.td}>{c.note || '—'}</td>
-                  <td style={{ ...P.td, fontSize: 10.5, wordBreak: 'break-all' }}>{c.recording_url ? <a href={c.recording_url} style={{ color: '#0645ad' }}>{c.recording_url}</a> : '—'}</td>
+                  <td style={{ ...P.td, fontSize: 10.5, wordBreak: 'break-all' }}>{c.proof ? (/^https?:/.test(c.proof) ? <a href={c.proof} style={{ color: '#0645ad' }}>{c.proof}</a> : c.proof) : '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {contacts.some((c) => c.recording_url) && <div style={{ fontSize: 10.5, color: '#777', marginTop: 5 }}>Call recordings retained on file and available to counsel on request.</div>}
+          {contacts.some((c) => c.proof) && <div style={{ fontSize: 10.5, color: '#777', marginTop: 5 }}>Call recordings and signed certified-mail return receipts retained on file and available to counsel on request.</div>}
 
           {/* statutory references */}
           <div style={P.label}>Kentucky statutory references (counsel to confirm applicability)</div>
