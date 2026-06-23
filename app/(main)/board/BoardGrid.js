@@ -30,6 +30,15 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   const [cancelT, setCancelT] = useState(null);
   const [durT, setDurT] = useState(null);
   const [hover, setHover] = useState(null); // {job,x,y} — desktop hover info card
+
+  // ── Move a job by custom mouse-drag (ported from dispatchboard_timegrid.html) — the original
+  // hides, a ghost follows the cursor, and a breathing dashed box snaps to the target slot. This is
+  // what makes moving jobs feel like the live board instead of the generic OS drag image.
+  const [moveDrag, setMoveDrag] = useState(null);   // {jobId, mouseX, mouseY} → floating ghost
+  const [moveHover, setMoveHover] = useState(null);  // {techId, startHour} → snap target
+  const moveRef = useRef(null);                      // {jobId, offsetX, offsetY, durationHours, w, sx, sy}
+  const hoverRef = useRef(null);
+  const didMove = useRef(false);
   const techName = (id) => { const t = techs.find((x) => x.id === id); return t ? t.name : ''; };
   const refresh = () => router.refresh();
 
@@ -127,6 +136,51 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   }
   function dragStart(e, jobId) { e.dataTransfer.setData('text/job-id', jobId); e.dataTransfer.effectAllowed = 'move'; }
 
+  // start a custom move-drag for a job already on the grid
+  function startMove(e, j) {
+    if (e.button !== 0 || j.statusKey === 'done') return;
+    e.preventDefault(); e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    moveRef.current = { jobId: j.id, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top, durationHours: (j.duration_min || 60) / 60, w: rect.width, sx: e.clientX, sy: e.clientY };
+    didMove.current = false; hoverRef.current = null; setHover(null);
+    setMoveDrag({ jobId: j.id, mouseX: e.clientX, mouseY: e.clientY });
+    setMoveHover(null);
+  }
+  useEffect(() => {
+    if (!moveDrag) return;
+    let rafId = 0, pending = null;
+    const flush = () => {
+      rafId = 0; if (!pending) return;
+      const { x: mx, y: my } = pending; pending = null;
+      const m = moveRef.current; const body = bodyRef.current; if (!m || !body) return;
+      setMoveDrag((d) => d && { ...d, mouseX: mx, mouseY: my });
+      if (Math.abs(mx - m.sx) > 4 || Math.abs(my - m.sy) > 4) didMove.current = true;
+      const r = body.getBoundingClientRect();
+      const laneX = mx - r.left - TECH_COL - m.offsetX;
+      const rowIdx = Math.floor((my - r.top) / ROW_H);
+      const tech = techAtRow(rowIdx);
+      if (!tech) { hoverRef.current = null; setMoveHover(null); return; }
+      const snapped = Math.round((laneX / PX_PER_HOUR) * 4) / 4;
+      const startHour = Math.max(0, Math.min(24 - m.durationHours, snapped));
+      const hv = { techId: tech.id, startHour }; hoverRef.current = hv; setMoveHover(hv);
+    };
+    const onMove = (e) => { pending = { x: e.clientX, y: e.clientY }; if (!rafId) rafId = requestAnimationFrame(flush); };
+    const onUp = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      const m = moveRef.current, hv = hoverRef.current;
+      if (m && hv && didMove.current) {
+        const d = new Date(); d.setHours(Math.floor(hv.startHour), Math.round((hv.startHour % 1) * 60), 0, 0);
+        const iso = d.toISOString();
+        start(async () => { await assignTech(m.jobId, hv.techId, iso); router.refresh(); });
+      }
+      moveRef.current = null; hoverRef.current = null; setMoveDrag(null); setMoveHover(null);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { if (rafId) cancelAnimationFrame(rafId); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moveDrag?.jobId]);
+
   // hour lines only — the 15-min slot lines are hidden for a cleaner grid
   const laneBg = `repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px ${PX_PER_HOUR}px)`;
   const Dot = ({ k }) => <span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_DOT[k] || 'var(--fg-3)', display: 'inline-block' }} />;
@@ -142,20 +196,21 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
     const width = Math.max(22, (dur / 60) * PX_PER_HOUR - 2);
     const canResize = (canStatus || canAssign) && j.statusKey !== 'done';
     const late = isLate(j);
+    const hiding = moveDrag && moveDrag.jobId === j.id; // original hides while its ghost drags
     return (
       <div
-        draggable={draggable}
-        onDragStart={draggable ? (e) => { if (suppressDrag.current) { e.preventDefault(); return; } dragStart(e, j.id); } : undefined}
-        onClick={() => { if (didResize.current) { didResize.current = false; return; } setSel(j); }}
+        onMouseDown={canAssign ? (e) => startMove(e, j) : undefined}
+        onClick={() => { if (didResize.current) { didResize.current = false; return; } if (didMove.current) { didMove.current = false; return; } setSel(j); }}
         onContextMenu={(e) => openMenu(e, j)}
-        onMouseEnter={(e) => setHover({ job: j, x: e.clientX, y: e.clientY })}
-        onMouseMove={(e) => setHover((h) => (h && h.job.id === j.id ? { job: j, x: e.clientX, y: e.clientY } : h))}
+        onMouseEnter={(e) => { if (!moveDrag) setHover({ job: j, x: e.clientX, y: e.clientY }); }}
+        onMouseMove={(e) => setHover((h) => (!moveDrag && h && h.job.id === j.id ? { job: j, x: e.clientX, y: e.clientY } : h))}
         onMouseLeave={() => setHover(null)}
         style={{
           position: 'absolute', left, top: 5, height: ROW_H - 14, width,
           background: live ? 'color-mix(in oklab, var(--accent) 14%, var(--surface-2))' : (late ? 'color-mix(in oklab, var(--red) 14%, var(--surface-2))' : 'var(--surface-2)'),
           borderLeft: `3px solid ${late ? 'var(--red)' : (pr ? pr.color : STATUS_DOT[j.statusKey])}`,
-          borderRadius: 4, padding: '3px 5px', overflow: 'hidden', cursor: 'pointer', zIndex: live ? 5 : 2,
+          borderRadius: 4, padding: '3px 5px', overflow: 'hidden', cursor: canAssign ? 'grab' : 'pointer', zIndex: live ? 5 : 2,
+          opacity: hiding ? 0 : 1,
         }}
       >
         {late && <span className="alert-dot" style={{ position: 'absolute', top: 4, right: 4, margin: 0 }} aria-hidden="true" />}
@@ -213,10 +268,18 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
               );
             })}
 
-            {/* drop indicator */}
+            {/* drop indicator (tray → grid) */}
             {drop && (
               <div style={{ position: 'absolute', pointerEvents: 'none', top: drop.rowIdx * ROW_H + 4, left: TECH_COL + drop.hour * PX_PER_HOUR, width: PX_PER_HOUR * 0.92, height: ROW_H - 8, border: `2px dashed ${ACCENT}`, borderRadius: 4, background: 'color-mix(in oklab, ' + ACCENT + ' 12%, transparent)', zIndex: 4 }} />
             )}
+
+            {/* move-drag: breathing snap target at the slot the ghost will land on */}
+            {moveDrag && moveHover && (() => {
+              const rowIdx = rows.findIndex((rw) => rw.kind === 'tech' && rw.tech.id === moveHover.techId);
+              if (rowIdx < 0) return null;
+              const durH = moveRef.current ? moveRef.current.durationHours : 1;
+              return <div className="cb-breathe" style={{ position: 'absolute', pointerEvents: 'none', top: rowIdx * ROW_H + 4, left: TECH_COL + moveHover.startHour * PX_PER_HOUR, width: durH * PX_PER_HOUR - 2, height: ROW_H - 8, border: `1.5px dashed ${ACCENT}`, borderRadius: 6, zIndex: 5 }} />;
+            })()}
 
             {/* NOW line */}
             {nowHour >= 0 && nowHour <= 24 && (
@@ -253,6 +316,18 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
           );
         })}
       </div>
+
+      {/* floating drag ghost — follows the cursor while moving a job (live-board feel) */}
+      {moveDrag && (() => {
+        const j = jobs.find((x) => x.id === moveDrag.jobId); if (!j) return null;
+        const m = moveRef.current;
+        return (
+          <div style={{ position: 'fixed', left: moveDrag.mouseX - (m ? m.offsetX : 0), top: moveDrag.mouseY - (m ? m.offsetY : 0), width: (m ? m.w : 120) - 2, height: ROW_H - 14, pointerEvents: 'none', zIndex: 9999, background: 'var(--surface-3)', border: `1px solid ${ACCENT}`, borderRadius: 4, padding: '3px 5px', overflow: 'hidden', boxShadow: '0 8px 22px rgba(0,0,0,.45)' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.customer}</div>
+            <div className="muted" style={{ fontSize: 9 }}>{fmtTime(j.scheduledISO)}</div>
+          </div>
+        );
+      })()}
 
       {/* hover info card (desktop) — see the job without clicking */}
       {hover && (
