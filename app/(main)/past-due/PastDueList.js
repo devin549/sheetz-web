@@ -22,12 +22,20 @@ const inBucket = (days, b) => {
   if (b === 'd90p') return days > 90;
   return true;
 };
-const BUCKETS = [['all', 'All'], ['cur', '0–30'], ['d60', '31–60'], ['d90', '61–90'], ['d90p', '90+']];
 const ctrl = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '8px 11px', fontSize: 13 };
 const COLS = 'minmax(190px, 2.2fr) repeat(4, minmax(74px, 1fr)) minmax(92px, 1.1fr)';
 const num = { textAlign: 'right', fontSize: 12, fontVariantNumeric: 'tabular-nums' };
 
-export default function PastDueList({ customers, canMark }) {
+// The single aging filter — these big numbers ARE the filter (click to narrow the list).
+const BUCKETS = [
+  { key: 'all', label: 'Total open', color: 'var(--accent)', big: true },
+  { key: 'cur', label: 'Current · 0–30', color: 'var(--green)' },
+  { key: 'd60', label: '31–60', color: 'var(--accent)' },
+  { key: 'd90', label: '61–90', color: '#e65100' },
+  { key: 'd90p', label: '90+ overdue', color: 'var(--red)' },
+];
+
+export default function PastDueList({ customers, canMark, summary }) {
   const router = useRouter();
   const [open, setOpen] = useState({});
   const [pending, start] = useTransition();
@@ -40,6 +48,15 @@ export default function PastDueList({ customers, canMark }) {
 
   const toggle = (cid) => setOpen((o) => ({ ...o, [cid]: !o[cid] }));
   const run = (id, fn) => { setBusyId(id); setErr(null); start(async () => { const r = await fn(); setBusyId(null); if (r && !r.ok) setErr(r.msg); else router.refresh(); }); };
+
+  // Top deadbeats = biggest balances (chase these first).
+  const topDeadbeats = useMemo(() => customers.slice().sort((a, b) => b.total - a.total).slice(0, 5), [customers]);
+  const jumpTo = (cid) => {
+    setBucket('all'); setQ(''); setOpen({ [cid]: true });
+    setTimeout(() => { const el = document.getElementById('cust-' + cid); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
+  };
+
+  const bucketVal = (key) => (key === 'all' ? summary.total : summary.aging[key] || 0);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -56,14 +73,43 @@ export default function PastDueList({ customers, canMark }) {
 
   return (
     <>
-      {/* search + filter + sort */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', margin: '12px 0' }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔎 Search a customer (name, CB#, phone)…" style={{ ...ctrl, flex: 1, minWidth: 220 }} />
-        <div style={{ display: 'flex', gap: 4 }}>
-          {BUCKETS.map(([k, lbl]) => (
-            <button key={k} onClick={() => setBucket(k)} className="pill" style={{ cursor: 'pointer', fontSize: 11, background: bucket === k ? 'var(--accent)' : 'var(--surface-2)', color: bucket === k ? '#fff' : 'var(--fg-2)', fontWeight: bucket === k ? 800 : 600 }}>{lbl}</button>
-          ))}
+      {/* ── Clickable aging summary = the ONE filter ───────────────────────── */}
+      <div className="card card-amber" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: 10 }}>
+        {BUCKETS.map((b) => {
+          const active = bucket === b.key;
+          return (
+            <button key={b.key} onClick={() => setBucket(b.key)}
+              style={{ flex: b.big ? '0 0 auto' : 1, minWidth: b.big ? 150 : 96, textAlign: 'left', cursor: 'pointer',
+                background: active ? 'var(--surface-3)' : 'transparent', border: active ? '1px solid var(--accent)' : '1px solid var(--border)',
+                borderRadius: 10, padding: '8px 12px' }}>
+              <div style={{ fontSize: b.big ? 24 : 17, fontWeight: 800, color: b.color }}>{money(bucketVal(b.key))}</div>
+              <div className="muted" style={{ fontSize: 10 }}>{b.label}{b.big ? ` · ${summary.custCount.toLocaleString()} cust · ${summary.count.toLocaleString()} inv` : ''}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Top deadbeats — chase these first ──────────────────────────────── */}
+      {topDeadbeats.length > 1 && (
+        <div style={{ margin: '12px 0 4px' }}>
+          <div className="muted" style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>🎯 Top deadbeats · chase these first</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {topDeadbeats.map((c, i) => (
+              <button key={c.cid} onClick={() => jumpTo(c.cid)} className="card" style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 12px', margin: 0, cursor: 'pointer', textAlign: 'left', border: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--fg-3)' }}>#{i + 1}</span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontWeight: 700, fontSize: 13, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                  <span style={{ fontSize: 12 }}><strong style={{ color: 'var(--accent)' }}>{money(c.total)}</strong>{c.oldestDays != null && <span style={{ color: ageColor(c.oldestDays), marginLeft: 5 }}>· {c.oldestDays}d</span>}</span>
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
+      )}
+
+      {/* search + sort (no duplicate chip row — buckets above are the filter) */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', margin: '12px 0 6px' }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔎 Search a customer (name, CB#, phone)…" style={{ ...ctrl, flex: 1, minWidth: 220 }} />
         <select value={sort} onChange={(e) => setSort(e.target.value)} style={ctrl}>
           <option value="owed">Owed (high→low)</option>
           <option value="oldest">Oldest first</option>
@@ -71,14 +117,14 @@ export default function PastDueList({ customers, canMark }) {
         </select>
       </div>
       <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-        <strong>{filtered.length}</strong> customer{filtered.length === 1 ? '' : 's'} · {money(shown)}{(q || bucket !== 'all') ? ' (filtered)' : ''}
+        <strong>{filtered.length}</strong> customer{filtered.length === 1 ? '' : 's'} · {money(shown)}
+        {(q || bucket !== 'all') ? <button onClick={() => { setQ(''); setBucket('all'); }} style={{ marginLeft: 8, background: 'none', border: 0, color: 'var(--accent)', cursor: 'pointer', fontSize: 12 }}>clear filter ✕</button> : ''}
       </div>
       {err && <div className="notice" style={{ color: 'var(--red)' }}>{err}</div>}
 
       {/* QuickBooks-style aging table */}
       <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
         <div style={{ minWidth: 680 }}>
-          {/* header */}
           <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 8, padding: '8px 14px', borderBottom: '1px solid var(--border)', fontSize: 10, fontWeight: 700, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '.04em', position: 'sticky', top: 0, background: 'var(--surface-1)' }}>
             <span>Customer</span><span style={{ textAlign: 'right' }}>0–30</span><span style={{ textAlign: 'right' }}>31–60</span><span style={{ textAlign: 'right' }}>61–90</span><span style={{ textAlign: 'right' }}>90+</span><span style={{ textAlign: 'right' }}>Total</span>
           </div>
@@ -89,7 +135,7 @@ export default function PastDueList({ customers, canMark }) {
             const isOpen = !!open[c.cid];
             const b = c.buckets || {};
             return (
-              <div key={c.cid}>
+              <div key={c.cid} id={'cust-' + c.cid}>
                 <div onClick={() => toggle(c.cid)} style={{ display: 'grid', gridTemplateColumns: COLS, gap: 8, padding: '9px 14px', borderBottom: '1px solid var(--border)', alignItems: 'center', cursor: 'pointer', background: isOpen ? 'var(--surface-1)' : 'transparent' }}>
                   <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     <span style={{ color: 'var(--fg-3)', fontSize: 11, marginRight: 6 }}>{isOpen ? '▾' : '▸'}</span>
@@ -104,7 +150,6 @@ export default function PastDueList({ customers, canMark }) {
                   <span style={{ ...num, fontWeight: 800, fontSize: 13, color: 'var(--accent)' }}>{money(c.total)}</span>
                 </div>
 
-                {/* expanded detail */}
                 {isOpen && (
                   <div style={{ padding: '8px 14px 12px', background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
                     <CollectionsTimeline customerId={c.cid} oldestDays={c.oldestDays} address={c.address} phone={c.phone} email={c.email} canLog={canMark} />

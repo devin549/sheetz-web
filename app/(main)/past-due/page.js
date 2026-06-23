@@ -72,37 +72,22 @@ export default async function PastDue() {
     recent = data || [];
   }
 
-  const buckets = [
-    { key: 'cur', label: 'Current · 0–30d', v: aging.cur, color: 'var(--green)' },
-    { key: 'd60', label: '31–60', v: aging.d60, color: 'var(--accent)' },
-    { key: 'd90', label: '61–90', v: aging.d90, color: '#e65100' },
-    { key: 'd90p', label: '90+', v: aging.d90p, color: 'var(--red)' },
-  ];
+  const summary = { total: Math.round(total), count, custCount, aging: { cur: Math.round(aging.cur), d60: Math.round(aging.d60), d90: Math.round(aging.d90), d90p: Math.round(aging.d90p) } };
 
   return (
     <div className="wrap" style={{ maxWidth: 1180 }}>
-      <div className="h1">💰 Accounts Receivable <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>· past due by customer</span></div>
-
-      {/* A/R aging summary (QuickBooks-style) */}
-      <div className="card card-amber" style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ minWidth: 130 }}>
-          <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--accent)' }}>{money(total)}</div>
-          <div className="muted" style={{ fontSize: 11 }}>{custCount.toLocaleString()} customers · {count.toLocaleString()} invoices</div>
-        </div>
-        <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', flex: 1 }}>
-          {buckets.map((b) => (
-            <div key={b.key} style={{ minWidth: 92 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: b.color }}>{money(b.v)}</div>
-              <div className="muted" style={{ fontSize: 10 }}>{b.label}</div>
-            </div>
-          ))}
-        </div>
-        <div className="muted" style={{ fontSize: 12, alignSelf: 'center' }}><Link href="/customers">customer lookup →</Link></div>
+      {/* tight header — the numbers live in the clickable summary below */}
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+        <div className="h1" style={{ marginBottom: 2 }}>💰 Accounts Receivable</div>
+        <div className="muted" style={{ fontSize: 12 }}><Link href="/customers">customer lookup →</Link></div>
       </div>
+      <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>{money(total)} open · {count.toLocaleString()} invoices · {custCount.toLocaleString()} customers</div>
 
-      {can(role, 'seeFinancials') && <AccountingBot recent={recent} />}
+      {/* AR data first: clickable aging filter + top deadbeats + the list */}
+      <PastDueList customers={customers} canMark={canMark} summary={summary} />
 
-      <PastDueList customers={customers} canMark={canMark} />
+      {/* Books Bot + recent collections moved below so the AR data leads */}
+      {can(role, 'seeFinancials') && <div style={{ marginTop: 16 }}><AccountingBot recent={recent} /></div>}
     </div>
   );
 }

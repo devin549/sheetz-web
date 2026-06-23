@@ -79,6 +79,7 @@ export default function CollectionsTimeline({ customerId, oldestDays, address, p
               ? <a key={s.ch} href={s.href} onClick={() => logIt(s.ch)} className="pill" style={pill} title="Opens your phone / mail and logs the attempt">{s.lbl}</a>
               : <button key={s.ch} onClick={() => logIt(s.ch)} disabled={pending} className="pill" style={pill}>{s.lbl}</button>
             ))}
+            <a href={`/past-due/statement/${customerId}`} target="_blank" rel="noopener" className="pill" style={pill} title="Customer statement of account (print / email PDF)">📄 Statement</a>
             <a href={`/past-due/letter/${customerId}`} target="_blank" rel="noopener" className="pill" style={pill} title="Generate the certified demand letter (print → mail)">📄 Certified letter</a>
             <button onClick={() => setCertOpen((v) => !v)} disabled={pending} className="pill" style={pill}>📜 Log certified</button>
             <a href={`/pete?customer=${customerId}&purpose=collections`} className="pill" style={{ ...pill, fontWeight: 700 }}>📞 Call with Pete</a>
