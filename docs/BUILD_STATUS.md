@@ -30,7 +30,7 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | Team (add hire, set role) | /team | ✅ live | manageUsers only; server-enforced |
 | Home command center | / | ✅ live | role-aware KPIs + Owner-Sheet tile map |
 | Theme | globals.css | ✅ live | **EXACT live-board palette** ported (#0e1116 cool dark + #FF6B00 accent, cream light) from `dispatchboard_index.html` — app-wide, `--amber` aliased to accent |
-| Dispatch Board | /board | ✅ live | Dispatch-Live look + drag-drop assign + NOW line + **click job → detail PANEL** (status banner, tap-to-call, maps, billing, action bar) + **status changes** (en route/on site/complete, role-gated, optimistic). ⏳ right-click context menu, cancel-with-reason, moveJob hardening (active-tech guard + audit), realtime, Map/Roster/Week, global search, clickable filters, day-nav, full left-nav, Job Booking |
+| Dispatch Board | /board | ✅ live | Dispatch-Live look + drag-drop + NOW line + detail PANEL + status changes + **right-click ContextMenu** (open/duration/en route/on site/complete/call/reassign/send-to-queue/cancel, role-gated) + **Cancel-with-reason** (12-reason taxonomy → cancellations log) + **Set-duration** modal — all ported exactly from the script. ⏳ moveJob hardening (active-tech guard + move audit), realtime, Map/Roster/Week, global search, clickable filters, day-nav, full left-nav, Job Booking |
 | My Day | /my-day | ✅ live | self-scoped: tech→own jobs, helper→paired tech, office→all (+?tech) |
 | My Truck (fleet + detail) | /my-truck | ✅ live (read) | ⏳ actions: request transfer, loan a tool |
 | Shop (reorder + restock) | /shop | ✅ live (read) | ⏳ self-issue review queue (Reed) |
@@ -93,6 +93,6 @@ Widgets are native here — building them out is a first-class goal, not a nice-
 
 ## Migrations run (Supabase SQL editor)
 02 customers ST cols · 03 CB numbers · 04 invoices AR · 05 truck+tools · 06 helper_assign · 07 job card
-fields · 08 jobs harden — **all run ✅ (6/22)**. (Note: helper_assignments uses `time_window`, not
-`window` — reserved word.) Next migrations: 09 job_activity+work_orders, 10 leads, 11 bookings,
-12 truck_transfers+tool_loans, 13 realtime.
+fields · 08 jobs harden — **run ✅ (6/22)**. (Note: helper_assignments uses `time_window`, not
+`window` — reserved word.) **PENDING to run: 09 techs_crew (crew grouping), 10 cancellations+duration.**
+Later: leads, bookings, truck_transfers+tool_loans, realtime.
