@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { updateJobStatus, assignTech } from './actions';
@@ -86,6 +87,12 @@ export default function JobPanel({ job, techName, canStatus, canAssign, onClose 
           </Section>
 
           <Section label="Schedule"><KV k="Start" v={startStr} /></Section>
+
+          <Section label="Job file">
+            <Link href={`/job/${job.id}`} style={{ ...btnGhost, display: 'block', textAlign: 'center' }}>
+              Open photos / work order
+            </Link>
+          </Section>
 
           <Section label="Billing">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>

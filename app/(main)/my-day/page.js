@@ -172,6 +172,11 @@ export default async function MyDay({ searchParams }) {
                 {cust.address && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {cust.address}</div>}
                 {typeBits && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>🔧 {typeBits}</div>}
                 {seeAll && t.name && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>👷 {t.name}</div>}
+                <div style={{ marginTop: 8 }}>
+                  <Link href={`/job/${j.id}`} className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>
+                    View / photos
+                  </Link>
+                </div>
               </div>
               <span className={pill.cls} style={pill.color ? { color: pill.color } : undefined}>{pill.label}</span>
             </div>
