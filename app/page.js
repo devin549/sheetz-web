@@ -13,6 +13,7 @@ export default function Home() {
       <div style={{ margin: '18px 0', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <Link className="btn" href="/my-day">📋 Tech · My Day →</Link>
         <Link className="btn" href="/customers">🔎 Customers →</Link>
+        <Link className="btn" href="/past-due">💰 Past Due →</Link>
       </div>
 
       <div className="card">
