@@ -9,6 +9,8 @@ export const dynamic = 'force-dynamic';
 
 function money(n) {
   const v = Number(n || 0);
+  // Millions read as $1.74M (not the ambiguous "$1739k"); thousands as $145k.
+  if (v >= 1e6) { const m = v / 1e6; return '$' + (m >= 10 ? Math.round(m) : m.toFixed(2).replace(/\.?0+$/, '')) + 'M'; }
   if (v >= 1000) return '$' + Math.round(v / 1000) + 'k';
   return '$' + v.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
