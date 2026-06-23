@@ -73,6 +73,7 @@ function commandTiles(role) {
     { icon: '📋', label: 'Jobs / My Day', sub: 'today’s board, live status', href: '/my-day', roles: ['owner', 'office', 'tech'] },
     { icon: '👥', label: 'Customers', sub: '13k ST base, CB numbers', href: '/customers', roles: ['owner', 'office'] },
     { icon: '🚐', label: 'Fleet & Trucks', sub: 'van stock, tools, restock', href: '/my-truck', roles: ['owner', 'tech'] },
+    { icon: '🏪', label: 'Shop', sub: 'reorder list, restock runs', href: '/shop', roles: ['owner', 'shop'] },
     { icon: '📲', label: 'Booking / Dispatch', sub: 'CSR booking + live board', soon: true, roles: ['owner', 'office'] },
     { icon: '📈', label: 'Marketing & Intel', sub: 'SerpAPI rank, review tracker', soon: true, roles: ['owner'] },
     { icon: '🛡️', label: 'Warranty (Pete)', sub: '16-provider claim pipeline', soon: true, roles: ['owner', 'office'] },
@@ -99,7 +100,8 @@ export default async function Home() {
 
   const title = role === 'owner' ? 'Owner Command Center'
     : role === 'office' ? 'Office Command Center'
-      : 'My Field Day';
+      : role === 'shop' ? 'Shop'
+        : 'My Field Day';
 
   return (
     <div className="wrap">
@@ -117,7 +119,7 @@ export default async function Home() {
           <Kpi value={kpis.urgent} label="urgent" href="/my-day" color={kpis.urgent ? 'var(--red)' : 'var(--green)'} blink={kpis.urgent > 0} />
           <Kpi value={kpis.customers.toLocaleString()} label="customers" href="/customers" />
           <Kpi value={kpis.trucks} label="trucks" href="/my-truck" />
-          <Kpi value={kpis.lowStock} label="low stock" href="/my-truck" color={kpis.lowStock ? '#ff8a65' : 'var(--green)'} blink={kpis.lowStock > 0} />
+          <Kpi value={kpis.lowStock} label="low stock" href="/shop" color={kpis.lowStock ? '#ff8a65' : 'var(--green)'} blink={kpis.lowStock > 0} />
           <Kpi value={money(kpis.toolVal)} label="tools on vans" href="/my-truck" color="var(--green-bright)" />
         </div>
       )}
