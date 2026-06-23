@@ -192,6 +192,7 @@ export async function approveAndSend(campaignId) {
       const r = await sendOne({ to: s.to_email, subject: camp.subject, html: renderEmailHtml({ subject: camp.subject, body: personalized, trackId: s.id }) });
       if (r.ok) { ok++; await sb.from('email_sends').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', s.id); }
       else { fail++; await sb.from('email_sends').update({ status: 'failed', error: r.error || 'send failed' }).eq('id', s.id); }
+      await new Promise((res) => setTimeout(res, 120)); // ~8/sec — stays under Resend's rate cap
     }
     // queued rows just flipped to sent/failed, so keep reading from 0
   }
