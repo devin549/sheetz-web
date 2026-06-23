@@ -1,4 +1,4 @@
--- CB Cam spine: private job photos attached to jobs.
+-- CB Cam spine: private job photos and walkthrough videos attached to jobs.
 -- Run in Supabase SQL Editor. Idempotent and safe to re-run.
 --
 -- Files live in the private Supabase Storage bucket `job-photos`.
@@ -18,13 +18,16 @@ values (
   'job-photos',
   'job-photos',
   false,
-  10485760,
+  262144000,
   array[
     'image/jpeg',
     'image/png',
     'image/webp',
     'image/heic',
-    'image/heif'
+    'image/heif',
+    'video/mp4',
+    'video/quicktime',
+    'video/webm'
   ]::text[]
 )
 on conflict (id) do update
@@ -59,6 +62,7 @@ begin
       storage_path text not null unique,
       file_name text not null,
       mime_type text not null,
+      media_type text not null default 'photo',
       size_bytes bigint not null default 0,
       kind text not null default 'job_photo',
       caption text,
@@ -69,25 +73,45 @@ begin
       uploaded_by_name text,
       deleted_at timestamptz,
       deleted_by uuid,
-      created_at timestamptz not null default now(),
-      constraint job_photos_kind_chk check (
-        kind in (
-          'job_photo',
-          'before',
-          'during',
-          'after',
-          'receipt',
-          'damage',
-          'equipment',
-          'closeout'
-        )
-      )
+      created_at timestamptz not null default now()
     )
   $create$, job_id_type);
 end $$;
 
+alter table public.job_photos
+  add column if not exists media_type text not null default 'photo';
+
+update public.job_photos
+set media_type = 'video'
+where media_type = 'photo'
+  and (mime_type like 'video/%' or kind = 'walkthrough');
+
+alter table public.job_photos
+  drop constraint if exists job_photos_media_type_chk,
+  add constraint job_photos_media_type_chk check (media_type in ('photo', 'video'));
+
+alter table public.job_photos
+  drop constraint if exists job_photos_kind_chk,
+  add constraint job_photos_kind_chk check (
+    kind in (
+      'job_photo',
+      'before',
+      'during',
+      'after',
+      'receipt',
+      'damage',
+      'equipment',
+      'closeout',
+      'walkthrough'
+    )
+  );
+
 create index if not exists job_photos_job_created_idx
   on public.job_photos (job_id, created_at desc)
+  where deleted_at is null;
+
+create index if not exists job_photos_job_media_created_idx
+  on public.job_photos (job_id, media_type, created_at desc)
   where deleted_at is null;
 
 create index if not exists job_photos_customer_visible_idx
@@ -101,7 +125,10 @@ create index if not exists job_photos_uploaded_by_idx
 alter table public.job_photos enable row level security;
 
 comment on table public.job_photos is
-'Private metadata for CB Cam job photos. Storage objects live in the private job-photos bucket.';
+'Private metadata for CB Cam job photos and walkthrough videos. Storage objects live in the private job-photos bucket.';
+
+comment on column public.job_photos.media_type is
+'photo or video. Closeout requires at least 3 photos and 1 walkthrough video.';
 
 comment on column public.job_photos.customer_visible is
-'True only when this photo may appear in a customer-facing packet or portal.';
+'True only when this media may appear in a customer-facing packet or portal.';

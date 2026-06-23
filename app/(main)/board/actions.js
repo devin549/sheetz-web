@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
 import { roleOf } from '@/lib/nav';
 import { can } from '@/lib/roles';
+import { closeoutGateMessage, loadCloseoutChecklist } from '@/lib/jobCloseout';
 import { revalidatePath } from 'next/cache';
 
 // Re-check the caller can assign jobs on every call — a server action is a public RPC, so
@@ -32,6 +33,14 @@ export async function updateJobStatus(jobId, status) {
   let sb;
   try { sb = await assertStatusChanger(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
   if (!jobId || !VALID_STATUS.includes(status)) return { ok: false, msg: 'Bad request.' };
+  if (status === 'done') {
+    const { checklist, error: checklistError } = await loadCloseoutChecklist(sb, jobId);
+    if (checklistError) {
+      return { ok: false, msg: `Closeout blocked: media checklist is not ready. ${checklistError.message}` };
+    }
+    if (!checklist.complete) return { ok: false, msg: closeoutGateMessage(checklist) };
+  }
+
   const patch = { status };
   const nowISO = new Date().toISOString();
   if (status === 'enroute') patch.enroute_at = nowISO;

@@ -32,7 +32,7 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | Theme | globals.css | ✅ live | **EXACT live-board palette** ported (#0e1116 cool dark + #FF6B00 accent, cream light) from `dispatchboard_index.html` — app-wide, `--amber` aliased to accent |
 | Dispatch Board | /board | ✅ live | Dispatch-Live look + drag-drop assign + NOW line + **click job → detail PANEL** (status banner, tap-to-call, maps, billing, action bar) + **status changes** (en route/on site/complete, role-gated, optimistic). ⏳ right-click context menu, cancel-with-reason, moveJob hardening (active-tech guard + audit), realtime, Map/Roster/Week, global search, clickable filters, day-nav, full left-nav, Job Booking |
 | My Day | /my-day | ✅ live | self-scoped: tech→own jobs, helper→paired tech, office→all (+?tech) |
-| Job file / CB Cam spine | /job/[id] | branch | private job photos through Supabase Storage + `job_photos`; run `supabase/10_job_photo_spine.sql` before use |
+| Job file / CB Cam spine | /job/[id] | branch | private job media through Supabase Storage + `job_photos`; closeout blocked until 3 photos + 1 walkthrough video exist; run `supabase/10_job_photo_spine.sql` before use |
 | My Truck (fleet + detail) | /my-truck | ✅ live (read) | ⏳ actions: request transfer, loan a tool |
 | Shop (reorder + restock) | /shop | ✅ live (read) | ⏳ self-issue review queue (Reed) |
 | Customers search | /customers | ✅ live | 13k ST base, CB numbers |

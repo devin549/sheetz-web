@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requirePerm } from '@/lib/guard';
 import { can } from '@/lib/roles';
+import { closeoutChecklistFromMedia } from '@/lib/jobCloseout';
 import JobPhotos from './JobPhotos';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
 
@@ -34,7 +35,7 @@ function statusLabel(value) {
 async function loadPhotos(sb, jobId) {
   const { data, error } = await sb
     .from('job_photos')
-    .select('id, job_id, storage_bucket, storage_path, file_name, mime_type, size_bytes, kind, caption, tags, customer_visible, uploaded_by, uploaded_by_email, uploaded_by_name, created_at')
+    .select('id, job_id, storage_bucket, storage_path, file_name, mime_type, media_type, size_bytes, kind, caption, tags, customer_visible, uploaded_by, uploaded_by_email, uploaded_by_name, created_at')
     .eq('job_id', jobId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
@@ -74,6 +75,8 @@ export default async function JobDetail({ params }) {
   const title = jobTitle(job);
   const canUpload = canUploadPhotos(role);
   const canArchiveAny = can(role, 'deleteJobs') || can(role, 'manageUsers') || can(role, 'assignJobs');
+  const checklist = closeoutChecklistFromMedia(photos);
+  const mediaLabel = `${checklist.photoCount} photos, ${checklist.walkthroughCount} video${checklist.walkthroughCount === 1 ? '' : 's'}`;
 
   return (
     <div className="wrap" style={{ maxWidth: 1040 }}>
@@ -94,7 +97,7 @@ export default async function JobDetail({ params }) {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <span className="pill">{techName}</span>
             {job.amount ? <span className="pill" style={{ color: 'var(--green)' }}>{money(job.amount)}</span> : null}
-            <span className="pill" style={{ color: photos.length ? 'var(--amber)' : 'var(--fg-3)' }}>{photos.length} photos</span>
+            <span className="pill" style={{ color: photos.length ? 'var(--amber)' : 'var(--fg-3)' }}>{mediaLabel}</span>
           </div>
         </div>
 
@@ -121,9 +124,9 @@ export default async function JobDetail({ params }) {
             )}
           </div>
           <div>
-            <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em' }}>Photo spine</div>
+            <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em' }}>Closeout spine</div>
             <div style={{ marginTop: 4, lineHeight: 1.4 }}>
-              Before, during, after, receipts, damage, equipment, and closeout proof all attach here.
+              Jobs require at least 3 photos and 1 walkthrough video before completion.
             </div>
           </div>
         </div>
@@ -139,6 +142,7 @@ export default async function JobDetail({ params }) {
       <JobPhotos
         jobId={id}
         photos={photos}
+        checklist={checklist}
         canUpload={canUpload && !photoError}
         canArchive={canArchiveAny}
         currentUserId={user.id}
