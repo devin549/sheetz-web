@@ -13,6 +13,26 @@ export const PRIORITY = {
 export const CREW_COLORS = { 'Drain Team': '#4f9bff', 'Install Crew': '#e0a042', 'HVAC Squad': '#e07a5f' };
 export const crewColor = (n) => CREW_COLORS[n] || ACCENT;
 
+// Fixed cancel-reason taxonomy + duration presets — exact from the live board.
+export const CANCEL_REASONS = [
+  { code: 'CUSTOMER_RESCHEDULED', label: 'Customer rescheduled', needsNote: false },
+  { code: 'CUSTOMER_NO_SHOW', label: 'Customer no-show / no access', needsNote: false },
+  { code: 'PRICE_TOO_HIGH', label: 'Price too high', needsNote: false },
+  { code: 'CHOSE_COMPETITOR', label: 'Went with a competitor', needsNote: true },
+  { code: 'FIXED_THEMSELVES', label: 'Issue resolved / no longer needed', needsNote: false },
+  { code: 'DUPLICATE', label: 'Duplicate / double-booked', needsNote: false },
+  { code: 'WEATHER', label: 'Weather', needsNote: false },
+  { code: 'TECH_UNAVAILABLE', label: 'No tech / truck down (our side)', needsNote: false },
+  { code: 'PARTS_DELAY', label: 'Parts not in / delayed', needsNote: false },
+  { code: 'WRONG_INFO', label: "Bad info — couldn't reach customer", needsNote: false },
+  { code: 'NOT_OUR_SERVICE', label: 'Out of our service / scope', needsNote: false },
+  { code: 'OTHER', label: 'Other', needsNote: true },
+];
+export const DURATION_PRESETS = [
+  { label: '30m', min: 30 }, { label: '1h', min: 60 }, { label: '1.5h', min: 90 },
+  { label: '2h', min: 120 }, { label: '3h', min: 180 }, { label: '4h', min: 240 },
+];
+
 export function initials(name) {
   return String(name || '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 }

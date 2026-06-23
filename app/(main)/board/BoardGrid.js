@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { assignTech } from './actions';
+import { assignTech, updateJobStatus } from './actions';
 import { ACCENT, STATUS_DOT, crewColor, initials, priorityOf, hourLabel, money, fmtTime } from './boardTokens';
 import JobPanel from './JobPanel';
+import { ContextMenu, CancelModal, DurationModal } from './JobActions';
 
 // Layout — absolute px-per-hour grid, the same model the live board uses so the now-line and
 // drop-targeting are computed straight from mouse position.
@@ -25,7 +26,25 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   const [pending, start] = useTransition();
   const [drop, setDrop] = useState(null); // { rowIdx, hour } live drop indicator
   const [sel, setSel] = useState(null);   // selected job → detail panel
+  const [menu, setMenu] = useState(null); // {x,y,job} right-click menu
+  const [cancelT, setCancelT] = useState(null);
+  const [durT, setDurT] = useState(null);
   const techName = (id) => { const t = techs.find((x) => x.id === id); return t ? t.name : ''; };
+  const refresh = () => router.refresh();
+
+  // right-click menu actions
+  const STATUS_OF = { enroute: 'enroute', onsite: 'on_site', done: 'done' };
+  function onMenuAction(id) {
+    const j = menu && menu.job; setMenu(null);
+    if (!j) return;
+    if (id === 'open' || id === 'reassign') setSel(j);
+    else if (id === 'duration') setDurT(j);
+    else if (id === 'cancel') setCancelT(j);
+    else if (id === 'call') { if (j.phone) window.open('tel:' + String(j.phone).replace(/[^0-9+]/g, '')); }
+    else if (id === 'unassign') start(async () => { await assignTech(j.id, null); refresh(); });
+    else if (STATUS_OF[id]) start(async () => { await updateJobStatus(j.id, STATUS_OF[id]); refresh(); });
+  }
+  const openMenu = (e, j) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, job: j }); };
 
   // group techs into crews → flat render rows (crew header rows keep the floor(y/ROW_H) math valid)
   const crews = {};
@@ -83,7 +102,8 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
         draggable={draggable}
         onDragStart={draggable ? (e) => dragStart(e, j.id) : undefined}
         onClick={() => setSel(j)}
-        title={`${j.customer} · ${fmtTime(j.scheduledISO)}${j.job_type ? ' · ' + j.job_type : ''} · click for details`}
+        onContextMenu={(e) => openMenu(e, j)}
+        title={`${j.customer} · ${fmtTime(j.scheduledISO)}${j.job_type ? ' · ' + j.job_type : ''} · click for details · right-click for actions`}
         style={{
           position: 'absolute', left, top: 5, height: ROW_H - 14, width: PX_PER_HOUR * 0.92,
           background: 'var(--surface-2)', borderLeft: `3px solid ${pr ? pr.color : STATUS_DOT[j.statusKey]}`,
@@ -168,7 +188,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
           const typeBits = [j.job_type, j.amount ? money(j.amount) : null].filter(Boolean).join(' · ');
           return (
             <div key={j.id} draggable={canAssign} onDragStart={canAssign ? (e) => dragStart(e, j.id) : undefined}
-              onClick={() => setSel(j)}
+              onClick={() => setSel(j)} onContextMenu={(e) => openMenu(e, j)}
               className="card" style={{ borderLeft: `3px solid ${pr ? pr.color : (j.techId ? ACCENT : 'var(--red)')}`, cursor: 'pointer' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
                 <span style={{ fontWeight: 700, fontSize: 13 }}>{pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.customer}</span>
@@ -182,6 +202,9 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
       </div>
 
       {sel && <JobPanel job={sel} techName={techName(sel.techId)} canStatus={canStatus} canAssign={canAssign} onClose={() => setSel(null)} />}
+      <ContextMenu menu={menu} onClose={() => setMenu(null)} onAction={onMenuAction} canMutate={canStatus || canAssign} />
+      {cancelT && <CancelModal job={cancelT} onClose={() => setCancelT(null)} onDone={() => { setCancelT(null); refresh(); }} />}
+      {durT && <DurationModal job={durT} onClose={() => setDurT(null)} onDone={() => { setDurT(null); refresh(); }} />}
     </>
   );
 }
