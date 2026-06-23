@@ -6,6 +6,7 @@ import { assignTech, updateJobStatus, setDuration } from './actions';
 import { ACCENT, STATUS_DOT, crewColor, initials, priorityOf, hourLabel, money, fmtTime } from './boardTokens';
 import JobPanel from './JobPanel';
 import { ContextMenu, CancelModal, DurationModal } from './JobActions';
+import { Wrench, MapPin, Camera, Inbox } from 'lucide-react';
 
 // Layout — absolute px-per-hour grid, the same model the live board uses so the now-line and
 // drop-targeting are computed straight from mouse position.
@@ -231,11 +232,47 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
         <div style={{ fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: late ? 'var(--red)' : 'var(--fg-1)' }}>
           {pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.customer}
         </div>
-        <div className="muted" style={{ fontSize: 9 }}>{fmtTime(j.scheduledISO)}{live ? ` · ${dur}m` : (j.amount ? ' · ' + money(j.amount) : '')}</div>
+        <div className="muted" style={{ fontSize: 9, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span>{fmtTime(j.scheduledISO)}{live ? ` · ${dur}m` : (j.amount ? ' · ' + money(j.amount) : '')}</span>
+          {j.photoCount > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}><Camera size={9} />{j.photoCount}</span>}
+        </div>
         {canResize && (
           <div onMouseDown={(e) => beginResize(e, j)} title="Drag to set how long it'll take"
             style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 8, cursor: 'ew-resize', zIndex: 6 }} />
         )}
+      </div>
+    );
+  }
+
+  // At-a-glance badge row. Data-driven so Phase-B badges (video / QA pass-fail / paid /
+  // callback / warranty) just append here once their columns land.
+  function JobBadges({ j }) {
+    const badges = [];
+    if (j.photoCount > 0) badges.push({ key: 'photos', icon: <Camera size={11} />, text: j.photoCount, title: `${j.photoCount} photo${j.photoCount > 1 ? 's' : ''}` });
+    if (!badges.length) return null;
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
+        {badges.map((b) => (
+          <span key={b.key} title={b.title} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 7, background: 'var(--surface-2)', color: 'var(--fg-2)', border: '1px solid var(--border)' }}>{b.icon}{b.text}</span>
+        ))}
+      </div>
+    );
+  }
+
+  function TrayCard({ j }) {
+    const pr = priorityOf(j.priority);
+    const typeBits = [j.job_type, j.amount ? money(j.amount) : null].filter(Boolean).join(' · ');
+    return (
+      <div draggable={canAssign} onDragStart={canAssign ? (e) => dragStart(e, j.id) : undefined}
+        onClick={() => setSel(j)} onContextMenu={(e) => openMenu(e, j)}
+        className="card" style={{ borderLeft: `3px solid ${pr ? pr.color : (j.techId ? ACCENT : 'var(--red)')}`, cursor: 'pointer', padding: '10px 12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>{pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.customer}</span>
+          <span className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{j.scheduledISO ? fmtTime(j.scheduledISO) : 'no time'}</span>
+        </div>
+        {j.address && <div className="muted" style={{ fontSize: 11, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}><MapPin size={11} /> {j.address}</div>}
+        {typeBits && <div className="muted" style={{ fontSize: 11, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}><Wrench size={11} /> {typeBits}</div>}
+        <JobBadges j={j} />
       </div>
     );
   }
@@ -307,29 +344,23 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
         </div>
       </div>
 
-      {/* JOBS TRAY — drag a card onto a tech row above */}
-      <h3 style={{ margin: '18px 0 8px', fontSize: 12, color: ACCENT, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-        🧰 Jobs Tray <span className="muted" style={{ fontWeight: 400 }}>· {tray.length}{canAssign ? ' · drag onto a tech' : ''}</span>
+      {/* JOBS TRAY — split into action buckets, not one pile */}
+      <h3 style={{ margin: '18px 0 8px', fontSize: 12, color: ACCENT, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Inbox size={14} /> Jobs Tray <span className="muted" style={{ fontWeight: 400 }}>· {tray.length}{canAssign ? ' · drag onto a tech' : ''}</span>
       </h3>
-      {!tray.length && <div className="card"><span className="muted">Tray is empty — every job is on a tech&apos;s schedule. 🎉</span></div>}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10, opacity: pending ? 0.6 : 1 }}>
-        {tray.map((j) => {
-          const pr = priorityOf(j.priority);
-          const typeBits = [j.job_type, j.amount ? money(j.amount) : null].filter(Boolean).join(' · ');
-          return (
-            <div key={j.id} draggable={canAssign} onDragStart={canAssign ? (e) => dragStart(e, j.id) : undefined}
-              onClick={() => setSel(j)} onContextMenu={(e) => openMenu(e, j)}
-              className="card" style={{ borderLeft: `3px solid ${pr ? pr.color : (j.techId ? ACCENT : 'var(--red)')}`, cursor: 'pointer' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
-                <span style={{ fontWeight: 700, fontSize: 13 }}>{pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.customer}</span>
-                <span className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{j.scheduledISO ? fmtTime(j.scheduledISO) : 'no time'}</span>
-              </div>
-              {j.address && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>📍 {j.address}</div>}
-              {typeBits && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>🔧 {typeBits}</div>}
-            </div>
-          );
-        })}
-      </div>
+      {!tray.length && <div className="card"><span className="muted">Tray is empty — every job is on a tech&apos;s schedule.</span></div>}
+      {[
+        { key: 'unassigned', label: 'Unassigned', hint: canAssign ? 'drag onto a tech' : '', items: tray.filter((j) => !j.techId) },
+        { key: 'notime', label: 'No time set', hint: 'assigned, needs a slot', items: tray.filter((j) => j.techId && !j.scheduledISO) },
+      ].filter((b) => b.items.length).map((b) => (
+        <div key={b.key} style={{ marginBottom: 12 }}>
+          <div className="muted" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, margin: '4px 0 6px' }}>{b.label} · {b.items.length}{b.hint ? ` · ${b.hint}` : ''}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10, opacity: pending ? 0.6 : 1 }}>
+            {b.items.map((j) => <TrayCard key={j.id} j={j} />)}
+          </div>
+        </div>
+      ))}
+      {tray.length > 0 && <div className="muted" style={{ fontSize: 11 }}>Needs-reschedule + blocked-closeout buckets light up with the supervisor QA pass (Phase B).</div>}
 
       {/* floating drag ghost — follows the cursor while moving a job (live-board feel) */}
       {moveDrag && (() => {
