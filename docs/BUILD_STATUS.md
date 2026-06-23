@@ -34,12 +34,22 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | Past Due (AR) | /past-due | ✅ live | $1.6M, top 100 |
 | Light/dark + blinking alerts | (global) | ✅ live | toggle in topbar |
 
+## Tech iPad parity (spec = live `…?techipad=1`, source `CB_Dispatch_TechIpad*` + SPA HTML)
+The tech iPad is a whole SPA. My Day is the home tab. Pieces, by status:
+- ✅ My Day: self-scoped, date summary (onsite/upcoming/$target), Today tab, rich job cards
+  (time · #job# · status pill · customer · 📍addr · 🔧type · $). Migration 07 backs job#/type/$.
+- ⏳ My Day extras: search bar (find job/invoice/receipt by #), "View the week", today-date filter,
+  drive-time card, **Ask Hank** (AI), gamification strip (rank / Power Plunger Hour / Crown Plunger
+  level), **Hand to Customer** + **On shift** toggle, "Synced from Tech Sheet" indicator.
+- ⏳ Left-rail sub-screens: Start/End shift, **Bids**, **Chat**, **Hank**, **Pay**, **Races**,
+  **Record**, **Vegas**, **Cal**, **PTO**. Each maps to a `CB_Dispatch_*` module — port one at a time.
+
 ## Next ports (in easiest-first order)
-1. ✅ **My Day self-scope** — done (helper day needs `06_helper_assign.sql` run to pair).
+1. ✅ **My Day self-scope + iPad-style cards** — done.
 2. ⏳ **Truck actions** — request parts transfer + loan a tool (port from `CB_Dispatch_*Tools*`).
-3. ⏳ **Dispatch board** — the big one. Spec = `dispatchboard_app.html` + endpoints. Live booking/
-   assignment + the board grid.
-4. ⏳ **Booking / intake**, then the AI/API layer per `API_INTEGRATIONS_BY_ROLE.md`.
+3. ⏳ **Tech iPad extras** — search, week view, then Pay/Bids/Chat sub-screens.
+4. ⏳ **Dispatch board** — the big one. Spec = `dispatchboard_app.html` + endpoints.
+5. ⏳ **Booking / intake**, then the AI/API layer per `API_INTEGRATIONS_BY_ROLE.md`.
 
 ## Open loops / owed
 - [ ] Run `supabase/06_helper_assign.sql` in Supabase (helper pairings table).
