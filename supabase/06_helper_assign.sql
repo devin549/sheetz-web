@@ -12,7 +12,7 @@ create table if not exists public.helper_assignments (
   helper_name   text,
   tech_email    text        not null,
   tech_name     text,
-  window        text,                                    -- e.g. "8:00am-4:00pm"
+  time_window   text,                                    -- e.g. "8:00am-4:00pm" ('window' is a reserved word)
   assigned_by   text,                                    -- stamped server-side, never client
   created_at    timestamptz not null default now()
 );
