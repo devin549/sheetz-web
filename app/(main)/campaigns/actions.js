@@ -189,7 +189,7 @@ export async function approveAndSend(campaignId) {
     for (const s of batch) {
       const first = String(s.customer_name || '').trim().split(/\s+/)[0] || 'there';
       const personalized = camp.body.replace(/\{\{\s*name\s*\}\}/gi, first);
-      const r = await sendOne({ to: s.to_email, subject: camp.subject, html: renderEmailHtml({ subject: camp.subject, body: personalized }) });
+      const r = await sendOne({ to: s.to_email, subject: camp.subject, html: renderEmailHtml({ subject: camp.subject, body: personalized, trackId: s.id }) });
       if (r.ok) { ok++; await sb.from('email_sends').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', s.id); }
       else { fail++; await sb.from('email_sends').update({ status: 'failed', error: r.error || 'send failed' }).eq('id', s.id); }
     }

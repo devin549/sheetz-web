@@ -16,9 +16,18 @@ export default async function Campaigns() {
     return <div className="wrap"><div className="h1">📣 Mass Email</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel to use campaigns.</div></div>;
   }
   const sb = getSupabaseAdmin();
-  const { data: campaigns } = await sb.from('email_campaigns')
+  const { data: campaignsRaw } = await sb.from('email_campaigns')
     .select('id, subject, audience_label, status, recipient_count, skipped_count, send_ok, send_fail, created_by, approved_by, created_at, sent_at')
     .order('created_at', { ascending: false }).limit(25);
+
+  // open counts per campaign (email_sends.opened_at — column exists after migration 18; safe if not)
+  const opens = {};
+  const sentIds = (campaignsRaw || []).filter((c) => c.status === 'sent').map((c) => c.id);
+  if (sentIds.length) {
+    const { data: rows } = await sb.from('email_sends').select('campaign_id, opened_at').in('campaign_id', sentIds);
+    (rows || []).forEach((r) => { if (r.opened_at) opens[r.campaign_id] = (opens[r.campaign_id] || 0) + 1; });
+  }
+  const campaigns = (campaignsRaw || []).map((c) => ({ ...c, opened: opens[c.id] || 0 }));
 
   return (
     <div className="wrap" style={{ maxWidth: 1100 }}>
@@ -35,7 +44,7 @@ export default async function Campaigns() {
       {compose && <Composer canCompose={compose} />}
       {!compose && approve && <div className="muted" style={{ fontSize: 13, margin: '10px 0' }}>You’re an <strong>approver</strong> — review and release the drafts below.</div>}
 
-      <CampaignList campaigns={campaigns || []} canApprove={approve} emailReady={isEmailConfigured} />
+      <CampaignList campaigns={campaigns} canApprove={approve} emailReady={isEmailConfigured} />
     </div>
   );
 }

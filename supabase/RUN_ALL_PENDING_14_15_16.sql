@@ -1,10 +1,11 @@
 -- ════════════════════════════════════════════════════════════════════════════
--- CB Sheetz — ALL PENDING MIGRATIONS (14 + 15 + 16 + 17) in one paste.
+-- CB Sheetz — ALL PENDING MIGRATIONS (14 + 15 + 16 + 17 + 18) in one paste.
 -- Run ONCE in Supabase → SQL Editor → paste → Run. Safe to re-run (idempotent:
 -- every statement is `if not exists` / `on conflict do nothing`).
 --
 -- Unlocks: 📣 Mass Email (14) · 📞 Plunger Pete AI calling (15) · 📜 Certified-mail
--- demand letter + scanned delivery-receipt proof (16) · 🗂️ board move audit (17).
+-- demand letter + scanned delivery-receipt proof (16) · 🗂️ board move audit (17) ·
+-- 📭 email open tracking (18).
 -- ════════════════════════════════════════════════════════════════════════════
 
 
@@ -99,6 +100,13 @@ create index if not exists job_moves_job_idx     on public.job_moves (job_id);
 create index if not exists job_moves_created_idx on public.job_moves (created_at desc);
 
 alter table public.job_moves enable row level security;
+
+
+-- ── 18 · Email open tracking (ServiceTitan / FieldEdge–style pixel) ──────────
+alter table public.email_sends
+  add column if not exists opened_at      timestamptz,
+  add column if not exists last_opened_at timestamptz,
+  add column if not exists open_count     integer default 0;
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Done. Expected result: no errors. Verify (optional):

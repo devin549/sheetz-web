@@ -43,6 +43,7 @@ export default function CampaignList({ campaigns, canApprove, emailReady }) {
                 {c.audience_label} · {c.recipient_count?.toLocaleString()} recipients{c.skipped_count ? ` · ${c.skipped_count} skipped` : ''}
                 {c.created_by ? ` · by ${c.created_by.split('@')[0]}` : ''} · {when(c.created_at)}
                 {c.status === 'sent' && <span style={{ color: 'var(--green)' }}> · ✅ {c.send_ok} sent{c.send_fail ? `, ⚠️ ${c.send_fail} failed` : ''}{c.approved_by ? ` · approved by ${c.approved_by.split('@')[0]}` : ''}</span>}
+                {c.status === 'sent' && c.send_ok > 0 && <span style={{ color: 'var(--info-text)' }}> · 📭 {c.opened || 0} opened{c.send_ok ? ` (${Math.round(((c.opened || 0) / c.send_ok) * 100)}%)` : ''}</span>}
               </div>
             </div>
             <span className="pill" style={{ background: s.bg, color: s.c, fontWeight: 700 }}>{s.t}</span>

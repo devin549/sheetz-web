@@ -123,5 +123,8 @@ fields · 08 jobs harden · 09 techs_crew · 10 cancellations+duration · 11 ai_
 `supabase/15_pete_calls.sql`). **16 certified_proof — ⏳ NOT RUN YET** (collections_log tracking/
 proof/delivered cols + `collections-evidence` storage bucket; run `supabase/16_certified_proof.sql`).
 **17 job_moves — ⏳ NOT RUN YET** (board move/activity audit; run `supabase/17_job_moves.sql`).
-**All four (14–17) bundled in `supabase/RUN_ALL_PENDING_14_15_16.sql` for one paste.**
+**18 email_opens — ⏳ NOT RUN YET** (email_sends opened_at/open_count for ST/FieldEdge-style open
+tracking; run `supabase/18_email_opens.sql`). **All (14–18) bundled in
+`supabase/RUN_ALL_PENDING_14_15_16.sql` for one paste.** Email opens also need `APP_URL` in Vercel
+(or auto via Vercel's production URL) so the tracking pixel has a public origin.
 Later: leads, bookings, truck_transfers+tool_loans, realtime.
