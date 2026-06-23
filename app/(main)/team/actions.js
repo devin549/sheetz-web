@@ -17,6 +17,15 @@ async function assertManager() {
   return { sb, caller: user };
 }
 
+// Mirror a login into the server-authoritative profiles table. Guarded: if profiles isn't
+// migrated yet, this no-ops (auth user_metadata stays the fallback) — returns whether it stuck.
+async function upsertProfile(sb, userId, fields) {
+  try {
+    const { error } = await sb.from('profiles').upsert({ user_id: userId, ...fields, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+    return !error;
+  } catch { return false; }
+}
+
 // Create a login. Devin types name + email + temp password and picks the role (position).
 export async function addUser(formData) {
   let sb;
@@ -31,11 +40,12 @@ export async function addUser(formData) {
   if (!ROLE_IDS.includes(role)) return { ok: false, msg: 'Pick a position.' };
   if (password.length < 8) return { ok: false, msg: 'Temp password must be at least 8 characters.' };
 
-  const { error } = await sb.auth.admin.createUser({
+  const { data: created, error } = await sb.auth.admin.createUser({
     email, password, email_confirm: true,
     user_metadata: { name, role },
   });
   if (error) return { ok: false, msg: error.message };
+  if (created?.user?.id) await upsertProfile(sb, created.user.id, { name, email, role, active: true });
 
   revalidatePath('/team');
   return { ok: true, msg: `✓ Added ${name || email} as ${role}. They sign in with this email + the temp password.` };
@@ -54,7 +64,25 @@ export async function setRole(formData) {
   const meta = (data && data.user && data.user.user_metadata) || {};
   const { error } = await sb.auth.admin.updateUserById(id, { user_metadata: { ...meta, role } });
   if (error) return { ok: false, msg: error.message };
+  await upsertProfile(sb, id, { role, name: meta.name || '', email: (data && data.user && data.user.email) || '' });
 
   revalidatePath('/team');
   return { ok: true, msg: 'Role updated.' };
+}
+
+// Link (or unlink) a login to a tech row so a tech sees ONLY their own jobs. techId '' = unlink.
+export async function setTechLink(formData) {
+  let sb;
+  try { ({ sb } = await assertManager()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const id = String(formData.get('id') || '');
+  const techId = String(formData.get('techId') || '') || null;
+  if (!id) return { ok: false, msg: 'Bad request.' };
+
+  const { data } = await sb.auth.admin.getUserById(id);
+  const meta = (data && data.user && data.user.user_metadata) || {};
+  const ok = await upsertProfile(sb, id, { tech_id: techId, role: meta.role || 'viewer', name: meta.name || '', email: (data && data.user && data.user.email) || '' });
+  if (!ok) return { ok: false, msg: 'Couldn’t save — run supabase/24_profiles.sql first (profiles table missing).' };
+
+  revalidatePath('/team');
+  return { ok: true, msg: techId ? 'Linked to tech — they’ll see only their jobs.' : 'Tech link cleared.' };
 }

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { addUser, setRole } from './actions';
+import { addUser, setRole, setTechLink } from './actions';
 import { roleMeta } from '@/lib/roles';
 
 function suggestPassword() {
@@ -18,7 +18,7 @@ const inputStyle = {
   borderRadius: 8, padding: '9px 11px', fontSize: 14, width: '100%',
 };
 
-export default function TeamManager({ roleOptions, users }) {
+export default function TeamManager({ roleOptions, users, techs = [] }) {
   const router = useRouter();
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -38,6 +38,14 @@ export default function TeamManager({ roleOptions, users }) {
     const fd = new FormData();
     fd.set('id', id); fd.set('role', role);
     const res = await setRole(fd);
+    setMsg(res);
+    router.refresh();
+  }
+
+  async function onTechChange(id, techId) {
+    const fd = new FormData();
+    fd.set('id', id); fd.set('techId', techId);
+    const res = await setTechLink(fd);
     setMsg(res);
     router.refresh();
   }
@@ -88,10 +96,19 @@ export default function TeamManager({ roleOptions, users }) {
                 {u.email}{u.lastSignIn ? ` · last in ${u.lastSignIn}` : ' · never signed in'}
               </div>
             </div>
-            <select defaultValue={u.role} onChange={(e) => onRoleChange(u.id, e.target.value)}
-              style={{ ...inputStyle, width: 'auto', borderColor: meta.color }}>
-              {roleOptions.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-            </select>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {(u.role === 'tech' || u.role === 'helper') && (
+                <select value={u.techId || ''} onChange={(e) => onTechChange(u.id, e.target.value)} title="Link to a tech row → they see only their jobs"
+                  style={{ ...inputStyle, width: 'auto', maxWidth: 170, borderColor: u.techId ? 'var(--green)' : 'var(--border)' }}>
+                  <option value="">— link to tech —</option>
+                  {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              )}
+              <select defaultValue={u.role} onChange={(e) => onRoleChange(u.id, e.target.value)}
+                style={{ ...inputStyle, width: 'auto', borderColor: meta.color }}>
+                {roleOptions.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+              </select>
+            </div>
           </div>
         );
       })}
