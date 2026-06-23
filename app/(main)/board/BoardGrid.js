@@ -87,7 +87,10 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
     const loc = locate(e);
     setDrop(null);
     if (!jobId || !loc) return;
-    start(async () => { await assignTech(jobId, loc.techId, loc.hour); router.refresh(); });
+    // build the scheduled time on the CLIENT (browser TZ) so it matches where it was dropped
+    const d = new Date(); d.setHours(Math.floor(loc.hour), Math.round((loc.hour % 1) * 60), 0, 0);
+    const iso = d.toISOString();
+    start(async () => { await assignTech(jobId, loc.techId, iso); router.refresh(); });
   }
   function dragStart(e, jobId) { e.dataTransfer.setData('text/job-id', jobId); e.dataTransfer.effectAllowed = 'move'; }
 

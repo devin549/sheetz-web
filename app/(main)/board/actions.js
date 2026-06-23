@@ -76,7 +76,10 @@ export async function updateJobStatus(jobId, status) {
 // Assign (or unassign) a tech to a job. techId '' or null = unassign. Optional `hour` (a float,
 // e.g. 13.5 = 1:30pm) reschedules the job to TODAY at that time — used when dragging a job onto
 // the grid. Sets the FK (tech_id, so My Day + the board embed resolve) + denormalized tech_name.
-export async function assignTech(jobId, techId, hour) {
+// `scheduledISO` is a full UTC instant computed ON THE CLIENT (browser/Eastern) from the dropped
+// position — we store it as-is. We must NOT rebuild the time from an hour on the server, because
+// Vercel runs in UTC and `new Date().setHours(9)` would write 9am UTC = 5am Eastern (a 4-hr shift).
+export async function assignTech(jobId, techId, scheduledISO) {
   let sb;
   try { sb = await assertAssigner(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
   if (!jobId) return { ok: false, msg: 'No job.' };
@@ -91,11 +94,7 @@ export async function assignTech(jobId, techId, hour) {
     tech_name: techName,
     assigned_at: techId ? new Date().toISOString() : null,
   };
-  if (hour != null && !Number.isNaN(Number(hour))) {
-    const d = new Date();
-    d.setHours(Math.floor(hour), Math.round((hour % 1) * 60), 0, 0);
-    patch.scheduled_at = d.toISOString();
-  }
+  if (scheduledISO && !Number.isNaN(Date.parse(scheduledISO))) patch.scheduled_at = scheduledISO;
   const { error } = await sb.from('jobs').update(patch).eq('id', jobId);
   if (error) return { ok: false, msg: error.message };
   revalidatePath('/board');
