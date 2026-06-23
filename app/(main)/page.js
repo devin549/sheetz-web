@@ -75,7 +75,7 @@ function commandTiles(role) {
     { icon: '🧾', label: 'Accounting / Receipts', sub: 'OCR + classify', soon: true, show: (r) => can(r, 'seeFinancials') },
     { icon: '💸', label: 'Payroll', sub: 'closed-job pay → gate', soon: true, show: (r) => can(r, 'seeFinancials') },
     { icon: '⭐', label: 'Reviews & Reputation', sub: 'watcher + heat', soon: true, show: (r) => can(r, 'seeReports') },
-    { icon: '🧑‍✈️', label: 'Team & Roster', sub: 'crews, scorecards', soon: true, show: (r) => can(r, 'manageUsers') || can(r, 'seeCrew') },
+    { icon: '🧑‍✈️', label: 'Team & Roster', sub: 'add hires, set roles', href: '/team', show: (r) => can(r, 'manageUsers') },
     { icon: '🩺', label: 'System Health', sub: 'self-audit + alerts', soon: true, show: (r) => r === 'owner' || r === 'admin' },
   ].filter((t) => t.show(role));
 }
