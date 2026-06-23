@@ -44,6 +44,15 @@ The tech iPad is a whole SPA. My Day is the home tab. Pieces, by status:
 - ⏳ Left-rail sub-screens: Start/End shift, **Bids**, **Chat**, **Hank**, **Pay**, **Races**,
   **Record**, **Vegas**, **Cal**, **PTO**. Each maps to a `CB_Dispatch_*` module — port one at a time.
 
+## Widgets / next-level CRM (the web stack's edge over Sheets + ServiceTitan)
+Widgets are native here — building them out is a first-class goal, not a nice-to-have.
+- ✅ **AR aging widget** — live CSS bars (0-30/31-60/61-90/90+) on the home, from real invoices.
+  First proof. Pattern: pure CSS/SVG, no chart lib → keeps the build clean.
+- ⏳ Revenue trend, jobs-by-status donut, tech leaderboard, AR/collections funnel.
+- ⏳ **Supabase Realtime** — board/jobs/KPIs update live with no refresh (the big differentiator).
+- ⏳ Map widget (tech locations / job pins), **Ask Hank** AI panel, drag-drop dispatch.
+- ⏳ PWA install + push notifications.
+
 ## Next ports (in easiest-first order)
 1. ✅ **My Day self-scope + iPad-style cards** — done.
 2. ⏳ **Truck actions** — request parts transfer + loan a tool (port from `CB_Dispatch_*Tools*`).
