@@ -1,6 +1,11 @@
 import './globals.css';
 import { cookies } from 'next/headers';
+import { Inter, JetBrains_Mono } from 'next/font/google';
 import ThemeToggle from '@/components/ThemeToggle';
+
+// Match the live board's fonts exactly (dispatchboard_index.html).
+const inter = Inter({ subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-sans', display: 'swap' });
+const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-mono', display: 'swap' });
 
 export const metadata = {
   title: 'Sheetz — CB',
@@ -17,7 +22,7 @@ export default function RootLayout({ children }) {
   // Read the saved theme server-side so there's no flash of the wrong mode.
   const theme = cookies().get('theme')?.value === 'light' ? 'light' : 'dark';
   return (
-    <html lang="en" data-theme={theme}>
+    <html lang="en" data-theme={theme} className={`${inter.variable} ${mono.variable}`}>
       <body>
         <div className="topbar">
           <span className="logo">🚐</span>

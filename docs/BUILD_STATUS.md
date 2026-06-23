@@ -59,9 +59,12 @@ locked here. Each needs a key/provider; none ship as fire-and-forget.
   list + copy → ONE internal approver (Ashley/Tracey/Devin) clicks Send → every send logged to an
   audit table**. NEVER a one-click blast. Needs an email provider (Resend/SendGrid) + `EMAIL_API_KEY`.
   Honor `do_not_mail` on customers. Batch + rate-limit.
-- ⏳ **Lawyer packet** — one click assembles a collections/legal packet for an overdue account
-  (customer, invoices, aging, comms history, AR cascade record) → PDF for Fore / McKinstry (Devin
-  picks the attorney per case). External send stays gated. Ties to the AR cascade already designed.
+- ✅ **Lawyer packet** — `/past-due/packet/[cid]` assembles a print-clean collections/lien referral:
+  letterhead + attorney block (Fore **or** McKinstry, `?firm=` toggle) + debtor (name/CB#/address/phone/email)
+  + amount-due summary + aging + full invoice schedule + collections-history table (good-faith attempts)
+  + KY statutory refs (KRS 376 lien / 6-mo window, KRS 413.090/413.120). **🖨️ Print / Save as PDF** (no PDF
+  lib — `@media print` hides app chrome → clean white doc in light OR dark). Opened from the AR timeline
+  **⚖️ Build lawyer packet** button (logs a `packet` contact). External send still gated.
 - ⏳ **Plunger Pete — AI calling** — AI voice agent (Vapi/Bland) that calls on collections + warranty
   + missed-lead follow-up. Needs `VAPI_API_KEY`. Recording URL + outcome logged back to the job/AR.
   Internal-first (test numbers) before any real customer call.

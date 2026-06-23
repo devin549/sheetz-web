@@ -1,24 +1,37 @@
-/* CB / Sheetz theme — EXACT palette from the live Dispatch Live board
-   (dispatchboard_index.html): cool dark + #FF6B00 accent. --amber is kept as an alias of the
-   accent so every existing component re-skins to match the board automatically. */
+/* CB / Sheetz theme — EXACT palette + fonts from the live Dispatch board
+   (dispatchboard_index.html). --amber/--green/--red are aliased to the board's accent/ok/bad
+   so every existing component re-skins to match. Fonts: Inter (sans) + JetBrains Mono (numbers). */
+:root {
+  --sans: var(--font-sans, 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif);
+  --mono: var(--font-mono, 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace);
+}
 :root, html[data-theme="dark"] {
   --bg: #0e1116;
+  --surface-0: #11151c;
   --surface-1: #161a22;
   --surface-2: #1d222c;
   --surface-3: #262c38;
   --border: #232834;
+  --border-soft: #1a1e27;
   --border-strong: #2e3543;
   --fg-1: #f0f1f3;
   --fg-2: #c8ccd4;
   --fg-3: #9aa1ae;
-  --accent: #FF6B00;
+  --accent: #FF8124;          /* dark accent (HTML) — brighter than light */
   --accent-2: oklch(75% 0.13 75);
-  --amber: #FF6B00;            /* alias → accent, so var(--amber) matches the board */
-  --amber-bright: #ff8a3d;
+  --accent-3: oklch(70% 0.08 200);
+  --danger: oklch(65% 0.20 25);
+  --map-bg: #0a0d12;
+  --ok-text: oklch(76% 0.15 150);
+  --bad-text: #ff6b74;
+  --info-text: #64b5f6;
+  /* app aliases → board colors */
+  --amber: var(--accent);
+  --amber-bright: #ffa05a;
   --amber-dim: #b86a2a;
-  --green: #46c178;
-  --green-bright: #5fd08a;
-  --red: #ef5350;
+  --green: var(--ok-text);
+  --green-bright: oklch(80% 0.15 150);
+  --red: var(--bad-text);
   --rail-bg: var(--surface-1);
   --rail-fg: var(--fg-1);
   --rail-border: var(--border);
@@ -27,22 +40,30 @@
 /* Light mode — the board's exact warm-cream light theme. */
 html[data-theme="light"] {
   --bg: #f6f4ef;
+  --surface-0: #f3f1ec;
   --surface-1: #fbfaf6;
   --surface-2: #eceae3;
   --surface-3: #e2dfd6;
   --border: #e1ded5;
+  --border-soft: #ebe9e1;
   --border-strong: #d3cfc4;
   --fg-1: #1a1a1a;
   --fg-2: #4a4845;
   --fg-3: #888581;
-  --accent: #FF6B00;
+  --accent: #FF6B00;          /* light accent (HTML) */
   --accent-2: oklch(72% 0.12 70);
-  --amber: #e65a00;
-  --amber-bright: #FF6B00;
+  --accent-3: oklch(60% 0.08 200);
+  --danger: oklch(58% 0.20 25);
+  --map-bg: #efece4;
+  --ok-text: #1f7a28;
+  --bad-text: #c62828;
+  --info-text: #1565c0;
+  --amber: var(--accent);
+  --amber-bright: #e65a00;
   --amber-dim: #b86a2a;
-  --green: #2e7d32;
-  --green-bright: #2e7d32;
-  --red: #c62828;
+  --green: var(--ok-text);
+  --green-bright: #1f7a28;
+  --red: var(--bad-text);
   --rail-bg: #13243f;
   --rail-fg: #e7ecf3;
   --rail-border: #1d2f4d;
@@ -55,8 +76,9 @@ html, body {
   padding: 0;
   background: var(--bg);
   color: var(--fg-1);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 a { color: var(--amber); text-decoration: none; }
@@ -124,4 +146,11 @@ a:hover { color: var(--amber-bright); }
 .pill-red { background: rgba(239,83,80,.16); color: var(--red); }
 @media (prefers-reduced-motion: reduce) {
   .alert-dot, .pill-blink { animation: none; }
+}
+
+/* Print — clean legal documents (lawyer packet, statements): hide app chrome. */
+@media print {
+  .topbar, aside, .no-print { display: none !important; }
+  html, body { background: #fff !important; color: #000 !important; }
+  .wrap { max-width: none !important; padding: 0 !important; }
 }

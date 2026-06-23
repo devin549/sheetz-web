@@ -12,7 +12,7 @@ function nextActionFor(days) {
   return { stage: '→ Lawyer packet (Fore / McKinstry) · lien window closing', lien: true };
 }
 const ICON = { text: '📱', email: '✉️', call: '📞', letter: '📨', certified: '📜', packet: '⚖️' };
-const STEPS = [['text', '📱 Text'], ['email', '✉️ Email'], ['call', '📞 Call'], ['certified', '📜 Certified'], ['packet', '⚖️ Lawyer packet']];
+const STEPS = [['text', '📱 Text'], ['email', '✉️ Email'], ['call', '📞 Call'], ['certified', '📜 Certified']];
 function ago(iso) { try { const m = (Date.now() - new Date(iso).getTime()) / 60000; if (m < 60) return Math.floor(m) + 'm ago'; if (m < 1440) return Math.floor(m / 60) + 'h ago'; return Math.floor(m / 1440) + 'd ago'; } catch { return ''; } }
 
 export default function CollectionsTimeline({ customerId, oldestDays, address, canLog }) {
@@ -33,10 +33,14 @@ export default function CollectionsTimeline({ customerId, oldestDays, address, c
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         <span className="pill" style={{ fontSize: 11, background: na.lien ? 'rgba(239,83,80,.16)' : 'var(--surface-2)', color: na.lien ? 'var(--red)' : 'var(--fg-2)', fontWeight: 700 }}>Next: {na.stage}</span>
         {canLog && (
-          <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
             {STEPS.map(([ch, lbl]) => (
               <button key={ch} onClick={() => logIt(ch)} disabled={pending} className="pill" style={{ cursor: 'pointer', fontSize: 11, border: '1px solid var(--border-strong)', background: 'transparent', color: 'var(--fg-2)' }}>{lbl}</button>
             ))}
+            <a href={`/past-due/packet/${customerId}`} target="_blank" rel="noopener" onClick={() => logIt('packet')} className="pill"
+              style={{ fontSize: 11, fontWeight: 800, textDecoration: 'none', border: na.lien ? '1px solid var(--red)' : '1px solid var(--border-strong)', background: na.lien ? 'rgba(239,83,80,.14)' : 'transparent', color: na.lien ? 'var(--red)' : 'var(--fg-2)' }}>
+              ⚖️ Build lawyer packet
+            </a>
           </span>
         )}
       </div>
