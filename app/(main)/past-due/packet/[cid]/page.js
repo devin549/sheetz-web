@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
+import { COMPANY } from '@/lib/company';
 import PrintButton from '../PrintButton';
 
 export const dynamic = 'force-dynamic';
@@ -92,9 +93,13 @@ export default async function LawyerPacket({ params, searchParams }) {
         <div style={P.sheet}>
           {/* letterhead */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #111', paddingBottom: 14 }}>
-            <div>
-              <div style={P.h1}>Clog Busterz Plumbing</div>
-              <div style={{ fontSize: 11, color: '#666' }}>Accounts Receivable · Collections</div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              {COMPANY.logo && <img src={COMPANY.logo} alt={COMPANY.name} style={{ height: 44, width: 'auto' }} />}
+              <div>
+                <div style={P.h1}>{COMPANY.name}</div>
+                <div style={{ fontSize: 11, color: '#555' }}>{COMPANY.address1} · {COMPANY.address2}</div>
+                <div style={{ fontSize: 11, color: '#666' }}>Accounts Receivable · Collections · {COMPANY.phone}</div>
+              </div>
             </div>
             <div style={{ textAlign: 'right', fontSize: 11, color: '#666' }}>
               <div><strong>Collections / Lien Referral Packet</strong></div>

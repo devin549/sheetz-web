@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
+import { COMPANY } from '@/lib/company';
 import PrintButton from '../packet/PrintButton';
 
 export const dynamic = 'force-dynamic';
@@ -77,9 +78,12 @@ export default async function ArReport() {
       <div style={P.page}>
         <div style={P.sheet}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #111', paddingBottom: 12, marginBottom: 12 }}>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 800 }}>Clog Busterz Plumbing</div>
-              <div style={{ fontSize: 11, color: '#666' }}>Accounts Receivable — Aging Report</div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              {COMPANY.logo && <img src={COMPANY.logo} alt={COMPANY.name} style={{ height: 40, width: 'auto' }} />}
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800 }}>{COMPANY.name}</div>
+                <div style={{ fontSize: 11, color: '#666' }}>Accounts Receivable — Aging Report</div>
+              </div>
             </div>
             <div style={{ textAlign: 'right', fontSize: 11, color: '#666' }}>
               <div>As of {today}</div>

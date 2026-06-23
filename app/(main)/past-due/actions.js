@@ -5,16 +5,18 @@ import { createClient } from '@/lib/supabase/server';
 import { roleOf } from '@/lib/nav';
 import { can } from '@/lib/roles';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
-import { isEmailConfigured, sendOne } from '@/lib/email';
+import { isEmailConfigured, sendOne, appBaseUrl } from '@/lib/email';
 import { COMPANY } from '@/lib/company';
 import { revalidatePath } from 'next/cache';
 
 const fmtUsd = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 function renderStatementHtml({ name, list, total }) {
   const rows = list.map((i) => `<tr><td style="padding:4px 8px;border-bottom:1px solid #eee">${i.date || ''}</td><td style="padding:4px 8px;border-bottom:1px solid #eee">#${i.num || ''}</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">${fmtUsd(i.bal)}</td></tr>`).join('');
+  const base = appBaseUrl();
+  const logo = (base && COMPANY.logo) ? `<img src="${base}${COMPANY.logo}" alt="${COMPANY.name}" height="34" style="height:34px;width:auto;vertical-align:middle;margin-right:10px" />` : '';
   return `<!doctype html><html><body style="margin:0;background:#f4f3ef;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a">
   <div style="max-width:600px;margin:0 auto;padding:24px"><div style="background:#fff;border:1px solid #e3e0d8;border-radius:10px;overflow:hidden">
-    <div style="background:#FF6B00;color:#fff;padding:14px 20px;font-weight:800;font-size:16px">${COMPANY.name}</div>
+    <div style="background:#fff;color:#1a1a1a;padding:14px 20px;font-weight:800;font-size:16px;border-bottom:3px solid #FF6B00">${logo}${COMPANY.name}</div>
     <div style="padding:22px 20px;font-size:14px">
       <p>Hi ${name || 'there'},</p>
       <p>Here is your current statement of account. Your balance due is <strong>${fmtUsd(total)}</strong> across ${list.length} open invoice${list.length === 1 ? '' : 's'}.</p>

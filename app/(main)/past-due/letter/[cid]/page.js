@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
+import { COMPANY, companyReturnLines } from '@/lib/company';
 import PrintButton from '../../packet/PrintButton';
 
 export const dynamic = 'force-dynamic';
@@ -50,9 +51,13 @@ export default async function CertifiedLetter({ params, searchParams }) {
       <div style={P.page}>
         <div style={P.sheet}>
           {/* letterhead */}
-          <div style={{ borderBottom: '2px solid #111', paddingBottom: 12, marginBottom: 16 }}>
-            <div style={{ fontSize: 20, fontWeight: 800 }}>Clog Busterz Plumbing</div>
-            <div style={{ fontSize: 11, color: '#666' }}>Accounts Receivable · Collections</div>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', borderBottom: '2px solid #111', paddingBottom: 12, marginBottom: 16 }}>
+            {COMPANY.logo && <img src={COMPANY.logo} alt={COMPANY.name} style={{ height: 46, width: 'auto' }} />}
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 800 }}>{COMPANY.name}</div>
+              {companyReturnLines().slice(1).map((l, i) => <div key={i} style={{ fontSize: 11, color: '#555' }}>{l}</div>)}
+              <div style={{ fontSize: 11, color: '#555' }}>📞 {COMPANY.phone} · ✉️ {COMPANY.email}</div>
+            </div>
           </div>
 
           <div style={{ fontSize: 12 }}>{today}</div>

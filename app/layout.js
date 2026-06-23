@@ -25,7 +25,7 @@ export default function RootLayout({ children }) {
     <html lang="en" data-theme={theme} className={`${inter.variable} ${mono.variable}`}>
       <body>
         <div className="topbar">
-          <span className="logo">🚐</span>
+          <img src="/logo.jpg" alt="Clog Busterz" style={{ height: 30, width: 'auto', borderRadius: 4 }} />
           <div style={{ flex: 1 }}>
             <div className="title">Sheetz</div>
             <div className="sub">Clog Busterz · web app (Vercel + Supabase)</div>

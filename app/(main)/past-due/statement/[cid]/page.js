@@ -56,10 +56,13 @@ export default async function Statement({ params }) {
         <div style={P.sheet}>
           {/* letterhead — company return address (top-left) + contact, so the customer can reach us */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #111', paddingBottom: 14 }}>
-            <div>
-              <div style={{ fontSize: 19, fontWeight: 800 }}>{COMPANY.name}</div>
-              {companyReturnLines().slice(1).map((l, i) => <div key={i} style={{ fontSize: 11, color: '#555' }}>{l}</div>)}
-              <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>📞 {COMPANY.phone} · ✉️ {COMPANY.email}</div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              {COMPANY.logo && <img src={COMPANY.logo} alt={COMPANY.name} style={{ height: 46, width: 'auto' }} />}
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800 }}>{COMPANY.name}</div>
+                {companyReturnLines().slice(1).map((l, i) => <div key={i} style={{ fontSize: 11, color: '#555' }}>{l}</div>)}
+                <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>📞 {COMPANY.phone} · ✉️ {COMPANY.email}</div>
+              </div>
             </div>
             <div style={{ textAlign: 'right', fontSize: 11, color: '#666' }}>
               <div style={{ fontWeight: 700, fontSize: 14, color: '#111' }}>STATEMENT OF ACCOUNT</div>
