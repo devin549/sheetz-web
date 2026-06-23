@@ -80,16 +80,30 @@ export async function logContact(customerId, channel, note) {
   return { ok: true };
 }
 
-// A customer's collections timeline (newest first).
+// A customer's full collections timeline (newest first) — logged contact attempts MERGED with Pete
+// AI calls (so recordings + outcomes sit right in the evidence trail before a certified letter).
 export async function getCustomerContacts(customerId) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user || !can(roleOf(user), 'seeFinancials')) return { ok: false, msg: 'Not allowed.' };
   if (!customerId) return { ok: false, msg: 'No customer.' };
   const sb = getSupabaseAdmin();
-  const { data, error } = await sb.from('collections_log').select('id, channel, note, amount, aging_bucket, by_email, created_at').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50);
-  if (error) return { ok: false, msg: error.message, contacts: [] };
-  return { ok: true, contacts: data || [] };
+  const [logRes, callRes] = await Promise.all([
+    sb.from('collections_log').select('id, channel, note, by_email, created_at').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
+    sb.from('pete_calls').select('id, status, summary, recording_url, duration_s, ended_reason, requested_by, approved_by, created_at').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(50),
+  ]);
+  if (logRes.error) return { ok: false, msg: logRes.error.message, contacts: [] };
+
+  const items = [];
+  (logRes.data || []).forEach((l) => items.push({ id: 'l' + l.id, kind: 'log', channel: l.channel, note: l.note || '', by_email: l.by_email, created_at: l.created_at }));
+  // pete_calls may not exist yet (migration 15) — callRes.data is null then, handled.
+  (callRes.data || []).forEach((c) => items.push({
+    id: 'c' + c.id, kind: 'call', channel: 'call', status: c.status, note: c.summary || '',
+    recording_url: c.recording_url || '', duration_s: c.duration_s || null, ended_reason: c.ended_reason || '',
+    by_email: c.approved_by || c.requested_by || '', created_at: c.created_at,
+  }));
+  items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  return { ok: true, contacts: items };
 }
 
 // ── The accounting bot — watches AR + the ledger, answers accounting questions ──

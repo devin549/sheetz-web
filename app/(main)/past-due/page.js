@@ -51,7 +51,7 @@ export default async function PastDue() {
   const ids = ranked.map((r) => r.cid).filter((id) => id && id !== '__none__');
   const cmap = {};
   for (let i = 0; i < ids.length; i += 300) {
-    const { data: custs } = await sb.from('customers').select('id, name, cb_number, phone, address').in('id', ids.slice(i, i + 300));
+    const { data: custs } = await sb.from('customers').select('id, name, cb_number, phone, email, address').in('id', ids.slice(i, i + 300));
     (custs || []).forEach((c) => { cmap[c.id] = c; });
   }
 
@@ -62,7 +62,7 @@ export default async function PastDue() {
     // per-customer aging split (QuickBooks columns)
     const cb = { cur: 0, d60: 0, d90: 0, d90p: 0 };
     invoices.forEach((i) => { const d = i.days || 0; if (d > 90) cb.d90p += i.balance; else if (d > 60) cb.d90 += i.balance; else if (d > 30) cb.d60 += i.balance; else cb.cur += i.balance; });
-    return { cid: r.cid, name: c.name || 'Unknown customer', cbNumber: c.cb_number || null, phone: c.phone || '', address: c.address || '', total: Math.round(r.total), invoices, oldestDays: daysSince(r.oldest), buckets: cb };
+    return { cid: r.cid, name: c.name || 'Unknown customer', cbNumber: c.cb_number || null, phone: c.phone || '', email: c.email || '', address: c.address || '', total: Math.round(r.total), invoices, oldestDays: daysSince(r.oldest), buckets: cb };
   });
 
   // recent collections ledger for the books bot (best-effort — table may not exist yet)

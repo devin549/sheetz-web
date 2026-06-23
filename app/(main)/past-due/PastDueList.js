@@ -107,7 +107,7 @@ export default function PastDueList({ customers, canMark }) {
                 {/* expanded detail */}
                 {isOpen && (
                   <div style={{ padding: '8px 14px 12px', background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
-                    <CollectionsTimeline customerId={c.cid} oldestDays={c.oldestDays} address={c.address} canLog={canMark} />
+                    <CollectionsTimeline customerId={c.cid} oldestDays={c.oldestDays} address={c.address} phone={c.phone} email={c.email} canLog={canMark} />
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, margin: '10px 0 6px' }}>
                       <span className="muted" style={{ fontSize: 12 }}>{c.phone ? `📞 ${c.phone}` : ''}</span>
                       {canMark && (

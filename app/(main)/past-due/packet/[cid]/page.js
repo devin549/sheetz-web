@@ -15,6 +15,7 @@ const FIRMS = {
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const daysSince = (ms) => (ms ? Math.floor((Date.now() - ms) / 86400000) : null);
 const fmtDate = (iso) => { try { return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return iso || '—'; } };
+const fmtStamp = (iso) => { try { return new Date(iso).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return iso || '—'; } };
 const CH = { text: '📱 Text / SMS', email: '✉️ Email', call: '📞 Phone call', letter: '📨 Mailed letter', certified: '📜 Certified mail', packet: '⚖️ Lawyer packet' };
 
 // Plain-paper legal styling — explicit black-on-white so it prints identically in light OR dark mode.
@@ -45,7 +46,9 @@ export default async function LawyerPacket({ params, searchParams }) {
   const sb = getSupabaseAdmin();
   const { data: cust } = await sb.from('customers').select('id, name, cb_number, phone, email, address').eq('id', cid).maybeSingle();
   const { data: invRows } = await sb.from('invoices').select('id, invoice_number, invoice_date, balance, city, status').eq('customer_id', cid).eq('status', 'open');
-  const { data: log } = await sb.from('collections_log').select('channel, note, amount, aging_bucket, by_email, created_at').eq('customer_id', cid).order('created_at', { ascending: true });
+  const { data: log } = await sb.from('collections_log').select('channel, note, by_email, created_at').eq('customer_id', cid).order('created_at', { ascending: true });
+  // Pete AI calls (with recordings) belong in the evidence trail — proof every attempt was exhausted.
+  const { data: callLog } = await sb.from('pete_calls').select('status, summary, recording_url, duration_s, ended_reason, requested_by, approved_by, created_at').eq('customer_id', cid).order('created_at', { ascending: true });
 
   const invoices = (invRows || [])
     .map((i) => ({ ...i, bal: Number(i.balance) || 0, ms: i.invoice_date ? new Date(i.invoice_date).getTime() : null }))
@@ -58,7 +61,11 @@ export default async function LawyerPacket({ params, searchParams }) {
   invoices.forEach((i) => { const d = i.ms ? (Date.now() - i.ms) / 86400000 : 0; if (d > 90) aging.d90p += i.bal; else if (d > 60) aging.d90 += i.bal; else if (d > 30) aging.d60 += i.bal; else aging.cur += i.bal; });
 
   const addr = cust?.address || '';
-  const contacts = log || [];
+  // Merge logged contacts + Pete calls into one chronological evidence trail.
+  const contacts = [
+    ...(log || []).map((l) => ({ kind: 'log', channel: l.channel, note: l.note || '', recording_url: '', by: l.by_email, created_at: l.created_at })),
+    ...(callLog || []).map((c) => ({ kind: 'call', channel: 'AI call (Pete)', note: c.summary || c.ended_reason || (c.status ? `call ${c.status}` : ''), recording_url: c.recording_url || '', by: c.approved_by || c.requested_by || '', created_at: c.created_at, duration_s: c.duration_s })),
+  ].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   const today = fmtDate(new Date().toISOString());
 
   return (
@@ -145,22 +152,24 @@ export default async function LawyerPacket({ params, searchParams }) {
             <tfoot><tr><td style={{ ...P.td, fontWeight: 800, borderTop: '2px solid #ccc' }} colSpan={4}>Total referred</td><td style={{ ...P.td, ...P.num, fontWeight: 800, borderTop: '2px solid #ccc' }}>{money(total)}</td></tr></tfoot>
           </table>
 
-          {/* contact / collections history — the proof of good-faith attempts */}
+          {/* contact / collections history — the proof of good-faith attempts (incl. AI-call recordings) */}
           <div style={P.label}>Collections history (good-faith contact attempts)</div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr><th style={P.th}>Date</th><th style={P.th}>Method</th><th style={P.th}>By</th><th style={P.th}>Note</th></tr></thead>
+            <thead><tr><th style={P.th}>Date &amp; time</th><th style={P.th}>Method</th><th style={P.th}>By</th><th style={P.th}>Note / outcome</th><th style={P.th}>Recording</th></tr></thead>
             <tbody>
-              {!contacts.length && <tr><td style={P.td} colSpan={4}>No contact logged in the system for this account.</td></tr>}
+              {!contacts.length && <tr><td style={P.td} colSpan={5}>No contact logged in the system for this account.</td></tr>}
               {contacts.map((c, idx) => (
                 <tr key={idx}>
-                  <td style={P.td}>{fmtDate(c.created_at)}</td>
-                  <td style={P.td}>{CH[c.channel] || c.channel}</td>
-                  <td style={P.td}>{c.by_email ? c.by_email.split('@')[0] : '—'}</td>
+                  <td style={P.td}>{fmtStamp(c.created_at)}</td>
+                  <td style={P.td}>{CH[c.channel] || c.channel}{c.duration_s ? ` · ${c.duration_s}s` : ''}</td>
+                  <td style={P.td}>{c.by ? String(c.by).split('@')[0] : '—'}</td>
                   <td style={P.td}>{c.note || '—'}</td>
+                  <td style={{ ...P.td, fontSize: 10.5, wordBreak: 'break-all' }}>{c.recording_url ? <a href={c.recording_url} style={{ color: '#0645ad' }}>{c.recording_url}</a> : '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {contacts.some((c) => c.recording_url) && <div style={{ fontSize: 10.5, color: '#777', marginTop: 5 }}>Call recordings retained on file and available to counsel on request.</div>}
 
           {/* statutory references */}
           <div style={P.label}>Kentucky statutory references (counsel to confirm applicability)</div>
