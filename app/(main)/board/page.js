@@ -3,12 +3,14 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
 import AssignControl from './AssignControl';
+import ScrollToNow from './ScrollToNow';
 
 export const dynamic = 'force-dynamic';
 
-const START_HOUR = 6, END_HOUR = 19; // 6a–7p, matches the live board
+const START_HOUR = 0, END_HOUR = 23; // full 24/7 — CB runs emergency, so jobs can land any hour
 const HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
-const GRID_COLS = `140px repeat(${HOURS.length}, minmax(52px, 1fr))`;
+const GRID_COLS = `120px repeat(${HOURS.length}, minmax(48px, 1fr))`;
+const GRID_MIN = 120 + HOURS.length * 48; // keeps all 24 columns readable; container scrolls
 
 function hourLabel(h) { const ap = h < 12 ? 'a' : 'p'; const hh = h % 12 === 0 ? 12 : h % 12; return `${hh}${ap}`; }
 function fmtTime(iso) { try { return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch { return ''; } }
@@ -109,9 +111,10 @@ export default async function Board() {
       </div>
 
       {/* TIME GRID */}
-      <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
+      <ScrollToNow hour={nowHour} totalHours={HOURS.length} containerId="board-grid" />
+      <div id="board-grid" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
         {/* header hours */}
-        <div style={{ display: 'grid', gridTemplateColumns: GRID_COLS, borderBottom: '1px solid var(--border)', minWidth: 760 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: GRID_COLS, borderBottom: '1px solid var(--border)', minWidth: GRID_MIN }}>
           <div style={{ padding: '8px 10px', fontSize: 11, fontWeight: 700, color: 'var(--fg-3)' }}>Tech</div>
           {HOURS.map((h) => (
             <div key={h} style={{ padding: '8px 4px', fontSize: 10, textAlign: 'center', color: h === nowHour ? 'var(--amber)' : 'var(--fg-3)', fontWeight: h === nowHour ? 800 : 400, borderLeft: '1px solid var(--border)' }}>{hourLabel(h)}</div>
@@ -120,9 +123,9 @@ export default async function Board() {
 
         {crewNames.map((crew) => (
           <div key={crew}>
-            <div style={{ padding: '5px 10px', fontSize: 11, fontWeight: 800, color: 'var(--amber-dim)', background: 'var(--surface-1)', borderBottom: '1px solid var(--border)', minWidth: 760 }}>▾ {crew} <span className="muted" style={{ fontWeight: 400 }}>· {crews[crew].length}</span></div>
+            <div style={{ padding: '5px 10px', fontSize: 11, fontWeight: 800, color: 'var(--amber-dim)', background: 'var(--surface-1)', borderBottom: '1px solid var(--border)', minWidth: GRID_MIN }}>▾ {crew} <span className="muted" style={{ fontWeight: 400 }}>· {crews[crew].length}</span></div>
             {crews[crew].map((t) => (
-              <div key={t.id} style={{ display: 'grid', gridTemplateColumns: GRID_COLS, borderBottom: '1px solid var(--border)', minWidth: 760, minHeight: 46 }}>
+              <div key={t.id} style={{ display: 'grid', gridTemplateColumns: GRID_COLS, borderBottom: '1px solid var(--border)', minWidth: GRID_MIN, minHeight: 46 }}>
                 <div style={{ padding: '8px 10px', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center' }}>{t.name}</div>
                 {HOURS.map((h) => {
                   const cell = (grid[t.id] && grid[t.id][h]) || [];
