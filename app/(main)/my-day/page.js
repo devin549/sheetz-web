@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
+import JobCard from './JobCard';
 
 // Always read fresh (no static caching) — this is live job data.
 export const dynamic = 'force-dynamic';
@@ -75,7 +76,7 @@ export default async function MyDay({ searchParams }) {
   let jobs = null, error = null;
   if (!note) {
     const useFilter = !!(scopeName && scopeName.length);
-    const sel = (extra) => 'id, status, priority, scheduled_at' + extra + ', customers(name, address), techs' + (useFilter ? '!inner' : '') + '(name)';
+    const sel = (extra) => 'id, status, priority, scheduled_at' + extra + ', customers(name, address, phone), techs' + (useFilter ? '!inner' : '') + '(name)';
     const run = (extra) => {
       let q = supabase.from('jobs').select(sel(extra)).order('scheduled_at', { ascending: true });
       if (useFilter) q = q.ilike('techs.name', '%' + scopeName + '%');
@@ -149,35 +150,9 @@ export default async function MyDay({ searchParams }) {
         <div className="card"><span className="muted">{seeAll ? 'No jobs yet. Run supabase/seed.sql to add samples.' : 'Nothing on your schedule today. 🎉'}</span></div>
       )}
 
-      {!note && !error && list.map((j) => {
-        const cust = j.customers || {};
-        const t = j.techs || {};
-        const pill = statusPill(j.status);
-        const done = /done|complete|closed/.test(String(j.status || '').toLowerCase());
-        const urgent = /high|urgent|emergency/i.test(String(j.priority || ''));
-        const typeBits = [j.job_type, j.amount ? money(j.amount) : null].filter(Boolean).join(' · ');
-        return (
-          <div key={j.id} className="card card-amber" style={{ opacity: done ? 0.72 : 1 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 12, alignItems: 'start' }}>
-              <div style={{ textAlign: 'center', minWidth: 52 }}>
-                <div style={{ fontWeight: 800, color: 'var(--amber)', fontSize: 14 }}>{fmtTime(j.scheduled_at)}</div>
-                {j.job_number && <div className="muted" style={{ fontSize: 10, fontFamily: 'monospace' }}>#{j.job_number}</div>}
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>
-                  {urgent && <span className="alert-dot" aria-hidden="true" />}
-                  {cust.name || 'Customer'}
-                  {urgent && <span className="pill pill-red pill-blink" style={{ marginLeft: 8 }}>RUNNING LATE</span>}
-                </div>
-                {cust.address && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {cust.address}</div>}
-                {typeBits && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>🔧 {typeBits}</div>}
-                {seeAll && t.name && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>👷 {t.name}</div>}
-              </div>
-              <span className={pill.cls} style={pill.color ? { color: pill.color } : undefined}>{pill.label}</span>
-            </div>
-          </div>
-        );
-      })}
+      {!note && !error && list.map((j) => (
+        <JobCard key={j.id} job={j} seeAll={seeAll} canAct={can(role, 'changeStatus')} />
+      ))}
     </div>
   );
 }
