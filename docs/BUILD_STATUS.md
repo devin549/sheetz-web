@@ -1,7 +1,8 @@
 # Sheetz web app — BUILD STATUS (the one source of truth)
 
 Read this first. It's the running checklist so nothing gets lost or rebuilt twice. Update it as
-work lands. Companion files: **`WEB_MIGRATION_ROADMAP.md`** (the full phased plan from the agent
+work lands. Companion files: **`DISPATCH_BOARD_AUDIT.md`** (live-board→web parity gap list, ~95
+screens, P0/P1/P2 — the board build queue), **`WEB_MIGRATION_ROADMAP.md`** (the full phased plan from the agent
 sweep of all 8 sheets — ~350 features), `API_INTEGRATIONS_BY_ROLE.md` (the AI/API layer per role),
 `../lib/roles.js` (the canonical 15-role permission model, ported from the live board).
 
