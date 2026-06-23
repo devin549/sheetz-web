@@ -1,4 +1,4 @@
-import { getSupabase, isSupabaseConfigured } from '@/lib/supabaseClient';
+import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,16 +10,20 @@ function money(n) {
 export default async function Customers({ searchParams }) {
   const q = (searchParams?.q || '').trim();
 
-  if (!isSupabaseConfigured) {
+  if (!isAdminConfigured) {
     return (
       <div className="wrap">
         <div className="h1">🔎 Customers</div>
-        <div className="notice">Connect Supabase first (see README) — then your customer base shows up here.</div>
+        <div className="notice">
+          Your customer data is protected (Row-Level Security), so this screen reads it server-side with the
+          service-role key. Add <code>SUPABASE_SERVICE_ROLE_KEY</code> to your Vercel Environment Variables
+          (server-only — not the public one) and redeploy, and your 13k customers show up here.
+        </div>
       </div>
     );
   }
 
-  const supabase = getSupabase();
+  const supabase = getSupabaseAdmin();
   const { count: total } = await supabase.from('customers').select('*', { count: 'exact', head: true });
 
   let results = [], error = null;
