@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
-import BoardGrid from './BoardGrid';
+import BoardSurface from './BoardSurface';
 import LiveClock from './LiveClock';
 import { ACCENT, STATUS_DOT, statusKey, money } from './boardTokens';
 
@@ -105,17 +105,13 @@ export default async function Board() {
         {chip('On site', counts.onsite, 'onsite')}
         {chip('Late', counts.late, 'late')}
         {chip('Complete', counts.done, 'done')}
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          <span className="pill" style={{ background: ACCENT, color: '#fff', fontWeight: 800, fontSize: 11 }}>Time grid</span>
-          {['Map', 'Roster', 'Week', 'Capacity'].map((v) => <span key={v} className="pill" style={{ color: 'var(--fg-3)', fontSize: 11 }}>{v}</span>)}
-        </span>
       </div>
 
-      <BoardGrid techs={techs} jobs={gridJobs} tray={tray} techStatus={techStatus} canAssign={canAssign} canStatus={canStatus} />
+      <BoardSurface techs={techs} jobs={gridJobs} tray={tray} techStatus={techStatus} canAssign={canAssign} canStatus={canStatus} />
 
       <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>
-        Drag a tray job onto a tech&apos;s row to schedule it (snaps to 15 min); drag a block to move it.
-        Next: live realtime refresh, Map / Roster / Week views, trade + skill badges + utilization, goal bars.
+        Time grid: drag a tray job onto a tech&apos;s row to schedule it (snaps to 15 min); drag a block to move it.
+        Switch views above — Map, Roster, Week, Capacity. Next: live realtime refresh, goal bars, address-based zones.
       </p>
     </div>
   );
