@@ -1,7 +1,8 @@
 # Sheetz web app — BUILD STATUS (the one source of truth)
 
 Read this first. It's the running checklist so nothing gets lost or rebuilt twice. Update it as
-work lands. Companion files: `API_INTEGRATIONS_BY_ROLE.md` (the AI/API layer per role),
+work lands. Companion files: **`WEB_MIGRATION_ROADMAP.md`** (the full phased plan from the agent
+sweep of all 8 sheets — ~350 features), `API_INTEGRATIONS_BY_ROLE.md` (the AI/API layer per role),
 `../lib/roles.js` (the canonical 15-role permission model, ported from the live board).
 
 **Where it runs:** Next.js → Vercel (auto-deploys from GitHub `main`), data in Supabase
