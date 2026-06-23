@@ -37,6 +37,8 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | Customers search | /customers | ✅ live | 13k ST base, CB numbers |
 | Past Due (AR) | /past-due | ✅ live | $1.6M, top 100 |
 | Light/dark + blinking alerts | (global) | ✅ live | toggle in topbar |
+| AI — per-role Claude keys | lib/anthropic.js | ✅ wired | one key per position (owner/gm/office/accounting/sales/marketing/tech/helper + fallbacks); model `claude-opus-4-8`; usage logged to `ai_usage` (mig 11) for GM/Owner rollup |
+| AI — Ask the Board (Hank) | / (home) | ✅ live | seeReports roles; answers plain-English Qs from live jobs/AR/customers. Needs an `ANTHROPIC_KEY_*` in Vercel |
 
 ## Tech iPad parity (spec = live `…?techipad=1`, source `CB_Dispatch_TechIpad*` + SPA HTML)
 The tech iPad is a whole SPA. My Day is the home tab. Pieces, by status:
