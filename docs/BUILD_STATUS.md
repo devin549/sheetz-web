@@ -95,6 +95,6 @@ Widgets are native here — building them out is a first-class goal, not a nice-
 
 ## Migrations run (Supabase SQL editor)
 02 customers ST cols · 03 CB numbers · 04 invoices AR · 05 truck+tools · 06 helper_assign · 07 job card
-fields · 08 jobs harden · 09 techs_crew · 10 cancellations+duration — **all run ✅ (6/23)**. (Note:
-helper_assignments uses `time_window`, not `window` — reserved word.) Later: leads, bookings,
-truck_transfers+tool_loans, realtime.
+fields · 08 jobs harden · 09 techs_crew · 10 cancellations+duration · 11 ai_usage — **all run ✅
+(6/23)**. (Note: helper_assignments uses `time_window`, not `window` — reserved word.) Later: leads,
+bookings, truck_transfers+tool_loans, realtime.
