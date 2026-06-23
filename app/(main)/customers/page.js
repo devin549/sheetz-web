@@ -1,4 +1,5 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
+import { requireRole } from '@/lib/guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +9,7 @@ function money(n) {
 }
 
 export default async function Customers({ searchParams }) {
+  await requireRole(['owner', 'office']);
   const q = (searchParams?.q || '').trim();
 
   if (!isAdminConfigured) {

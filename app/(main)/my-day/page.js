@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabaseClient';
+import { requireRole } from '@/lib/guard';
 
 // Always read fresh (no static caching) — this is live job data.
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,7 @@ function SetupCard() {
 }
 
 export default async function MyDay({ searchParams }) {
+  await requireRole(['owner', 'tech']);
   const tech = (searchParams?.tech || '').trim();
 
   if (!isSupabaseConfigured) {
