@@ -31,7 +31,7 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | Team (add hire, set role) | /team | ✅ live | manageUsers only; server-enforced |
 | Home command center | / | ✅ live | role-aware KPIs + Owner-Sheet tile map |
 | Theme | globals.css | ✅ live | **EXACT live-board palette** ported (#0e1116 cool dark + #FF6B00 accent, cream light) from `dispatchboard_index.html` — app-wide, `--amber` aliased to accent |
-| Dispatch Board | /board | ✅ live | Dispatch-Live look + drag-drop + NOW line + detail PANEL + status changes + **right-click ContextMenu** (open/duration/en route/on site/complete/call/reassign/send-to-queue/cancel, role-gated) + **Cancel-with-reason** (12-reason taxonomy → cancellations log) + **Set-duration** modal — all ported exactly from the script. ⏳ moveJob hardening (active-tech guard + move audit), realtime, Map/Roster/Week, global search, clickable filters, day-nav, full left-nav, Job Booking |
+| Dispatch Board | /board | ✅ live | Dispatch-Live look + drag-drop + NOW line + detail PANEL + status changes + **right-click ContextMenu** (open/duration/en route/on site/complete/call/reassign/send-to-queue/cancel, role-gated) + **Cancel-with-reason** (12-reason taxonomy → cancellations log) + **Set-duration** modal — all ported exactly from the script. ✅ **moveJob hardening**: `assignTech` now refuses to move done/cancelled jobs + writes a **move-audit row** to `job_moves` (mig 17, action=assign/reassign/unassign/reschedule). ⏳ realtime, Map/Roster/Week, global search, clickable filters, day-nav, full left-nav, Job Booking |
 | My Day | /my-day | ✅ live | self-scoped: tech→own jobs, helper→paired tech, office→all (+?tech) |
 | My Truck (fleet + detail) | /my-truck | ✅ live (read) | ⏳ actions: request transfer, loan a tool |
 | Shop (reorder + restock) | /shop | ✅ live (read) | ⏳ self-issue review queue (Reed) |
@@ -122,4 +122,6 @@ fields · 08 jobs harden · 09 techs_crew · 10 cancellations+duration · 11 ai_
 `supabase/14_email_campaigns.sql`). **15 pete_calls — ⏳ NOT RUN YET** (Plunger Pete AI-call log; run
 `supabase/15_pete_calls.sql`). **16 certified_proof — ⏳ NOT RUN YET** (collections_log tracking/
 proof/delivered cols + `collections-evidence` storage bucket; run `supabase/16_certified_proof.sql`).
+**17 job_moves — ⏳ NOT RUN YET** (board move/activity audit; run `supabase/17_job_moves.sql`).
+**All four (14–17) bundled in `supabase/RUN_ALL_PENDING_14_15_16.sql` for one paste.**
 Later: leads, bookings, truck_transfers+tool_loans, realtime.

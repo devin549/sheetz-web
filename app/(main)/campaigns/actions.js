@@ -145,6 +145,24 @@ export async function createCampaign({ subject, body, audience, includeIds }) {
   return { ok: true, id: camp.id, count: chosen.length, skipped, deselected };
 }
 
+// SEND A TEST TO MYSELF — fires ONE email of this campaign to the signed-in user's own address so
+// they can eyeball the formatting before an approver releases the batch. Open to composer/approver.
+export async function sendTestToMe(campaignId) {
+  const { user, role, email } = await me();
+  if (!user || (!canCompose(role) && !canApprove(role))) return { ok: false, msg: 'Your role can’t test campaigns.' };
+  if (!campaignId) return { ok: false, msg: 'No campaign.' };
+  if (!email) return { ok: false, msg: 'Your account has no email address.' };
+  if (!isEmailConfigured) return { ok: false, msg: 'Add EMAIL_API_KEY (Resend) + EMAIL_FROM in Vercel to send a test.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const { data: camp } = await sb.from('email_campaigns').select('subject, body').eq('id', campaignId).maybeSingle();
+  if (!camp) return { ok: false, msg: 'Campaign not found.' };
+  const first = (email.split('@')[0] || 'there');
+  const personalized = camp.body.replace(/\{\{\s*name\s*\}\}/gi, first);
+  const r = await sendOne({ to: email, subject: `[TEST] ${camp.subject}`, html: renderEmailHtml({ subject: camp.subject, body: personalized }) });
+  return r.ok ? { ok: true, msg: `✅ Test sent to ${email} — check your inbox.` } : { ok: false, msg: r.error };
+}
+
 // APPROVE + SEND — internal-approver only. Sends every queued recipient, logs each result.
 export async function approveAndSend(campaignId) {
   const { user, role, email } = await me();

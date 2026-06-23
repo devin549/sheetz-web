@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { approveAndSend, cancelCampaign } from './actions';
+import { approveAndSend, cancelCampaign, sendTestToMe } from './actions';
 
 const STATUS = {
   pending_approval: { t: 'Pending approval', c: 'var(--amber)', bg: 'rgba(255,129,36,.14)' },
@@ -32,8 +32,9 @@ export default function CampaignList({ campaigns, canApprove, emailReady }) {
       <div className="muted" style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Campaigns</div>
       {campaigns.map((c) => {
         const s = STATUS[c.status] || STATUS.canceled;
-        const releasable = canApprove && ['pending_approval', 'approved'].includes(c.status);
-        const cancelable = ['pending_approval', 'approved'].includes(c.status);
+        const pendingState = ['pending_approval', 'approved'].includes(c.status);
+        const releasable = canApprove && pendingState;
+        const cancelable = pendingState;
         return (
           <div key={c.id} className="card" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: 220 }}>
@@ -45,6 +46,12 @@ export default function CampaignList({ campaigns, canApprove, emailReady }) {
               </div>
             </div>
             <span className="pill" style={{ background: s.bg, color: s.c, fontWeight: 700 }}>{s.t}</span>
+            {pendingState && (
+              <button onClick={() => run(c.id, () => sendTestToMe(c.id))} disabled={pending}
+                style={{ background: 'transparent', color: 'var(--info-text)', border: '1px solid var(--info-text)', borderRadius: 8, padding: '7px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: pending && busyId === c.id ? 0.6 : 1 }}>
+                {pending && busyId === c.id ? '…' : '✉️ Test to me'}
+              </button>
+            )}
             {releasable && (
               <button onClick={() => run(c.id, () => approveAndSend(c.id), `Send "${c.subject}" to ${c.recipient_count} customers? This emails real people.`)} disabled={pending}
                 style={{ background: 'var(--green)', color: '#fff', border: 0, borderRadius: 8, padding: '7px 13px', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: pending && busyId === c.id ? 0.6 : 1 }}>

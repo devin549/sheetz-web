@@ -15,7 +15,7 @@ async function assertAssigner() {
   if (!user || !can(roleOf(user), 'assignJobs')) throw new Error('Not allowed.');
   const sb = getSupabaseAdmin();
   if (!sb) throw new Error('Server not configured.');
-  return sb;
+  return { sb, email: (user.email || '') };
 }
 async function assertStatusChanger() {
   const supabase = createClient();
@@ -80,9 +80,14 @@ export async function updateJobStatus(jobId, status) {
 // position — we store it as-is. We must NOT rebuild the time from an hour on the server, because
 // Vercel runs in UTC and `new Date().setHours(9)` would write 9am UTC = 5am Eastern (a 4-hr shift).
 export async function assignTech(jobId, techId, scheduledISO) {
-  let sb;
-  try { sb = await assertAssigner(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  let sb, email;
+  try { ({ sb, email } = await assertAssigner()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
   if (!jobId) return { ok: false, msg: 'No job.' };
+
+  // Load current state → guard completed/cancelled jobs + capture the "from" side for the move audit.
+  const { data: job } = await sb.from('jobs').select('status, tech_id, tech_name, scheduled_at').eq('id', jobId).maybeSingle();
+  if (!job) return { ok: false, msg: 'Job not found.' };
+  if (['done', 'cancelled'].includes(job.status)) return { ok: false, msg: `Can’t move a ${job.status} job.` };
 
   let techName = null;
   if (techId) {
@@ -97,6 +102,21 @@ export async function assignTech(jobId, techId, scheduledISO) {
   if (scheduledISO && !Number.isNaN(Date.parse(scheduledISO))) patch.scheduled_at = scheduledISO;
   const { error } = await sb.from('jobs').update(patch).eq('id', jobId);
   if (error) return { ok: false, msg: error.message };
+
+  // Move/activity audit (best-effort; the live board requires move history). Never blocks the move.
+  const changedTech = String(job.tech_id || '') !== String(techId || '');
+  const action = !techId ? 'unassign'
+    : (job.tech_id && changedTech) ? 'reassign'
+    : (!changedTech && patch.scheduled_at) ? 'reschedule'
+    : 'assign';
+  try {
+    await sb.from('job_moves').insert({
+      job_id: jobId, action,
+      from_tech_id: job.tech_id || null, from_tech_name: job.tech_name || null,
+      to_tech_id: techId || null, to_tech_name: techName,
+      scheduled_at: patch.scheduled_at || job.scheduled_at || null, by_email: email,
+    });
+  } catch (_) {}
   revalidatePath('/board');
   return { ok: true };
 }

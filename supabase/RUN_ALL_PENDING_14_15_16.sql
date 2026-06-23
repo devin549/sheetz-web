@@ -1,10 +1,10 @@
 -- ════════════════════════════════════════════════════════════════════════════
--- CB Sheetz — ALL PENDING MIGRATIONS (14 + 15 + 16) in one paste.
+-- CB Sheetz — ALL PENDING MIGRATIONS (14 + 15 + 16 + 17) in one paste.
 -- Run ONCE in Supabase → SQL Editor → paste → Run. Safe to re-run (idempotent:
 -- every statement is `if not exists` / `on conflict do nothing`).
 --
 -- Unlocks: 📣 Mass Email (14) · 📞 Plunger Pete AI calling (15) · 📜 Certified-mail
--- demand letter + scanned delivery-receipt proof (16).
+-- demand letter + scanned delivery-receipt proof (16) · 🗂️ board move audit (17).
 -- ════════════════════════════════════════════════════════════════════════════
 
 
@@ -80,6 +80,25 @@ alter table public.collections_log
 insert into storage.buckets (id, name, public)
 values ('collections-evidence', 'collections-evidence', false)
 on conflict (id) do nothing;
+
+
+-- ── 17 · Board move/activity audit (reassign / reschedule history) ───────────
+create table if not exists public.job_moves (
+  id             uuid primary key default gen_random_uuid(),
+  job_id         uuid,
+  action         text,                 -- assign | reassign | unassign | reschedule
+  from_tech_id   uuid,
+  from_tech_name text,
+  to_tech_id     uuid,
+  to_tech_name   text,
+  scheduled_at   timestamptz,
+  by_email       text,
+  created_at     timestamptz default now()
+);
+create index if not exists job_moves_job_idx     on public.job_moves (job_id);
+create index if not exists job_moves_created_idx on public.job_moves (created_at desc);
+
+alter table public.job_moves enable row level security;
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Done. Expected result: no errors. Verify (optional):
