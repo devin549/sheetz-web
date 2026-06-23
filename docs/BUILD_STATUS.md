@@ -27,7 +27,7 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | Account / change password | /account | ✅ live | everyone; sets own password |
 | Team (add hire, set role) | /team | ✅ live | manageUsers only; server-enforced |
 | Home command center | / | ✅ live | role-aware KPIs + Owner-Sheet tile map |
-| My Day | /my-day | ✅ live (read) | ⏳ self-scope to logged-in tech; helper→paired tech |
+| My Day | /my-day | ✅ live | self-scoped: tech→own jobs, helper→paired tech, office→all (+?tech) |
 | My Truck (fleet + detail) | /my-truck | ✅ live (read) | ⏳ actions: request transfer, loan a tool |
 | Shop (reorder + restock) | /shop | ✅ live (read) | ⏳ self-issue review queue (Reed) |
 | Customers search | /customers | ✅ live | 13k ST base, CB numbers |
@@ -35,8 +35,7 @@ accounting · fs · sales · marketing · shop. Nav + page guards are permission
 | Light/dark + blinking alerts | (global) | ✅ live | toggle in topbar |
 
 ## Next ports (in easiest-first order)
-1. ⏳ **My Day self-scope** — a tech sees only their jobs; a **helper** sees their *paired tech's*
-   day (needs `helper_assignments` table — migration `supabase/06_helper_assign.sql` ready to run).
+1. ✅ **My Day self-scope** — done (helper day needs `06_helper_assign.sql` run to pair).
 2. ⏳ **Truck actions** — request parts transfer + loan a tool (port from `CB_Dispatch_*Tools*`).
 3. ⏳ **Dispatch board** — the big one. Spec = `dispatchboard_app.html` + endpoints. Live booking/
    assignment + the board grid.
