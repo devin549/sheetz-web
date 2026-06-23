@@ -30,7 +30,7 @@ export default async function Customers({ searchParams }) {
   if (q) {
     const r = await supabase
       .from('customers')
-      .select('id, st_customer_id, name, phone, email, address, type, do_not_service, do_not_mail, lifetime_revenue, lifetime_jobs, last_job_completed')
+      .select('id, cb_number, st_customer_id, name, phone, email, address, type, do_not_service, do_not_mail, lifetime_revenue, lifetime_jobs, last_job_completed')
       .or(`name.ilike.%${q}%,phone.ilike.%${q}%,email.ilike.%${q}%,address.ilike.%${q}%`)
       .order('lifetime_revenue', { ascending: false })
       .limit(50);
@@ -67,6 +67,7 @@ export default async function Customers({ searchParams }) {
         <div key={c.id} className="card card-amber">
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 800, fontSize: 15 }}>{c.name}</span>
+            {c.cb_number && <span className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)', fontWeight: 800 }}>CB-{c.cb_number}</span>}
             {c.type && <span className="pill">{c.type}</span>}
             {c.do_not_service && <span className="pill" style={{ color: 'var(--red)', border: '1px solid var(--red)' }}>⛔ DO NOT SERVICE</span>}
             {c.do_not_mail && <span className="pill" style={{ color: 'var(--fg-3)' }}>no mail</span>}
@@ -78,7 +79,7 @@ export default async function Customers({ searchParams }) {
           <div className="meta" style={{ marginTop: 5, color: 'var(--amber)' }}>
             💰 {money(c.lifetime_revenue)} lifetime · {c.lifetime_jobs || 0} jobs
             {c.last_job_completed ? ' · last ' + c.last_job_completed : ''}
-            {c.st_customer_id ? ' · ST#' + c.st_customer_id : '  · ✨ added in CB'}
+            {c.st_customer_id ? ' · was ST# ' + c.st_customer_id : '  · ✨ added in CB'}
           </div>
         </div>
       ))}
