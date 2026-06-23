@@ -132,5 +132,10 @@ notes = Ashley's Notes column; run `supabase/19_ar_notes.sql`). **All (14–19) 
 **AR = Ashley's book (port of her ST AR report; ST being abandoned):** per-customer **📝 Notes**
 (editable, shows inline on the row; "DO NOT SERVICE" flags red) + **📄 AR aging report** at
 `/past-due/report` — printable full-book aging (Customer · Current · 30 · 60 · 90 · Over 90 · Total ·
-Notes + grand totals), matching her exact columns. Her real book totals ~$290k.
+Notes + grand totals), matching her exact columns. Her real book totals ~$290k. **🚫 Doubtful/bad-debt
+flag** (mig 20): per-invoice + per-customer "too old to count on" → excluded from collectible AR
+(headline now "$X collectible · $Y doubtful (not counted)") but kept owed (still on statement + lawyer
+packet). Email opens surface in the timeline (✉️ sent · 📭 opened). **⬆️ Import A/R** at
+`/past-due/import` — paste a ST customer+open-invoice CSV → creates customers + open invoices (column
+auto-detect, dupe-invoice skip, preview-then-import) so reports go live with real data.
 Later: leads, bookings, truck_transfers+tool_loans, realtime.

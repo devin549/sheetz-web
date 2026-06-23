@@ -61,6 +61,114 @@ export async function markCustomerPaid(customerId) {
   return { ok: true };
 }
 
+// ── AR import (CSV/paste from a ServiceTitan export → real customers + open invoices) ──
+// Non-exported helpers (a 'use server' file may only EXPORT async fns; module consts are fine).
+function parseCsv(text) {
+  const s = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const rows = []; let row = []; let field = ''; let inQ = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inQ) { if (ch === '"') { if (s[i + 1] === '"') { field += '"'; i++; } else inQ = false; } else field += ch; continue; }
+    if (ch === '"') inQ = true;
+    else if (ch === ',') { row.push(field); field = ''; }
+    else if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+    else if (ch === '\t' && !field && !row.length) { /* tolerate leading tab */ }
+    else field += ch;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter((r) => r.some((c) => String(c).trim() !== ''));
+}
+function detectCols(headers) {
+  const h = headers.map((x) => String(x).toLowerCase().trim());
+  const find = (...keys) => {
+    for (const k of keys) { const i = h.findIndex((x) => x === k); if (i >= 0) return i; }
+    for (const k of keys) { const i = h.findIndex((x) => x.includes(k)); if (i >= 0) return i; }
+    return -1;
+  };
+  return {
+    customer: find('customer name', 'customer', 'name', 'client', 'account'),
+    invoice: find('invoice #', 'invoice number', 'invoice', 'inv #', 'doc #', 'inv'),
+    date: find('invoice date', 'inv date', 'date'),
+    balance: find('total due', 'balance', 'open balance', 'amount due', 'amount', 'total'),
+    city: find('service location', 'job site', 'city', 'location'),
+    phone: find('phone number', 'phone'),
+    email: find('e-mail', 'email'),
+    address: find('address', 'street', 'bill to'),
+  };
+}
+const parseMoney = (v) => Number(String(v == null ? '' : v).replace(/[$,()\s]/g, '')) || 0;
+function isoDate(v) { const s = String(v || '').trim(); if (!s) return null; const t = new Date(s); return Number.isNaN(t.getTime()) ? null : t.toISOString().slice(0, 10); }
+
+// PREVIEW — detect columns + counts, no writes.
+export async function previewImport(csv) {
+  try { await assertCanMark(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const rows = parseCsv(csv);
+  if (rows.length < 2) return { ok: false, msg: 'Need a header row + at least one data row.' };
+  const cols = detectCols(rows[0]);
+  if (cols.customer < 0 || cols.balance < 0) return { ok: false, msg: 'Couldn’t find a Customer and a Balance/Amount column. Headers seen: ' + rows[0].join(' | ') };
+  const data = rows.slice(1);
+  const names = new Set(data.map((r) => String(r[cols.customer] || '').trim()).filter(Boolean));
+  const sample = data.slice(0, 6).map((r) => ({ customer: String(r[cols.customer] || '').trim(), invoice: cols.invoice >= 0 ? String(r[cols.invoice] || '').trim() : '', date: cols.date >= 0 ? isoDate(r[cols.date]) : null, balance: parseMoney(r[cols.balance]) }));
+  const mapped = Object.fromEntries(Object.entries(cols).map(([k, v]) => [k, v >= 0 ? rows[0][v] : null]));
+  return { ok: true, rows: data.length, customers: names.size, cols: mapped, sample };
+}
+
+// RUN — create/find customers by name + insert open invoices (skips dupe invoice #s).
+export async function runImport(csv) {
+  let sb; try { ({ sb } = await assertCanMark()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const rows = parseCsv(csv);
+  if (rows.length < 2) return { ok: false, msg: 'Nothing to import.' };
+  const cols = detectCols(rows[0]);
+  if (cols.customer < 0 || cols.balance < 0) return { ok: false, msg: 'Missing a Customer / Balance column.' };
+  const data = rows.slice(1);
+
+  const names = [...new Set(data.map((r) => String(r[cols.customer] || '').trim()).filter(Boolean))];
+  const nameToId = {};
+  for (let i = 0; i < names.length; i += 200) {
+    const { data: cs } = await sb.from('customers').select('id, name').in('name', names.slice(i, i + 200));
+    (cs || []).forEach((c) => { if (c.name) nameToId[c.name.toLowerCase()] = c.id; });
+  }
+  let custCreated = 0;
+  for (const n of names) {
+    if (nameToId[n.toLowerCase()]) continue;
+    const r = data.find((rr) => String(rr[cols.customer] || '').trim() === n) || [];
+    const ins = { name: n };
+    if (cols.phone >= 0 && r[cols.phone]) ins.phone = String(r[cols.phone]).trim();
+    if (cols.email >= 0 && r[cols.email]) ins.email = String(r[cols.email]).trim();
+    if (cols.address >= 0 && r[cols.address]) ins.address = String(r[cols.address]).trim();
+    const { data: created, error } = await sb.from('customers').insert(ins).select('id').single();
+    if (!error && created) { nameToId[n.toLowerCase()] = created.id; custCreated++; }
+  }
+
+  const invNums = [...new Set((cols.invoice >= 0 ? data.map((r) => String(r[cols.invoice] || '').trim()) : []).filter(Boolean))];
+  const existing = new Set();
+  for (let i = 0; i < invNums.length; i += 300) {
+    const { data: ex } = await sb.from('invoices').select('invoice_number').in('invoice_number', invNums.slice(i, i + 300));
+    (ex || []).forEach((e) => existing.add(String(e.invoice_number)));
+  }
+
+  const toInsert = []; let skipped = 0;
+  for (const r of data) {
+    const name = String(r[cols.customer] || '').trim();
+    const cid = name && nameToId[name.toLowerCase()];
+    if (!cid) { skipped++; continue; }
+    const invNum = cols.invoice >= 0 ? String(r[cols.invoice] || '').trim() : '';
+    if (invNum && existing.has(invNum)) { skipped++; continue; }
+    const bal = parseMoney(r[cols.balance]);
+    if (!bal) { skipped++; continue; }
+    toInsert.push({ customer_id: cid, invoice_number: invNum || null, invoice_date: cols.date >= 0 ? isoDate(r[cols.date]) : null, balance: bal, city: cols.city >= 0 ? String(r[cols.city] || '').trim() : null, status: 'open' });
+    if (invNum) existing.add(invNum);
+  }
+  let invCreated = 0;
+  for (let i = 0; i < toInsert.length; i += 500) {
+    const { error } = await sb.from('invoices').insert(toInsert.slice(i, i + 500));
+    if (!error) invCreated += toInsert.slice(i, i + 500).length;
+  }
+
+  revalidatePath('/past-due');
+  return { ok: true, custCreated, invCreated, skipped, customersSeen: names.length };
+}
+
 // Per-customer A/R note (Ashley's Notes column): "Sent to Attorney 4/22", "DO NOT SERVICE", etc.
 export async function setArNote(customerId, note) {
   let sb, email;
@@ -70,6 +178,34 @@ export async function setArNote(customerId, note) {
     { customer_id: customerId, note: String(note || '').slice(0, 500), updated_by: email, updated_at: new Date().toISOString() },
     { onConflict: 'customer_id' });
   if (error) return { ok: false, msg: error.message };
+  revalidatePath('/past-due');
+  return { ok: true };
+}
+
+// Mark an invoice DOUBTFUL (bad debt) → drops out of collectible AR but stays owed (still on the
+// statement + lawyer packet). Toggle off to restore. Logs to the ledger.
+export async function setInvoiceDoubtful(invoiceId, on) {
+  let sb, email;
+  try { ({ sb, email } = await assertCanMark()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!invoiceId) return { ok: false, msg: 'No invoice.' };
+  const { data: inv } = await sb.from('invoices').select('balance, customer_id, invoice_number').eq('id', invoiceId).maybeSingle();
+  const patch = on ? { doubtful: true, doubtful_at: new Date().toISOString(), doubtful_by: email } : { doubtful: false, doubtful_at: null, doubtful_by: null };
+  const { error } = await sb.from('invoices').update(patch).eq('id', invoiceId);
+  if (error) return { ok: false, msg: error.message };
+  try { await sb.from('ar_activity').insert({ action: on ? 'marked_doubtful' : 'restored_collectible', customer_id: inv?.customer_id || null, customer_name: await custName(sb, inv?.customer_id), invoice_id: invoiceId, invoice_number: inv?.invoice_number || '', amount: Number(inv?.balance) || 0, by_email: email }); } catch (_) {}
+  revalidatePath('/past-due');
+  return { ok: true };
+}
+
+// Mark/restore a whole customer's open balance doubtful.
+export async function markCustomerDoubtful(customerId, on) {
+  let sb, email;
+  try { ({ sb, email } = await assertCanMark()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!customerId) return { ok: false, msg: 'No customer.' };
+  const patch = on ? { doubtful: true, doubtful_at: new Date().toISOString(), doubtful_by: email } : { doubtful: false, doubtful_at: null, doubtful_by: null };
+  const { error } = await sb.from('invoices').update(patch).eq('customer_id', customerId).eq('status', 'open');
+  if (error) return { ok: false, msg: error.message };
+  try { await sb.from('ar_activity').insert({ action: on ? 'customer_doubtful' : 'customer_restored', customer_id: customerId, customer_name: await custName(sb, customerId), by_email: email }); } catch (_) {}
   revalidatePath('/past-due');
   return { ok: true };
 }

@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { markInvoicePaid, markCustomerPaid, setArNote } from './actions';
+import { markInvoicePaid, markCustomerPaid, setArNote, setInvoiceDoubtful, markCustomerDoubtful } from './actions';
 import CollectionsTimeline from './CollectionsTimeline';
 
 // Ashley's per-customer A/R note ("Sent to Attorney 4/22", "DO NOT SERVICE", "Pays Weekly"…).
@@ -71,8 +71,8 @@ export default function PastDueList({ customers, canMark, summary }) {
   const toggle = (cid) => setOpen((o) => ({ ...o, [cid]: !o[cid] }));
   const run = (id, fn) => { setBusyId(id); setErr(null); start(async () => { const r = await fn(); setBusyId(null); if (r && !r.ok) setErr(r.msg); else router.refresh(); }); };
 
-  // Top deadbeats = biggest balances (chase these first).
-  const topDeadbeats = useMemo(() => customers.slice().sort((a, b) => b.total - a.total).slice(0, 5), [customers]);
+  // Top deadbeats = biggest balances owed (chase these first), doubtful included.
+  const topDeadbeats = useMemo(() => customers.slice().sort((a, b) => (b.owed ?? b.total) - (a.owed ?? a.total)).slice(0, 5), [customers]);
   const jumpTo = (cid) => {
     setBucket('all'); setQ(''); setOpen({ [cid]: true });
     setTimeout(() => { const el = document.getElementById('cust-' + cid); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
@@ -110,6 +110,7 @@ export default function PastDueList({ customers, canMark, summary }) {
           );
         })}
       </div>
+      {summary.doubtful > 0 && <div className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>🚫 <strong>{money(summary.doubtful)}</strong> marked doubtful — kept on file (statements + lawyer packet) but <strong>not counted</strong> toward collectible AR.</div>}
 
       {/* ── Top deadbeats — chase these first ──────────────────────────────── */}
       {topDeadbeats.length > 1 && (
@@ -165,6 +166,7 @@ export default function PastDueList({ customers, canMark, summary }) {
                       <span style={{ fontWeight: 700, fontSize: 13 }}>{c.name}</span>
                       {c.cbNumber && <span className="muted" style={{ fontSize: 10, marginLeft: 6 }}>CB-{c.cbNumber}</span>}
                       {c.oldestDays != null && <span style={{ fontSize: 10, marginLeft: 6, color: ageColor(c.oldestDays) }}>· {c.oldestDays}d</span>}
+                      {c.doubtful > 0 && <span style={{ fontSize: 10, marginLeft: 6, color: 'var(--fg-3)' }}>· 🚫 {money(c.doubtful)} doubtful</span>}
                     </span>
                     {c.note && <span style={{ display: 'block', fontSize: 11, color: /do not service|dns/i.test(c.note) ? 'var(--red)' : 'var(--fg-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginLeft: 17 }}>📝 {c.note}</span>}
                   </span>
@@ -172,7 +174,9 @@ export default function PastDueList({ customers, canMark, summary }) {
                   {cell(b.d60, 'var(--accent)')}
                   {cell(b.d90, '#e65100')}
                   {cell(b.d90p, 'var(--red)')}
-                  <span style={{ ...num, fontWeight: 800, fontSize: 13, color: 'var(--accent)' }}>{money(c.total)}</span>
+                  <span style={{ ...num, fontWeight: 800, fontSize: 13, color: c.total ? 'var(--accent)' : 'var(--fg-3)' }}>
+                    {c.total ? money(c.total) : (c.doubtful ? <span style={{ textDecoration: 'line-through' }}>{money(c.doubtful)}</span> : '$0')}
+                  </span>
                 </div>
 
                 {isOpen && (
@@ -182,22 +186,38 @@ export default function PastDueList({ customers, canMark, summary }) {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, margin: '10px 0 6px' }}>
                       <span className="muted" style={{ fontSize: 12 }}>{c.phone ? `📞 ${c.phone}` : ''}</span>
                       {canMark && (
-                        <button onClick={() => run('cust-' + c.cid, () => markCustomerPaid(c.cid))} disabled={pending}
-                          style={{ background: 'var(--green)', color: '#fff', border: 0, borderRadius: 7, padding: '5px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: pending && busyId === 'cust-' + c.cid ? 0.6 : 1 }}>
-                          {busyId === 'cust-' + c.cid ? 'Marking…' : `✓ Mark all paid (${money(c.total)})`}
-                        </button>
+                        <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <button onClick={() => run('db-' + c.cid, () => markCustomerDoubtful(c.cid, !(c.doubtful > 0 && c.total === 0)))} disabled={pending}
+                            title="Too old to count on — keeps it owed (statement + lawyer packet) but out of collectible AR"
+                            style={{ background: 'transparent', color: 'var(--fg-2)', border: '1px solid var(--border-strong)', borderRadius: 7, padding: '5px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: pending && busyId === 'db-' + c.cid ? 0.6 : 1 }}>
+                            {busyId === 'db-' + c.cid ? '…' : (c.doubtful > 0 && c.total === 0) ? '↩ Restore balance' : '🚫 Mark balance doubtful'}
+                          </button>
+                          {c.total > 0 && (
+                            <button onClick={() => run('cust-' + c.cid, () => markCustomerPaid(c.cid))} disabled={pending}
+                              style={{ background: 'var(--green)', color: '#fff', border: 0, borderRadius: 7, padding: '5px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: pending && busyId === 'cust-' + c.cid ? 0.6 : 1 }}>
+                              {busyId === 'cust-' + c.cid ? 'Marking…' : `✓ Mark all paid (${money(c.total)})`}
+                            </button>
+                          )}
+                        </span>
                       )}
                     </div>
                     {c.invoices.map((i) => (
-                      <div key={i.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 10, padding: '5px 0', borderBottom: '1px solid var(--border)', alignItems: 'center', fontSize: 12.5 }}>
-                        <span>#{i.invoice_number}{i.city ? <span className="muted" style={{ fontSize: 11 }}> · {i.city}</span> : ''}</span>
+                      <div key={i.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 10, padding: '5px 0', borderBottom: '1px solid var(--border)', alignItems: 'center', fontSize: 12.5, opacity: i.doubtful ? 0.6 : 1 }}>
+                        <span style={{ textDecoration: i.doubtful ? 'line-through' : 'none' }}>#{i.invoice_number}{i.city ? <span className="muted" style={{ fontSize: 11 }}> · {i.city}</span> : ''}{i.doubtful && <span className="muted" style={{ fontSize: 10, marginLeft: 6 }}>🚫 doubtful</span>}</span>
                         <span style={{ color: ageColor(i.days), fontSize: 11, whiteSpace: 'nowrap' }}>{i.invoice_date || '—'}{i.days != null ? ` · ${i.days}d` : ''}</span>
-                        <span style={{ ...num, fontWeight: 700, minWidth: 64 }}>{money(i.balance)}</span>
+                        <span style={{ ...num, fontWeight: 700, minWidth: 64, textDecoration: i.doubtful ? 'line-through' : 'none' }}>{money(i.balance)}</span>
                         {canMark
-                          ? <button onClick={() => run(i.id, () => markInvoicePaid(i.id))} disabled={pending}
-                              style={{ background: 'transparent', color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', opacity: pending && busyId === i.id ? 0.5 : 1 }}>
-                              {busyId === i.id ? '…' : '✓ Paid'}
-                            </button>
+                          ? <span style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
+                              {!i.doubtful && <button onClick={() => run(i.id, () => markInvoicePaid(i.id))} disabled={pending}
+                                style={{ background: 'transparent', color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', opacity: pending && busyId === i.id ? 0.5 : 1 }}>
+                                {busyId === i.id ? '…' : '✓ Paid'}
+                              </button>}
+                              <button onClick={() => run('d' + i.id, () => setInvoiceDoubtful(i.id, !i.doubtful))} disabled={pending}
+                                title={i.doubtful ? 'Restore to collectible' : 'Mark doubtful — won’t count toward the bank'}
+                                style={{ background: 'transparent', color: 'var(--fg-3)', border: '1px solid var(--border-strong)', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', opacity: pending && busyId === 'd' + i.id ? 0.5 : 1 }}>
+                                {busyId === 'd' + i.id ? '…' : i.doubtful ? '↩' : '🚫'}
+                              </button>
+                            </span>
                           : <span />}
                       </div>
                     ))}
