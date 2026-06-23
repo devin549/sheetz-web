@@ -94,7 +94,7 @@ export default async function Home() {
   const tiles = commandTiles(role);
 
   const title = (role === 'owner' || role === 'admin') ? 'Owner Command Center'
-    : isField(role) ? 'My Field Day'
+    : (isField(role) || role === 'helper') ? 'My Field Day'
       : role === 'shop' ? 'Shop'
         : `${meta.label} · Command Center`;
 
