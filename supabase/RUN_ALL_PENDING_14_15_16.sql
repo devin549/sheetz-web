@@ -1,11 +1,12 @@
 -- ════════════════════════════════════════════════════════════════════════════
--- CB Sheetz — ALL PENDING MIGRATIONS (14 + 15 + 16 + 17 + 18 + 19 + 20) in one paste.
+-- CB Sheetz — ALL PENDING MIGRATIONS (14 + 15 + 16 + 17 + 18 + 19 + 20 + 21) in one paste.
 -- Run ONCE in Supabase → SQL Editor → paste → Run. Safe to re-run (idempotent:
 -- every statement is `if not exists` / `on conflict do nothing`).
 --
 -- Unlocks: 📣 Mass Email (14) · 📞 Plunger Pete AI calling (15) · 📜 Certified-mail
 -- demand letter + scanned delivery-receipt proof (16) · 🗂️ board move audit (17) ·
--- 📭 email open tracking (18) · 📝 per-customer A/R notes (19) · 🚫 doubtful/bad-debt (20).
+-- 📭 email open tracking (18) · 📝 per-customer A/R notes (19) · 🚫 doubtful/bad-debt (20) ·
+-- 📊 email send counter (21).
 -- ════════════════════════════════════════════════════════════════════════════
 
 
@@ -125,6 +126,16 @@ alter table public.invoices
   add column if not exists doubtful_at timestamptz,
   add column if not exists doubtful_by text;
 create index if not exists invoices_doubtful_idx on public.invoices (doubtful) where doubtful;
+
+
+-- ── 21 · Email send counter (usage vs Resend cap) ───────────────────────────
+create table if not exists public.email_events (
+  id         uuid primary key default gen_random_uuid(),
+  to_email   text,
+  created_at timestamptz default now()
+);
+create index if not exists email_events_created_idx on public.email_events (created_at desc);
+alter table public.email_events enable row level security;
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Done. Expected result: no errors. Verify (optional):
