@@ -24,13 +24,14 @@ export default async function Reviews() {
       </div>
     );
   }
-  const { data: techsData } = await sb.from('techs').select('name').order('name');
+  let techsData = (await sb.from('techs').select('id, name').order('name')).data || [];
+  const techs = techsData.map((t) => ({ id: t.id, name: t.name })).filter((t) => t.name);
 
   return (
     <div className="wrap" style={{ maxWidth: 880 }}>
       <div className="h1">Reviews</div>
       <p className="muted">Log customer reviews → this week&apos;s count feeds the board&apos;s Game Plan. 1–3★ get flagged for Customer Recovery.</p>
-      <ReviewsClient rows={res.data || []} techs={(techsData || []).map((t) => t.name).filter(Boolean)} />
+      <ReviewsClient rows={res.data || []} techs={techs} />
     </div>
   );
 }

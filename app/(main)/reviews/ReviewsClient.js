@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { createReview, markResponded } from './actions';
-import { Plus, Star, AlertTriangle, Check, X } from 'lucide-react';
+import { createReview, markResponded, assignRecovery, searchReviewCustomers } from './actions';
+import { Plus, Star, AlertTriangle, Check, X, Search } from 'lucide-react';
 
 const input = { width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '10px 11px', fontSize: 14, fontFamily: 'inherit' };
 const label = { fontSize: 11, fontWeight: 700, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '.05em', display: 'block', marginBottom: 4 };
@@ -21,7 +21,19 @@ export default function ReviewsClient({ rows, techs }) {
   const [open, setOpen] = useState(false);
   const [rating, setRating] = useState(5);
   const [source, setSource] = useState('Google');
+  const [techId, setTechId] = useState('');
+  const [custQ, setCustQ] = useState('');
+  const [custResults, setCustResults] = useState([]);
+  const [pickedCust, setPickedCust] = useState(null);
   const [msg, setMsg] = useState(null);
+  const seq = useRef(0);
+
+  useEffect(() => {
+    if (pickedCust || custQ.trim().length < 2) { setCustResults([]); return; }
+    const id = ++seq.current;
+    const h = setTimeout(async () => { const r = await searchReviewCustomers(custQ); if (id === seq.current) setCustResults(r); }, 220);
+    return () => clearTimeout(h);
+  }, [custQ, pickedCust]);
 
   const stats = useMemo(() => {
     const now = new Date(); const ws = new Date(now); ws.setDate(now.getDate() - now.getDay()); ws.setHours(0, 0, 0, 0);
@@ -36,10 +48,16 @@ export default function ReviewsClient({ rows, techs }) {
     e.preventDefault();
     const form = e.currentTarget; const fd = new FormData(form);
     fd.set('rating', String(rating)); fd.set('source', source);
+    if (pickedCust) { fd.set('customerId', pickedCust.id); fd.set('customer_name', pickedCust.name); } else fd.set('customer_name', custQ);
+    const t = techs.find((x) => x.id === techId); if (t) { fd.set('techId', t.id); fd.set('tech_name', t.name); }
     setMsg(null);
-    start(async () => { const r = await createReview(fd); setMsg(r); if (r.ok) { form.reset(); setRating(5); setSource('Google'); setOpen(false); router.refresh(); } });
+    start(async () => {
+      const r = await createReview(fd); setMsg(r);
+      if (r.ok) { form.reset(); setRating(5); setSource('Google'); setTechId(''); setCustQ(''); setPickedCust(null); setOpen(false); router.refresh(); }
+    });
   }
   const respond = (id) => start(async () => { const r = await markResponded(id); if (!r.ok) setMsg(r); router.refresh(); });
+  const onAssign = (id, owner) => start(async () => { const fd = new FormData(); fd.set('id', id); fd.set('owner', owner); const r = await assignRecovery(fd); if (!r.ok) setMsg(r); router.refresh(); });
 
   const recovery = rows.filter((r) => (r.rating || 0) <= 3 && !r.responded);
   const rest = rows.filter((r) => !((r.rating || 0) <= 3 && !r.responded));
@@ -70,11 +88,30 @@ export default function ReviewsClient({ rows, techs }) {
 
       {open && (
         <form onSubmit={submit} className="card card-amber" style={{ display: 'grid', gap: 14, marginBottom: 18 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
-            <div><span style={label}>Customer</span><input name="customer_name" placeholder="Customer name" style={input} autoComplete="off" /></div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+            <div>
+              <span style={label}>Customer</span>
+              {pickedCust ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', borderRadius: 8, border: '1px solid var(--green)', background: 'var(--surface-2)' }}>
+                  <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{pickedCust.name}</span>
+                  <button type="button" onClick={() => { setPickedCust(null); setCustQ(''); }} aria-label="Clear" style={{ background: 'none', border: 0, color: 'var(--fg-3)', cursor: 'pointer', display: 'flex' }}><X size={15} /></button>
+                </div>
+              ) : (
+                <div style={{ position: 'relative' }}>
+                  <Search size={14} style={{ position: 'absolute', left: 10, top: 12, color: 'var(--fg-3)' }} />
+                  <input value={custQ} onChange={(e) => setCustQ(e.target.value)} placeholder="Search or type a name" style={{ ...input, paddingLeft: 31 }} autoComplete="off" />
+                  {custResults.length > 0 && (
+                    <div style={{ position: 'absolute', zIndex: 5, left: 0, right: 0, marginTop: 4, background: 'var(--surface-1)', border: '1px solid var(--border-strong)', borderRadius: 8, overflow: 'hidden', boxShadow: '0 8px 22px rgba(0,0,0,.35)' }}>
+                      {custResults.map((c) => (
+                        <button type="button" key={c.id} onClick={() => { setPickedCust(c); setCustResults([]); }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 11px', background: 'none', border: 0, borderBottom: '1px solid var(--border)', color: 'var(--fg-1)', cursor: 'pointer', fontSize: 13 }}>{c.name}<span className="muted" style={{ fontSize: 11 }}> {c.phone}</span></button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <div><span style={label}>Tech (optional)</span>
-              <input name="tech_name" list="rv-techs" placeholder="Tech" style={input} autoComplete="off" />
-              <datalist id="rv-techs">{techs.map((t) => <option key={t} value={t} />)}</datalist>
+              <select value={techId} onChange={(e) => setTechId(e.target.value)} style={input}><option value="">— tech —</option>{techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -109,7 +146,7 @@ export default function ReviewsClient({ rows, techs }) {
         <div style={{ marginBottom: 16 }}>
           <h3 style={{ fontSize: 12, color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '.06em', margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={14} /> Customer Recovery · {recovery.length}</h3>
           <div style={{ display: 'grid', gap: 8 }}>
-            {recovery.map((r) => <ReviewRow key={r.id} r={r} onRespond={respond} pending={pending} recovery />)}
+            {recovery.map((r) => <ReviewRow key={r.id} r={r} onRespond={respond} onAssign={onAssign} pending={pending} recovery />)}
           </div>
         </div>
       )}
@@ -118,7 +155,7 @@ export default function ReviewsClient({ rows, techs }) {
         <div>
           <h3 style={{ fontSize: 12, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '.06em', margin: '0 0 8px' }}>Recent reviews</h3>
           <div style={{ display: 'grid', gap: 8 }}>
-            {rest.map((r) => <ReviewRow key={r.id} r={r} onRespond={respond} pending={pending} />)}
+            {rest.map((r) => <ReviewRow key={r.id} r={r} onRespond={respond} onAssign={onAssign} pending={pending} />)}
           </div>
         </div>
       )}
@@ -126,7 +163,7 @@ export default function ReviewsClient({ rows, techs }) {
   );
 }
 
-function ReviewRow({ r, onRespond, pending, recovery }) {
+function ReviewRow({ r, onRespond, onAssign, pending, recovery }) {
   return (
     <div className="card" style={{ padding: '10px 14px', borderLeft: `3px solid ${ratingColor(r.rating)}`, opacity: pending ? 0.7 : 1 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -135,8 +172,13 @@ function ReviewRow({ r, onRespond, pending, recovery }) {
         <span className="muted" style={{ fontSize: 11.5 }}>{[r.source, r.tech_name, dt(r.created_at)].filter(Boolean).join(' · ')}</span>
         <span style={{ flex: 1 }} />
         {recovery
-          ? <button type="button" className="pill" onClick={() => onRespond(r.id)} disabled={pending} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--green)' }}><Check size={12} /> Mark handled</button>
-          : (r.rating <= 3 && r.responded ? <span className="pill" style={{ color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Check size={12} /> handled</span> : null)}
+          ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <input defaultValue={r.recovery_owner || ''} placeholder="owner" title="Recovery owner" onBlur={(e) => { if (e.target.value.trim() !== (r.recovery_owner || '')) onAssign(r.id, e.target.value.trim()); }} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '5px 8px', fontSize: 12, width: 96 }} />
+              <button type="button" className="pill" onClick={() => onRespond(r.id)} disabled={pending} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--green)' }}><Check size={12} /> handled</button>
+            </span>
+          )
+          : (r.rating <= 3 && r.responded ? <span className="pill" style={{ color: 'var(--green)', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Check size={12} /> handled{r.recovery_owner ? ` · ${r.recovery_owner}` : ''}</span> : null)}
       </div>
       {r.text && <div style={{ fontSize: 13, marginTop: 6, color: 'var(--fg-2)' }}>{r.text}</div>}
     </div>
