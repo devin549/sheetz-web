@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useState, useTransition, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { postTeamMessage, syncDiscordNow, askHank, hankReadFeed, resolveMessage, employeeCard, applyReschedule, dismissAction, sendRescheduleNotice, meetingAckStatus, nudgeMeetingNonResponders } from './actions';
@@ -53,6 +53,31 @@ export default function CommsDeskClient({ comms, people, actions = [], discordRe
 
   function checkAcks(id) { if (ackBusy) return; setAckBusy(id); start(async () => { const r = await meetingAckStatus(id); setAckBusy(null); setAcks((a) => ({ ...a, [id]: r })); }); }
   function nudgeMtg(id) { if (ackBusy) return; setAckBusy(id); start(async () => { const r = await nudgeMeetingNonResponders(id); setAckBusy(null); setToast(r); checkAcks(id); }); }
+
+  // ── Live feed: auto-sync every 60s + blink anything newer than what you've already seen ──
+  const [seenTs, setSeenTs] = useState(null);
+  const autoRef = useRef(false);
+  const latestTs = useMemo(() => comms.reduce((mx, c) => Math.max(mx, new Date(c.created_at).getTime() || 0), 0), [comms]);
+  useEffect(() => { // first load → treat the latest as already seen so nothing blinks on arrival
+    let stored = 0; try { stored = Number(localStorage.getItem('commsDesk.seen') || 0); } catch (_) {}
+    setSeenTs(stored || latestTs);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { // quiet auto-sync while the tab is visible
+    if (!readReady) return;
+    const iv = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      if (autoRef.current) return;
+      autoRef.current = true;
+      syncDiscordNow().then((r) => { if (r && r.ok) router.refresh(); }).finally(() => { autoRef.current = false; });
+    }, 60000);
+    return () => clearInterval(iv);
+  }, [readReady, router]);
+  useEffect(() => { // let new ones blink ~6s, then mark seen so they settle
+    if (seenTs == null || latestTs <= seenTs) return;
+    const t = setTimeout(() => { setSeenTs(latestTs); try { localStorage.setItem('commsDesk.seen', String(latestTs)); } catch (_) {} }, 6000);
+    return () => clearTimeout(t);
+  }, [latestTs, seenTs]);
+  const isFresh = (m) => seenTs != null && (new Date(m.created_at).getTime() || 0) > seenTs;
 
   function confirmAction(id) { if (actBusy) return; setActBusy(id); start(async () => { const r = await applyReschedule(id); setActBusy(null); if (r.ok) { setDrafts((d) => ({ ...d, [id]: r.draft })); router.refresh(); } else setToast(r); }); }
   function dropAction(id) { if (actBusy) return; setActBusy(id); start(async () => { const r = await dismissAction(id); setActBusy(null); setActGone((g) => ({ ...g, [id]: true })); router.refresh(); if (!r.ok) setToast(r); }); }
@@ -129,7 +154,8 @@ export default function CommsDeskClient({ comms, people, actions = [], discordRe
           {stat('shop/tool', counts.shop, '#30a46c')}
           {stat('urgent', counts.urgent, '#e5484d')}
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {readReady && <span title="Auto-syncing every minute" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: 'var(--green)' }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', animation: 'liveDot 1.6s ease-in-out infinite' }} /> Live</span>}
           <button onClick={() => setPanel((p) => p === 'hank' ? null : 'hank')} className="btn btn-ghost" style={btn}><Wrench size={14} /> Ask Hank</button>
           <button onClick={pull} disabled={syncing} className="btn btn-ghost" style={{ ...btn, opacity: syncing ? 0.6 : 1 }} title={readReady ? 'Pull #sheetz into the desk' : 'Needs DISCORD_BOT_TOKEN + DISCORD_CHANNEL_ID'}><RefreshCw size={13} style={syncing ? { animation: 'spin 1s linear infinite' } : undefined} /> {syncing ? 'Syncing…' : 'Sync'}</button>
           <button onClick={() => setPanel((p) => p === 'post' ? null : 'post')} className="btn" style={btn}><MessageSquarePlus size={14} /> Post</button>
@@ -209,7 +235,7 @@ export default function CommsDeskClient({ comms, people, actions = [], discordRe
             {groups[bucket].map((m) => {
               const L = m.label && LABELS[m.label];
               return (
-                <div key={m.id} className="card" style={{ display: 'flex', gap: 11, padding: '10px 13px', alignItems: 'flex-start', opacity: m.resolved ? 0.55 : 1, borderLeft: m.label === 'urgent' ? '3px solid #e5484d' : (m.inbound ? '3px solid var(--accent)' : '3px solid transparent') }}>
+                <div key={m.id} className="card" style={{ display: 'flex', gap: 11, padding: '10px 13px', alignItems: 'flex-start', opacity: m.resolved ? 0.55 : 1, borderLeft: m.label === 'urgent' ? '3px solid #e5484d' : (m.inbound ? '3px solid var(--accent)' : '3px solid transparent'), animation: isFresh(m) ? 'pulseNew 1.1s ease-in-out 4' : undefined }}>
                   {m.isHank
                     ? <Avatar name={m.who} photo={m.photo} isHank />
                     : <button onClick={() => openCard(m.who)} title={`${m.who} — quick card`} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', borderRadius: '50%' }}><Avatar name={m.who} photo={m.photo} /></button>}
@@ -287,7 +313,7 @@ export default function CommsDeskClient({ comms, people, actions = [], discordRe
           </div>
         </div>
       )}
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulseNew{0%,100%{box-shadow:0 0 0 0 rgba(255,129,36,0)}30%{box-shadow:0 0 0 3px rgba(255,129,36,.45)}}@keyframes liveDot{0%,100%{opacity:1}50%{opacity:.25}}`}</style>
     </>
   );
 }
