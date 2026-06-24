@@ -89,7 +89,7 @@ export async function applyReschedule(actionId) {
   if (a.status !== 'proposed') return { ok: false, msg: `Already ${a.status}.` };
   if (!a.job_id || !a.new_date) return { ok: false, msg: 'Missing job or date.' };
   let job = null;
-  try { const { data } = await sb.from('jobs').select('customer_id, customer_name, job_type, notes').eq('id', a.job_id).maybeSingle(); job = data; } catch (_) {}
+  try { const { data } = await sb.from('jobs').select('customer_id, job_type, notes, customers(name)').eq('id', a.job_id).maybeSingle(); job = data; } catch (_) {}
   const note = `Rescheduled ${a.days}d${a.reason ? ': ' + a.reason : ''} (per ${a.tech_name || 'crew'}, confirmed by ${g.who})`;
   const payload = { scheduled_at: a.new_date };
   if (job && 'notes' in job) payload.notes = [job.notes, note].filter(Boolean).join(' | ');
@@ -98,7 +98,7 @@ export async function applyReschedule(actionId) {
   if (error) return { ok: false, msg: 'Could not move the job: ' + error.message };
   await sb.from('comms_actions').update({ status: 'applied', applied_by: g.who, applied_at: new Date().toISOString() }).eq('id', actionId);
   if (a.source_comms_id) { try { await sb.from('cb_comms').update({ resolved_at: new Date().toISOString(), resolved_by: g.who }).eq('id', a.source_comms_id); } catch (_) {} }
-  const draft = rescheduleDraft({ customerName: a.customer_name || (job && job.customer_name), jobType: job && job.job_type, newDate: a.new_date, reason: a.reason });
+  const draft = rescheduleDraft({ customerName: a.customer_name || (job && job.customers && job.customers.name), jobType: job && job.job_type, newDate: a.new_date, reason: a.reason });
   revalidatePath('/messages');
   return { ok: true, msg: 'Job moved — customer notice drafted (not sent).', draft };
 }
@@ -118,7 +118,7 @@ export async function sendRescheduleNotice(actionId) {
   const sb = g.sb;
   const { data: a } = await sb.from('comms_actions').select('*').eq('id', actionId).maybeSingle();
   if (!a || !a.job_id) return { ok: false, msg: 'Action not found.' };
-  const { data: job } = await sb.from('jobs').select('customer_id, customer_name, job_type, customers(name, phone, phones, email, sms_consent)').eq('id', a.job_id).maybeSingle();
+  const { data: job } = await sb.from('jobs').select('customer_id, job_type, customers(name, phone, phones, email, sms_consent)').eq('id', a.job_id).maybeSingle();
   const c = (job && job.customers) || {};
   const phone = c.phone || (Array.isArray(c.phones) ? c.phones[0] : c.phones) || '';
   const email = c.email || '';
@@ -160,11 +160,11 @@ export async function employeeCard(name) {
   // Current job today (active status, assigned to them).
   try {
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const { data } = await sb.from('jobs').select('customer_name, address, city, status, job_type, scheduled_at, tech_name').gte('scheduled_at', today.toISOString()).ilike('tech_name', `%${out.name}%`).order('scheduled_at', { ascending: true }).limit(20);
+    const { data } = await sb.from('jobs').select('address, city, status, job_type, scheduled_at, tech_name, customers(name, address)').gte('scheduled_at', today.toISOString()).ilike('tech_name', `%${out.name}%`).order('scheduled_at', { ascending: true }).limit(20);
     const jobs = data || [];
     const cur = jobs.find((j) => /scheduled|enroute|on_site|on site|dispatched/i.test(String(j.status || '')));
     out.jobsToday = jobs.length;
-    if (cur) out.currentJob = { customer: cur.customer_name || 'Job', where: [cur.address, cur.city].filter(Boolean).join(', '), status: cur.status, type: cur.job_type || '' };
+    if (cur) { const c = cur.customers || {}; out.currentJob = { customer: c.name || 'Job', where: [cur.address || c.address, cur.city].filter(Boolean).join(', '), status: cur.status, type: cur.job_type || '' }; }
   } catch (_) {}
 
   // Tools checked out to them.
