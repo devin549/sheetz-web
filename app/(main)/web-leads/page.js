@@ -23,6 +23,19 @@ export default async function WebLeads() {
     <div className="wrap" style={{ maxWidth: 760 }}>
       <div className="h1">Web Leads{newCount ? <span className="pill pill-red" style={{ marginLeft: 10, fontSize: 12, verticalAlign: 'middle' }}>{newCount} new</span> : null}</div>
       <p className="muted">Inbound leads from the website — work them and book the good ones.</p>
+
+      <details className="card" style={{ fontSize: 12.5 }}>
+        <summary style={{ cursor: 'pointer', fontWeight: 700 }}>📡 Receiving leads — wire your site form</summary>
+        <div style={{ marginTop: 8, lineHeight: 1.65 }}>
+          POST your form to <code>/api/leads</code> (JSON or form-encoded). Fields: <code>name, phone, email, address, service, message</code>.
+          Add a hidden <code>company</code> field as a bot honeypot. If you set <code>WEB_LEADS_INTAKE_SECRET</code> in Vercel,
+          send it as header <code>x-cb-intake-key</code>.
+          <pre style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', marginTop: 8, overflowX: 'auto', fontSize: 11.5 }}>{`curl -X POST https://YOUR-SITE/api/leads \\
+  -H "content-type: application/json" \\
+  -d '{"name":"Jane Smith","phone":"8595550123","service":"Drain clog","message":"Kitchen sink backed up"}'`}</pre>
+        </div>
+      </details>
+
       {missing
         ? <div className="notice">Web Leads needs its table — run <code>supabase/28_web_leads.sql</code> in Supabase. Then point your site form at it.</div>
         : error
