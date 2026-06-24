@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { updateMyJobStatus, reportEta } from './actions';
+import { updateMyJobStatus, reportEta, createJobPayLink } from './actions';
 import PersonCard from '@/components/PersonCard';
 
 const ETA_CHIPS = [15, 30, 45, 60];
@@ -42,6 +42,12 @@ export default function JobCard({ job, seeAll, canAct }) {
   const [etaMins, setEtaMins] = useState(30);
   const [etaNote, setEtaNote] = useState('');
   const [lateMsg, setLateMsg] = useState(null);
+  const [payOpen, setPayOpen] = useState(false);
+  const [payAmt, setPayAmt] = useState(job.amount ? String(job.amount) : '');
+  const [payLink, setPayLink] = useState(null);
+  const [payErr, setPayErr] = useState(null);
+
+  const makePayLink = () => { setPayErr(null); start(async () => { const r = await createJobPayLink(job.id, Number(payAmt)); if (r.ok) setPayLink(r); else setPayErr(r.msg); }); };
 
   const cust = job.customers || {};
   const t = job.techs || {};
@@ -112,6 +118,44 @@ export default function JobCard({ job, seeAll, canAct }) {
         </div>
       )}
       {err && <div style={{ color: 'var(--red)', fontSize: 11, marginTop: 6 }}>{err}</div>}
+
+      {/* Collect payment — tech fires a pay link to the customer right from the job (no hardware). */}
+      {canAct && !cancelled && (
+        <div style={{ marginTop: 8 }}>
+          {!payOpen ? (
+            <button onClick={() => { setPayOpen(true); setPayLink(null); setPayErr(null); }}
+              style={{ width: '100%', padding: '11px', borderRadius: 10, border: '1px solid #635bff', background: 'rgba(99,91,255,.10)', color: '#8a84ff', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+              💳 Collect payment
+            </button>
+          ) : (
+            <div style={{ border: '1px solid #635bff', borderRadius: 10, padding: 12, background: 'var(--surface-1)' }}>
+              {!payLink ? (
+                <>
+                  <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>Amount to collect</div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ fontSize: 16, fontWeight: 700 }}>$</span>
+                    <input type="number" inputMode="decimal" value={payAmt} onChange={(e) => setPayAmt(e.target.value)} placeholder="0.00"
+                      style={{ flex: 1, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 15 }} />
+                    <button onClick={makePayLink} disabled={pending || !(Number(payAmt) > 0)} className="btn" style={{ opacity: (pending || !(Number(payAmt) > 0)) ? 0.6 : 1 }}>{pending ? '…' : 'Create link'}</button>
+                  </div>
+                  <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>Customer pays this + a 4% card fee on a secure Stripe page.</div>
+                  {payErr && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 6 }}>{payErr}</div>}
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: '#8a84ff', marginBottom: 6 }}>💳 Ready — customer pays {money(payLink.totalDollars)} ({money(payLink.baseDollars)} + {money(payLink.feeDollars)} fee)</div>
+                  <input readOnly value={payLink.url} onFocus={(e) => e.target.select()} style={{ width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '8px 10px', fontSize: 12, marginBottom: 8 }} />
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {tel && <a href={`sms:${tel}?body=${encodeURIComponent('Pay your Clog Busterz Plumbing invoice here: ' + payLink.url)}`} className="btn" style={{ flex: 1, textAlign: 'center', minWidth: 120, textDecoration: 'none' }}>✉️ Text customer</a>}
+                    <button onClick={() => navigator.clipboard && navigator.clipboard.writeText(payLink.url)} className="btn btn-ghost">Copy</button>
+                    <a href={payLink.url} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ textDecoration: 'none' }}>Open ↗</a>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Running Late — tech reports a delay; the OFFICE handles the customer message. */}
       {canAct && !cancelled && !done && (

@@ -5,7 +5,30 @@ import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { closeoutReason } from '@/lib/qa';
+import { createInvoiceCheckout, isStripeConfigured } from '@/lib/stripe';
 import { revalidatePath } from 'next/cache';
+
+// Field tech (or office) generates a Stripe pay link for a job — bills the amount + 4% card fee. The tech
+// texts it to the customer right from the job; the webhook reconciles + drops a 💳 note on the Comms Desk.
+export async function createJobPayLink(jobId, amountDollars) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const profile = user ? await loadProfile(user) : null;
+  if (!user || !profile || profile.active === false || !(can(profile.role, 'changeStatus') || can(profile.role, 'seeFinancials'))) return { ok: false, msg: 'Your role can’t collect payment.' };
+  if (!isStripeConfigured()) return { ok: false, msg: 'Stripe isn’t set up yet.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const { data: job } = await sb.from('jobs').select('id, customer_id, job_number, job_type, amount, customers(name)').eq('id', jobId).maybeSingle();
+  if (!job) return { ok: false, msg: 'Job not found.' };
+  const dollars = Number(amountDollars) > 0 ? Number(amountDollars) : Number(job.amount) || 0;
+  const cents = Math.round(dollars * 100);
+  if (cents < 50) return { ok: false, msg: 'Enter an amount to collect.' };
+  const name = (job.customers && job.customers.name) || '';
+  const r = await createInvoiceCheckout({ amountCents: cents, invoiceNumber: job.job_number || null, customerName: name, invoiceId: null, customerId: job.customer_id });
+  if (!r.ok) return { ok: false, msg: 'Stripe: ' + r.error };
+  try { await sb.from('ar_activity').insert({ action: 'pay_link_created', customer_id: job.customer_id || null, customer_name: name || null, invoice_number: job.job_number || null, amount: cents / 100, by_email: 'field-paylink' }); } catch (_) {}
+  return { ok: true, url: r.url, baseDollars: (r.baseCents || cents) / 100, feeDollars: (r.feeCents || 0) / 100, totalDollars: (r.totalCents || cents) / 100 };
+}
 
 // Tech shares their live GPS from the field (My Day "Share location") → tech_locations, so Hank can
 // route "closest tech for material/equipment" by true distance. Keyed to the signed-in tech's name.
