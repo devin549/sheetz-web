@@ -20,7 +20,14 @@ export async function createJobPayLink(jobId, amountDollars) {
   if (!sb) return { ok: false, msg: 'Server not configured.' };
   const { data: job } = await sb.from('jobs').select('id, customer_id, job_number, job_type, amount, customers(name)').eq('id', jobId).maybeSingle();
   if (!job) return { ok: false, msg: 'Job not found.' };
-  const dollars = Number(amountDollars) > 0 ? Number(amountDollars) : Number(job.amount) || 0;
+  // Suggested total = what the tech priced on this job (accepted proposal) → else the job's amount.
+  let suggested = Number(job.amount) || 0;
+  try {
+    const { data: props } = await sb.from('proposals').select('accepted_total, status, created_at').eq('job_id', jobId).order('created_at', { ascending: false }).limit(3);
+    const p = (props || []).find((x) => Number(x.accepted_total) > 0);
+    if (p) suggested = Number(p.accepted_total);
+  } catch (_) {}
+  const dollars = Number(amountDollars) > 0 ? Number(amountDollars) : suggested;
   const cents = Math.round(dollars * 100);
   if (cents < 50) return { ok: false, msg: 'Enter an amount to collect.' };
   const name = (job.customers && job.customers.name) || '';
