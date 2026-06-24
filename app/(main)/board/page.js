@@ -6,6 +6,8 @@ import BoardSurface from './BoardSurface';
 import LiveClock from './LiveClock';
 import DateNav from './DateNav';
 import EtaBanner from './EtaBanner';
+import BoardCommand from './BoardCommand';
+import { loadCloseoutBatch } from '@/lib/qa';
 import { ACCENT, statusKey, money } from './boardTokens';
 
 export const dynamic = 'force-dynamic';
@@ -99,6 +101,24 @@ export default async function Board({ searchParams }) {
     else tray.push(base);
   });
 
+  // Per-job closeout state (powers the job panel + the "needs QA" fire). Guarded internally.
+  const closeoutByJob = await loadCloseoutBatch(sb, gridJobs.map((j) => ({ id: j.id, job_type: j.job_type })));
+  gridJobs.forEach((j) => { j.closeout = closeoutByJob[j.id] || null; });
+
+  // Today's Fire — what needs attention right now (all real data).
+  const nowMs = Date.now();
+  const fire = {
+    late: gridJobs.filter((j) => !['enroute', 'onsite', 'done'].includes(j.statusKey) && j.scheduledISO && new Date(j.scheduledISO).getTime() < nowMs).length,
+    unassigned: tray.filter((j) => !j.techId).length,
+    qa: gridJobs.filter((j) => j.closeout && j.closeout.available !== false && (j.closeout.openFails > 0 || (j.statusKey === 'done' && !j.closeout.readyToClose))).length,
+    ar90: 0, lowStock: 0,
+  };
+  const cutoff = new Date(nowMs - 90 * 86400000).toISOString().slice(0, 10);
+  const arRes = await sb.from('invoices').select('balance').gt('balance', 0).lt('invoice_date', cutoff).limit(1000);
+  if (!arRes.error) fire.ar90 = (arRes.data || []).reduce((s, i) => s + (Number(i.balance) || 0), 0);
+  const lsRes = await sb.from('truck_inventory').select('qty, reorder_point').limit(2000);
+  if (!lsRes.error) fire.lowStock = (lsRes.data || []).filter((r) => Number(r.qty) <= Number(r.reorder_point || 0)).length;
+
   return (
     <div className="wrap" style={{ maxWidth: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -112,6 +132,8 @@ export default async function Board({ searchParams }) {
       </div>
 
       <EtaBanner reports={etaReports} jobInfo={jobInfo} canContact={canContact} />
+
+      <BoardCommand fire={fire} role={role} />
 
       <BoardSurface techs={techs} jobs={gridJobs} tray={tray} techStatus={techStatus} canAssign={canAssign} canStatus={canStatus} dateStr={dateStr} />
 

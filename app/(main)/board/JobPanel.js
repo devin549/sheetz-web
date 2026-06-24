@@ -106,6 +106,25 @@ export default function JobPanel({ job, techName, techs = [], canStatus, canAssi
             </Link>
           </Section>
 
+          {job.closeout && job.closeout.available !== false && (
+            <Section label="Closeout status">
+              {[
+                ['Photos', `${job.closeout.photoCount}/${job.closeout.minPhotos}`, job.closeout.photoCount >= job.closeout.minPhotos, false],
+                ...(job.closeout.requireVideo ? [['Walkthrough video', job.closeout.haveVideo ? '1/1' : '0/1', job.closeout.haveVideo, false]] : []),
+                ['QA review', ({ pass: 'Passed', fail: 'Failed', partial: 'In review', pending: 'Not reviewed' })[job.closeout.qaState] || '—', job.closeout.qaState === 'pass', job.closeout.qaState === 'fail'],
+              ].map(([k, v, ok, warn]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, padding: '2px 0' }}>
+                  <span style={{ color: 'var(--fg-3)' }}>{k}</span>
+                  <span style={{ color: warn ? 'var(--red)' : ok ? 'var(--green)' : 'var(--amber)', fontWeight: 700 }}>{v}{ok && !warn ? ' ✓' : ''}</span>
+                </div>
+              ))}
+              <div style={{ marginTop: 6 }}>
+                <span className="pill" style={{ fontSize: 11, fontWeight: 800, background: job.closeout.readyToClose ? 'rgba(70,193,120,.16)' : 'rgba(255,179,0,.14)', color: job.closeout.readyToClose ? 'var(--green)' : 'var(--amber)' }}>{sk === 'done' ? 'Closed' : job.closeout.readyToClose ? 'Ready to close' : 'Blocked'}</span>
+                {!job.closeout.readyToClose && job.closeout.missing?.length > 0 && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Needs: {job.closeout.missing.join(', ')}</div>}
+              </div>
+            </Section>
+          )}
+
           <Section label="Billing">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <span style={{ fontSize: 12, color: 'var(--fg-3)' }}>Invoice subtotal</span>
