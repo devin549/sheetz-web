@@ -1,0 +1,55 @@
+'use server';
+
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { createClient } from '@/lib/supabase/server';
+import { loadProfile } from '@/lib/profile';
+import { revalidatePath } from 'next/cache';
+
+const MANAGE = ['owner', 'admin', 'gm', 'om', 'shop', 'fs', 'foreman'];
+
+async function gate() {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const profile = await loadProfile(user);
+  if (!user || !MANAGE.includes(String(profile.role || '').toLowerCase())) return null;
+  return { user, profile, sb: getSupabaseAdmin() };
+}
+const missing = (e) => /could not find|does not exist|schema cache/i.test(e?.message || '');
+const clean = (v, n = 200) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, n);
+
+export async function addTool(formData) {
+  const g = await gate();
+  if (!g) return { ok: false, msg: 'Your role can’t manage tools.' };
+  if (!g.sb) return { ok: false, msg: 'Server not configured.' };
+  const name = clean(formData.get('name'), 120);
+  if (!name) return { ok: false, msg: 'Tool name?' };
+  const row = {
+    name, serial: clean(formData.get('serial'), 80) || null, mfg: clean(formData.get('mfg'), 80) || null,
+    year: parseInt(formData.get('year'), 10) || null, value: Math.max(0, Number(formData.get('value')) || 0),
+    assigned_to: null, status: 'in_shop',
+  };
+  const { error } = await g.sb.from('tools').insert(row);
+  if (error) return { ok: false, msg: missing(error) ? 'Run supabase/05_truck_tools.sql first.' : error.message };
+  revalidatePath('/tool-checkout');
+  return { ok: true, msg: `Added ${name}.` };
+}
+
+export async function checkOutTool(id, tech) {
+  const g = await gate();
+  if (!g) return { ok: false, msg: 'Not allowed.' };
+  const to = clean(tech, 80);
+  if (!id || !to) return { ok: false, msg: 'Pick who it goes to.' };
+  const { error } = await g.sb.from('tools').update({ assigned_to: to, status: 'on_van' }).eq('id', id);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/tool-checkout');
+  return { ok: true, msg: `Checked out to ${to}.` };
+}
+
+export async function checkInTool(id) {
+  const g = await gate();
+  if (!g) return { ok: false, msg: 'Not allowed.' };
+  const { error } = await g.sb.from('tools').update({ assigned_to: null, status: 'in_shop' }).eq('id', id);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/tool-checkout');
+  return { ok: true, msg: 'Checked back in.' };
+}
