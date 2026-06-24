@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { postToDiscord } from '@/lib/discord';
 import { syncDiscordCore } from '@/lib/discordSync';
+import { askHankCore, runHank } from '@/lib/hank';
 import { revalidatePath } from 'next/cache';
 
 const MANAGE = ['owner', 'admin', 'gm', 'om', 'csr', 'dispatcher', 'marketing', 'sales', 'accounting', 'fs', 'foreman'];
@@ -39,6 +40,26 @@ export async function syncDiscordNow() {
   const g = await gate();
   if (!g || !g.sb) return { ok: false, msg: 'Your role can’t do that.' };
   const r = await syncDiscordCore(g.sb);
+  revalidatePath('/messages');
+  return { ok: r.ok, msg: r.msg };
+}
+
+// Ask Hank directly — answers from live CB data; optionally posts the answer into #sheetz.
+export async function askHank(question, postToChannel) {
+  const g = await gate();
+  if (!g || !g.sb) return { ok: false, msg: 'Your role can’t use Hank.' };
+  const q = String(question || '').trim();
+  if (!q) return { ok: false, msg: 'Ask Hank something.' };
+  const r = await askHankCore(g.sb, q, { post: !!postToChannel });
+  if (postToChannel && r.ok) revalidatePath('/messages');
+  return r;
+}
+
+// Let Hank read what's new in #sheetz and chime in where he can help (manual trigger of the cron job).
+export async function hankReadFeed() {
+  const g = await gate();
+  if (!g || !g.sb) return { ok: false, msg: 'Your role can’t do that.' };
+  const r = await runHank(g.sb, { autoPost: true });
   revalidatePath('/messages');
   return { ok: r.ok, msg: r.msg };
 }
