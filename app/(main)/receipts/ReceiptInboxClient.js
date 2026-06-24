@@ -3,14 +3,14 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { saveReceipt } from './actions';
+import { saveReceipt, readReceipt } from './actions';
 
 const CATS = ['materials', 'fuel', 'tools', 'permit', 'other'];
 const money = (cents) => '$' + (Number(cents || 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const input = { width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 7, padding: '7px 9px', fontSize: 13, fontFamily: 'inherit' };
 const STATUS = { verified: { label: 'Verified', color: 'var(--green)' }, flagged: { label: 'Flagged', color: 'var(--red)' }, pending: { label: 'Pending', color: 'var(--amber)' } };
 
-function ReceiptCard({ r, canSave }) {
+function ReceiptCard({ r, canSave, aiReady }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
@@ -27,6 +27,14 @@ function ReceiptCard({ r, canSave }) {
     setMsg(null);
     start(async () => { const res = await saveReceipt(fd); setMsg(res); if (res.ok) router.refresh(); });
   }
+  function readAI() {
+    setMsg(null);
+    start(async () => {
+      const res = await readReceipt(r.photoId);
+      if (res.ok) { if (res.vendor) setVendor(res.vendor); if (res.amount !== '') setAmount(String(res.amount)); if (res.category) setCategory(res.category); setMsg({ ok: true, msg: 'AI filled it in — review, then Verify.' }); }
+      else setMsg(res);
+    });
+  }
 
   return (
     <article className="card" style={{ padding: 0, overflow: 'hidden', borderColor: e.status === 'flagged' ? 'var(--red)' : e.status === 'verified' ? 'var(--green)' : 'var(--border)' }}>
@@ -41,6 +49,7 @@ function ReceiptCard({ r, canSave }) {
           {st && <span className="pill" style={{ fontSize: 9.5, color: st.color }}>{st.label}</span>}
         </div>
         <div className="muted" style={{ fontSize: 11 }}>{[r.job.tech, r.uploadedBy].filter(Boolean).join(' · ') || '—'}</div>
+        {aiReady && r.signedUrl && <button disabled={pending} onClick={readAI} className="pill" style={{ cursor: 'pointer', justifyContent: 'center', display: 'flex', background: 'color-mix(in oklab, var(--accent) 12%, var(--surface-2))', color: 'var(--accent)', fontWeight: 800, border: '1px solid var(--border-strong)' }}>{pending ? '…' : '🔍 AI read'}</button>}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 6 }}>
           <input value={vendor} onChange={(ev) => setVendor(ev.target.value)} placeholder="Vendor" style={input} />
           <input value={amount} onChange={(ev) => setAmount(ev.target.value)} placeholder="$" inputMode="decimal" style={{ ...input, textAlign: 'right' }} />
@@ -61,7 +70,7 @@ function ReceiptCard({ r, canSave }) {
   );
 }
 
-export default function ReceiptInboxClient({ receipts, canSave }) {
+export default function ReceiptInboxClient({ receipts, canSave, aiReady }) {
   const [filter, setFilter] = useState('all');
   const counts = useMemo(() => {
     const c = { all: receipts.length, pending: 0, verified: 0, flagged: 0, total: 0 };
@@ -81,7 +90,7 @@ export default function ReceiptInboxClient({ receipts, canSave }) {
         ))}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12, marginTop: 12 }}>
-        {shown.map((r) => <ReceiptCard key={r.photoId} r={r} canSave={canSave} />)}
+        {shown.map((r) => <ReceiptCard key={r.photoId} r={r} canSave={canSave} aiReady={aiReady} />)}
       </div>
     </>
   );

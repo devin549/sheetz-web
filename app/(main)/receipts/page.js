@@ -1,11 +1,12 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requirePerm } from '@/lib/guard';
+import { isAiConfigured } from '@/lib/anthropic';
 import ReceiptInboxClient from './ReceiptInboxClient';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Receipts() {
-  await requirePerm('seeFinancials', 'seeReports');
+  const { role } = await requirePerm('seeFinancials', 'seeReports');
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">Receipt Inbox</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel.</div></div>;
@@ -58,7 +59,7 @@ export default async function Receipts() {
       <div className="h1">Receipt Inbox</div>
       <p className="muted">Receipt photos techs tag on jobs — enter vendor + amount, then verify or flag.</p>
       {!entriesReady && <div className="notice">Saving needs the entries table — run <code>supabase/29_receipts.sql</code>. You can still view receipts below.</div>}
-      <ReceiptInboxClient receipts={receipts} canSave={entriesReady} />
+      <ReceiptInboxClient receipts={receipts} canSave={entriesReady} aiReady={isAiConfigured(role)} />
     </div>
   );
 }
