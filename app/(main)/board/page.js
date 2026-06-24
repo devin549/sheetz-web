@@ -9,6 +9,7 @@ import EtaBanner from './EtaBanner';
 import BoardCommand from './BoardCommand';
 import BoardTargets from './BoardTargets';
 import { loadCloseoutBatch } from '@/lib/qa';
+import { FIELD_POSITIONS } from '@/lib/positions';
 import { ACCENT, statusKey, money } from './boardTokens';
 
 export const dynamic = 'force-dynamic';
@@ -55,8 +56,8 @@ export default async function Board({ searchParams }) {
   if (res.error && /column .* does not exist/i.test(res.error.message || '')) res = await run('');
   const rawJobs = res.data || [];
 
-  // Field-assignable roster only — office staff excluded (set on /team). Graceful pre-migration.
-  let tRes = await sb.from('techs').select('id, name, crew, position').neq('position', 'office').order('name');
+  // Field-assignable roster only — office titles excluded (set on /team). Graceful pre-migration.
+  let tRes = await sb.from('techs').select('id, name, crew, position').in('position', FIELD_POSITIONS).order('name');
   if (tRes.error) tRes = await sb.from('techs').select('id, name, crew').order('name');
   if (tRes.error) tRes = await sb.from('techs').select('id, name').order('name');
   const techs = (tRes.data || []).map((t) => ({ id: t.id, name: t.name, crew: t.crew || 'Crew' }));

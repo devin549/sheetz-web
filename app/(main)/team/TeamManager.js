@@ -4,15 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { addUser, setRole, setTechLink, setTechPosition, setTechPhone } from './actions';
 import { roleMeta } from '@/lib/roles';
-
-// Roster positions — who can take field jobs. 'office' drops off the booking picker + board rows.
-const POSITION_OPTS = [
-  { id: 'tech', label: 'Tech' },
-  { id: 'helper', label: 'Helper' },
-  { id: 'sales', label: 'Salesman' },
-  { id: 'supervisor', label: 'Supervisor' },
-  { id: 'office', label: 'Office (no jobs)' },
-];
+import { POSITIONS as POSITION_OPTS } from '@/lib/positions';
 
 function suggestPassword() {
   // readable temp password Devin can hand off: Word + 4 digits + symbol
@@ -143,7 +135,7 @@ export default function TeamManager({ roleOptions, users, techs = [] }) {
           <h3 style={{ margin: '24px 0 4px', fontSize: 12, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             Field roster ({techs.length})
           </h3>
-          <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>Who shows in the Job Booking tech picker + on the board. Set office staff to <strong>Office</strong> and they drop off both.</p>
+          <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>Job title on the <strong>board</strong> — controls who shows in the Job Booking picker + as a board row. Office titles (Dispatcher, Accounting, Office Manager, Office) don&apos;t take jobs. <strong>What each person can SEE</strong> (financials, growth) is their <strong>login role</strong> up under “Current logins,” not this.</p>
           {techs.map((t) => (
             <div key={t.id} className="card" style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 10, alignItems: 'center', padding: '10px 14px' }}>
               <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
