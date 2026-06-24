@@ -3,9 +3,9 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { postTeamMessage, syncDiscordNow, askHank, hankReadFeed, resolveMessage, employeeCard, applyReschedule, dismissAction, sendRescheduleNotice } from './actions';
+import { postTeamMessage, syncDiscordNow, askHank, hankReadFeed, resolveMessage, employeeCard, applyReschedule, dismissAction, sendRescheduleNotice, meetingAckStatus, nudgeMeetingNonResponders } from './actions';
 import { labelFor, LABELS, ACTIONABLE, initials, avatarHue } from '@/lib/commsTriage';
-import { Send, RefreshCw, Wrench, Check, RotateCcw, MessageSquarePlus, ArrowUpRight, ArrowRight, Phone, MessageSquare, MapPin, X, CalendarClock } from 'lucide-react';
+import { Send, RefreshCw, Wrench, Check, RotateCcw, MessageSquarePlus, ArrowUpRight, ArrowRight, Phone, MessageSquare, MapPin, X, CalendarClock, ThumbsUp, Bell } from 'lucide-react';
 
 const dt = (s) => { try { return new Date(s).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
 const tm = (s) => { try { return new Date(s).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
@@ -48,6 +48,11 @@ export default function CommsDeskClient({ comms, people, actions = [], discordRe
   const [actBusy, setActBusy] = useState(null);
   const [drafts, setDrafts] = useState({});           // actionId -> { draft } after confirm
   const [actGone, setActGone] = useState({});         // actionId -> true once handled
+  const [acks, setAcks] = useState({});               // commsId -> ack status
+  const [ackBusy, setAckBusy] = useState(null);
+
+  function checkAcks(id) { if (ackBusy) return; setAckBusy(id); start(async () => { const r = await meetingAckStatus(id); setAckBusy(null); setAcks((a) => ({ ...a, [id]: r })); }); }
+  function nudgeMtg(id) { if (ackBusy) return; setAckBusy(id); start(async () => { const r = await nudgeMeetingNonResponders(id); setAckBusy(null); setToast(r); checkAcks(id); }); }
 
   function confirmAction(id) { if (actBusy) return; setActBusy(id); start(async () => { const r = await applyReschedule(id); setActBusy(null); if (r.ok) { setDrafts((d) => ({ ...d, [id]: r.draft })); router.refresh(); } else setToast(r); }); }
   function dropAction(id) { if (actBusy) return; setActBusy(id); start(async () => { const r = await dismissAction(id); setActBusy(null); setActGone((g) => ({ ...g, [id]: true })); router.refresh(); if (!r.ok) setToast(r); }); }
@@ -226,10 +231,21 @@ export default function CommsDeskClient({ comms, people, actions = [], discordRe
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
                       <span className="muted" style={{ fontSize: 11 }}>#sheetz · {tm(m.created_at)}</span>
                       {L && !m.resolved && <Link href={L.route.href} className="pill" style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--accent)' }}><ArrowRight size={11} /> {L.route.text}</Link>}
+                      {m.label === 'meeting' && m.inbound && <button onClick={() => checkAcks(m.id)} disabled={ackBusy === m.id} className="pill" style={{ cursor: 'pointer', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3, color: '#12a594' }}><ThumbsUp size={11} /> {ackBusy === m.id ? 'Checking…' : 'Check 👍'}</button>}
                       {m.inbound && (m.resolved
                         ? <button onClick={() => resolve(m.id, false)} disabled={busyId === m.id} className="pill" style={{ cursor: 'pointer', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3 }}><RotateCcw size={11} /> Re-open</button>
                         : <button onClick={() => resolve(m.id, true)} disabled={busyId === m.id} className="pill" style={{ cursor: 'pointer', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--green)' }}><Check size={12} /> Resolve</button>)}
                     </div>
+                    {acks[m.id] && (acks[m.id].ok
+                      ? <div style={{ marginTop: 7, padding: '8px 10px', borderRadius: 7, background: 'var(--surface-2)', fontSize: 12.5 }}>
+                          <span style={{ fontWeight: 700, color: acks[m.id].missing.length ? 'var(--amber)' : 'var(--green)' }}>{acks[m.id].reacted.length} of {acks[m.id].total} 👍’d</span>
+                          {acks[m.id].missing.length > 0 && <>
+                            <span className="muted"> · still need: {acks[m.id].missing.join(', ')}</span>
+                            <button onClick={() => nudgeMtg(m.id)} disabled={ackBusy === m.id} className="pill" style={{ cursor: 'pointer', fontSize: 11, marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--accent)' }}><Bell size={11} /> @ the stragglers</button>
+                          </>}
+                          {!acks[m.id].missing.length && <span className="muted"> — everyone’s in 🎉</span>}
+                        </div>
+                      : <div style={{ marginTop: 7, fontSize: 12, color: 'var(--red)' }}>{acks[m.id].msg}</div>)}
                   </div>
                 </div>
               );

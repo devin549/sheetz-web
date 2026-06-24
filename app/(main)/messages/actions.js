@@ -3,8 +3,10 @@
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
-import { postToDiscord } from '@/lib/discord';
+import { postToDiscord, fetchMessageReactors } from '@/lib/discord';
 import { syncDiscordCore } from '@/lib/discordSync';
+import { FIELD_POSITIONS } from '@/lib/positions';
+import { requiredNames } from '@/lib/meetings';
 import { askHankCore, runHank } from '@/lib/hank';
 import { detectRescheduleProposals, rescheduleDraft } from '@/lib/hankActions';
 import { sendSms } from '@/lib/twilio';
@@ -67,6 +69,58 @@ export async function hankReadFeed() {
   const r = await runHank(g.sb, { autoPost: true });
   revalidatePath('/messages');
   return { ok: r.ok, msg: r.msg };
+}
+
+// --- Meeting 👍 acknowledgment on a Discord post -----------------------------------------------------
+// Infer who's required from the message text: "@everyone" → all field crew; "my team/crew" from a
+// supervisor → their managed crew; else everyone.
+function inferAudience(body, senderName) {
+  if (/@everyone|@here/i.test(body || '')) return 'everyone';
+  if (/\bmy (team|crew|guys|people|group)\b/i.test(body || '') && senderName) return `mgr:${senderName}`;
+  return 'everyone';
+}
+
+async function meetingAckCore(sb, commsId) {
+  const { data: m } = await sb.from('cb_comms').select('id, provider_id, from_name, body').eq('id', commsId).maybeSingle();
+  if (!m) return { err: 'Message not found.' };
+  if (!m.provider_id) return { err: 'No Discord id on this row — can’t read its reactions.' };
+  let roster = [];
+  try { const { data } = await sb.from('techs').select('name, crew, position, active, supervisor, discord_name, discord_user_id').limit(500); roster = (data || []).filter((t) => t.name); } catch (_) {}
+  const field = roster.filter((t) => t.active !== false && (!t.position || FIELD_POSITIONS.includes(String(t.position).toLowerCase().replace(/\s+/g, '_'))));
+  const audience = inferAudience(m.body, m.from_name);
+  const required = requiredNames(field, audience);
+  const rx = await fetchMessageReactors(m.provider_id, '👍');
+  if (!rx.ok) return { err: 'Discord: ' + rx.error };
+  // Match each reactor to a roster person (by discord_name, then by name).
+  const lc = (s) => String(s || '').toLowerCase();
+  const reactedNames = new Set();
+  rx.users.forEach((u) => {
+    const t = field.find((x) => (x.discord_name && (lc(x.discord_name) === lc(u.username) || lc(x.discord_name) === lc(u.name))) || lc(x.name) === lc(u.name) || lc(x.name) === lc(u.username));
+    if (t) reactedNames.add(t.name);
+  });
+  const reacted = required.filter((n) => reactedNames.has(n));
+  const missing = required.filter((n) => !reactedNames.has(n));
+  return { m, field, audience, required, reacted, missing, reactorCount: rx.users.length };
+}
+
+export async function meetingAckStatus(commsId) {
+  const g = await gate();
+  if (!g || !g.sb) return { ok: false, msg: 'Not allowed.' };
+  const r = await meetingAckCore(g.sb, commsId);
+  if (r.err) return { ok: false, msg: r.err };
+  return { ok: true, audience: r.audience, reacted: r.reacted, missing: r.missing, total: r.required.length, reactorCount: r.reactorCount };
+}
+
+// Hank @-mentions everyone who hasn't 👍'd yet (real ping if their discord_user_id is set, else by name).
+export async function nudgeMeetingNonResponders(commsId) {
+  const g = await gate();
+  if (!g || !g.sb) return { ok: false, msg: 'Not allowed.' };
+  const r = await meetingAckCore(g.sb, commsId);
+  if (r.err) return { ok: false, msg: r.err };
+  if (!r.missing.length) return { ok: true, msg: 'Everyone reacted. 🎉' };
+  const tags = r.missing.map((n) => { const t = r.field.find((x) => x.name === n); return (t && t.discord_user_id) ? `<@${t.discord_user_id}>` : n; });
+  const out = await postToDiscord(`⏰ Still need a 👍 on the meeting: ${tags.join(' ')}`, { users: true });
+  return { ok: !!out.ok, msg: out.ok ? `Pinged ${r.missing.length} who haven’t 👍’d.` : `Couldn’t post: ${out.error}` };
 }
 
 // Run Hank's action detector (also fires on the discord-sync cron). Proposes reschedules; never applies.
