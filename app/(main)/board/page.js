@@ -134,6 +134,13 @@ export default async function Board({ searchParams }) {
     const rv = await sb.from('reviews').select('id', { count: 'exact', head: true }).gte('created_at', weekStart.toISOString());
     if (!rv.error) actuals.reviews_week = rv.count || 0;
   } catch (_) { /* reviews table not migrated yet */ }
+  // Same-day fills — jobs booked AND scheduled for this day (computable straight from jobs).
+  try {
+    const sd = await sb.from('jobs').select('id', { count: 'exact', head: true })
+      .gte('scheduled_at', startISO).lt('scheduled_at', endISO)
+      .gte('created_at', startISO).lt('created_at', endISO);
+    if (!sd.error) actuals.same_day_fills = sd.count || 0;
+  } catch (_) { /* ignore */ }
 
   return (
     <div className="wrap" style={{ maxWidth: 'none' }}>
