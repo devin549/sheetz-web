@@ -64,6 +64,56 @@ export async function hankReadFeed() {
   return { ok: r.ok, msg: r.msg };
 }
 
+// Mini employee card behind a Comms Desk avatar: on/off shift, current job, truck, phone, tools out.
+// Everything best-effort + table-missing safe — a missing piece just doesn't show.
+export async function employeeCard(name) {
+  const g = await gate();
+  if (!g || !g.sb) return { ok: false, msg: 'Not allowed.' };
+  const who = String(name || '').trim();
+  if (!who) return { ok: false, msg: 'No name.' };
+  const sb = g.sb;
+  const out = { ok: true, name: who };
+
+  // The roster row (match by name or discord_name).
+  try {
+    const { data } = await sb.from('techs').select('*').or(`name.ilike.${who},discord_name.ilike.${who}`).limit(1);
+    const t = (data || [])[0];
+    if (t) {
+      out.name = t.name || who;
+      out.position = t.position || t.role || '';
+      out.phone = t.phone || t.cell || '';
+      out.photo_url = t.photo_url || '';
+      out.truck = t.truck || t.truck_number || t.van || t.truck_id || '';
+      out.active = t.active !== false;
+    }
+  } catch (_) {}
+
+  // Current job today (active status, assigned to them).
+  try {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const { data } = await sb.from('jobs').select('customer_name, address, city, status, job_type, scheduled_at, tech_name').gte('scheduled_at', today.toISOString()).ilike('tech_name', `%${out.name}%`).order('scheduled_at', { ascending: true }).limit(20);
+    const jobs = data || [];
+    const cur = jobs.find((j) => /scheduled|enroute|on_site|on site|dispatched/i.test(String(j.status || '')));
+    out.jobsToday = jobs.length;
+    if (cur) out.currentJob = { customer: cur.customer_name || 'Job', where: [cur.address, cur.city].filter(Boolean).join(', '), status: cur.status, type: cur.job_type || '' };
+  } catch (_) {}
+
+  // Tools checked out to them.
+  try {
+    const { data } = await sb.from('tools').select('name, serial').ilike('assigned_to', `%${out.name}%`).limit(40);
+    out.toolsOut = (data || []).map((t) => t.serial ? `${t.name} (SN ${t.serial})` : t.name);
+  } catch (_) {}
+
+  // On/off shift heuristic: a fresh GPS fix or an active job today = on shift.
+  try {
+    const { data } = await sb.from('tech_locations').select('updated_at').ilike('tech_name', out.name).limit(1);
+    const ts = (data || [])[0] && (data || [])[0].updated_at;
+    if (ts) out.lastSeenMin = Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 60000));
+  } catch (_) {}
+  out.onShift = !!out.currentJob || (out.lastSeenMin != null && out.lastSeenMin <= 120);
+  return out;
+}
+
 // Resolve = "handled, clear it off the desk" (NOT delete). Any signed-in triager can resolve; the row
 // stays for the record. Pass done=false to re-open.
 export async function resolveMessage(id, done = true) {

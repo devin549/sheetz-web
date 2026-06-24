@@ -3,9 +3,9 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { postTeamMessage, syncDiscordNow, askHank, hankReadFeed, resolveMessage } from './actions';
+import { postTeamMessage, syncDiscordNow, askHank, hankReadFeed, resolveMessage, employeeCard } from './actions';
 import { labelFor, LABELS, ACTIONABLE, initials, avatarHue } from '@/lib/commsTriage';
-import { Send, RefreshCw, Wrench, Check, RotateCcw, MessageSquarePlus, ArrowUpRight, ArrowRight } from 'lucide-react';
+import { Send, RefreshCw, Wrench, Check, RotateCcw, MessageSquarePlus, ArrowUpRight, ArrowRight, Phone, MessageSquare, MapPin, X } from 'lucide-react';
 
 const dt = (s) => { try { return new Date(s).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
 const tm = (s) => { try { return new Date(s).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
@@ -43,6 +43,11 @@ export default function CommsDeskClient({ comms, people, discordReady, readReady
   const [hankA, setHankA] = useState(null);
   const [toast, setToast] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [card, setCard] = useState(null);             // { loading } | employee-card data
+  const [cardLoad, startCard] = useTransition();
+
+  function openCard(name) { setCard({ loading: true, name }); startCard(async () => { const r = await employeeCard(name); setCard(r && r.ok ? r : { error: true, name }); }); }
+  function mention(name) { setCard(null); setPanel('post'); setText((t) => (t ? t : `@${name} `)); }
 
   // Match a sender to a teammate (Discord name → name) for the avatar.
   const personOf = useMemo(() => {
@@ -160,7 +165,9 @@ export default function CommsDeskClient({ comms, people, discordReady, readReady
               const L = m.label && LABELS[m.label];
               return (
                 <div key={m.id} className="card" style={{ display: 'flex', gap: 11, padding: '10px 13px', alignItems: 'flex-start', opacity: m.resolved ? 0.55 : 1, borderLeft: m.label === 'urgent' ? '3px solid #e5484d' : (m.inbound ? '3px solid var(--accent)' : '3px solid transparent') }}>
-                  <Avatar name={m.who} photo={m.photo} isHank={m.isHank} />
+                  {m.isHank
+                    ? <Avatar name={m.who} photo={m.photo} isHank />
+                    : <button onClick={() => openCard(m.who)} title={`${m.who} — quick card`} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', borderRadius: '50%' }}><Avatar name={m.who} photo={m.photo} /></button>}
                   <div style={{ flex: '1 1 auto', minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 700, fontSize: 13.5 }}>{m.who}</span>
@@ -190,6 +197,40 @@ export default function CommsDeskClient({ comms, people, discordReady, readReady
           </div>
         </div>
       ))}
+      {card && (
+        <div onClick={() => setCard(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} className="card" style={{ maxWidth: 360, width: '100%', position: 'relative', padding: 0, overflow: 'hidden' }}>
+            <button onClick={() => setCard(null)} aria-label="Close" style={{ position: 'absolute', top: 8, right: 8, background: 'none', border: 'none', color: 'var(--fg-3)', cursor: 'pointer', padding: 4, zIndex: 1 }}><X size={16} /></button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 16px 12px', background: 'var(--surface-2)' }}>
+              <Avatar name={card.name} photo={card.photo_url} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 16 }}>{card.name}</div>
+                <div className="muted" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                  {card.position && <span style={{ textTransform: 'capitalize' }}>{String(card.position).replace(/_/g, ' ')}</span>}
+                  {!card.loading && !card.error && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700, color: card.onShift ? 'var(--green)' : 'var(--fg-3)' }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: card.onShift ? 'var(--green)' : 'var(--fg-3)' }} />{card.onShift ? 'On shift' : 'Off shift'}</span>}
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: '12px 16px 16px', display: 'grid', gap: 9, fontSize: 13 }}>
+              {card.loading && <span className="muted">Loading…</span>}
+              {card.error && <span style={{ color: 'var(--red)' }}>Couldn’t load this person.</span>}
+              {!card.loading && !card.error && <>
+                {card.currentJob
+                  ? <div style={{ display: 'flex', gap: 7 }}><MapPin size={15} style={{ color: 'var(--accent)', flex: '0 0 auto', marginTop: 1 }} /><div><div style={{ fontWeight: 700 }}>{card.currentJob.customer} <span className="muted" style={{ fontWeight: 400, fontSize: 11 }}>· {String(card.currentJob.status).replace(/_/g, ' ')}</span></div>{card.currentJob.where && <div className="muted" style={{ fontSize: 12 }}>{card.currentJob.where}</div>}</div></div>
+                  : <div className="muted" style={{ display: 'flex', gap: 7 }}><MapPin size={15} style={{ flex: '0 0 auto' }} /> {card.jobsToday ? `${card.jobsToday} job${card.jobsToday === 1 ? '' : 's'} today` : 'No jobs today'}{card.lastSeenMin != null ? ` · GPS ${card.lastSeenMin}m ago` : ''}</div>}
+                {card.truck && <div style={{ display: 'flex', gap: 7 }}><span style={{ width: 15, textAlign: 'center' }}>🚚</span> Truck {card.truck}</div>}
+                {card.toolsOut && card.toolsOut.length > 0 && <div style={{ display: 'flex', gap: 7 }}><Wrench size={15} style={{ color: 'var(--fg-3)', flex: '0 0 auto', marginTop: 1 }} /><div><span style={{ fontWeight: 700 }}>{card.toolsOut.length} tool{card.toolsOut.length === 1 ? '' : 's'} out</span><div className="muted" style={{ fontSize: 12 }}>{card.toolsOut.slice(0, 5).join(', ')}{card.toolsOut.length > 5 ? '…' : ''}</div></div></div>}
+                <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                  {card.phone && <a href={`tel:${String(card.phone).replace(/[^\d+]/g, '')}`} className="btn btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, padding: '6px 11px' }}><Phone size={14} /> Call</a>}
+                  {card.phone && <a href={`sms:${String(card.phone).replace(/[^\d+]/g, '')}`} className="btn btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, padding: '6px 11px' }}><MessageSquare size={14} /> Text</a>}
+                  <button onClick={() => mention(card.name)} className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, padding: '6px 11px' }}><MessageSquarePlus size={14} /> #sheetz</button>
+                </div>
+                {!card.phone && <span className="muted" style={{ fontSize: 11.5 }}>No phone on file — add it on Team.</span>}
+              </>}
+            </div>
+          </div>
+        </div>
+      )}
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </>
   );
