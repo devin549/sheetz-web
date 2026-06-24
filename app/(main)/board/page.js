@@ -7,6 +7,7 @@ import LiveClock from './LiveClock';
 import DateNav from './DateNav';
 import EtaBanner from './EtaBanner';
 import BoardCommand from './BoardCommand';
+import BoardTargets from './BoardTargets';
 import { loadCloseoutBatch } from '@/lib/qa';
 import { ACCENT, statusKey, money } from './boardTokens';
 
@@ -119,6 +120,14 @@ export default async function Board({ searchParams }) {
   const lsRes = await sb.from('truck_inventory').select('qty, reorder_point').limit(2000);
   if (!lsRes.error) fire.lowStock = (lsRes.data || []).filter((r) => Number(r.qty) <= Number(r.reorder_point || 0)).length;
 
+  // Office goals + the actuals we can compute now (booked / avg ticket / QA holds).
+  let goals = [];
+  const gRes = await sb.from('office_goals').select('key, label, target, unit, assignee, sort').order('sort');
+  if (!gRes.error) goals = gRes.data || [];
+  const doneToday = gridJobs.filter((j) => j.statusKey === 'done');
+  const avgTicket = doneToday.length ? Math.round(doneToday.reduce((s, j) => s + (j.amount || 0), 0) / doneToday.length) : 0;
+  const actuals = { booked_day: Math.round(dayRevenue), avg_ticket: avgTicket, qa_clear: fire.qa };
+
   return (
     <div className="wrap" style={{ maxWidth: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -130,6 +139,8 @@ export default async function Board({ searchParams }) {
           <Link href="/my-day" className="muted" style={{ fontSize: 12 }}>My Day →</Link>
         </span>
       </div>
+
+      <BoardTargets goals={goals} actuals={actuals} />
 
       <EtaBanner reports={etaReports} jobInfo={jobInfo} canContact={canContact} />
 
