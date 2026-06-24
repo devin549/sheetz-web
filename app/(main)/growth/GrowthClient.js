@@ -2,8 +2,10 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { runRankScan } from './actions';
-import { RefreshCw, TrendingUp, TrendingDown, Minus, MapPin, Trophy } from 'lucide-react';
+import { runRankScan, analyzeCompetition } from './actions';
+import { RefreshCw, TrendingUp, TrendingDown, Minus, MapPin, Trophy, Sparkles, Target, Shield } from 'lucide-react';
+
+const THREAT = { high: 'var(--red)', medium: 'var(--amber)', low: 'var(--fg-3)' };
 
 const shortLoc = (loc) => String(loc || '').replace(', United States', '').replace(', Kentucky', ', KY').replace(', Kentucky,', ', KY,');
 const fmtWhen = (iso) => { if (!iso) return 'never'; try { return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
@@ -31,10 +33,19 @@ export default function GrowthClient({ latest, prev, scannedAt }) {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
   const [errs, setErrs] = useState([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [intel, setIntel] = useState(null);
+  const [intelMsg, setIntelMsg] = useState(null);
 
   function scan() {
     setMsg(null); setErrs([]);
     start(async () => { const r = await runRankScan(); setMsg(r); setErrs(r.errors || []); if (r.ok) router.refresh(); });
+  }
+  async function analyze() {
+    setIntelMsg(null); setAnalyzing(true);
+    const r = await analyzeCompetition();
+    setAnalyzing(false);
+    if (r.ok) setIntel(r.data); else setIntelMsg(r.msg);
   }
 
   const total = latest.length;
@@ -50,9 +61,15 @@ export default function GrowthClient({ latest, prev, scannedAt }) {
         <button type="button" className="btn" onClick={scan} disabled={pending} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: pending ? 0.6 : 1 }}>
           <RefreshCw size={15} className={pending ? 'cb-spin' : ''} /> {pending ? 'Scanning…' : 'Run scan'}
         </button>
+        {total > 0 && (
+          <button type="button" className="btn" onClick={analyze} disabled={analyzing} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', color: 'var(--fg-1)', border: '1px solid var(--border)', opacity: analyzing ? 0.6 : 1 }}>
+            <Sparkles size={15} className={analyzing ? 'cb-spin' : ''} /> {analyzing ? 'Analyzing…' : 'Analyze competition'}
+          </button>
+        )}
         <span className="muted" style={{ fontSize: 12 }}>Last scan: {fmtWhen(scannedAt)}{pending ? ' · this takes ~15s' : ''}</span>
         {msg && <span style={{ fontSize: 13, fontWeight: 700, color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.msg}</span>}
       </div>
+      {total > 0 && <p className="muted" style={{ fontSize: 11.5, margin: '-8px 0 14px' }}>Markets auto-pulled from your invoices (top cities by volume).</p>}
 
       {total > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 16 }}>
@@ -95,6 +112,43 @@ export default function GrowthClient({ latest, prev, scannedAt }) {
           </div>
         </div>
       ))}
+
+      {intelMsg && <div className="notice" style={{ fontSize: 12 }}>{intelMsg}</div>}
+
+      {intel && (
+        <div style={{ marginTop: 18 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 800, margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 6 }}><Sparkles size={15} style={{ color: 'var(--amber)' }} /> Competitive read</h3>
+          {intel.summary && <p className="muted" style={{ fontSize: 13, margin: '0 0 12px' }}>{intel.summary}</p>}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
+            {(intel.competitors || []).map((c, i) => (
+              <div key={i} className="card" style={{ padding: '11px 13px', borderLeft: `3px solid ${THREAT[c.threat] || 'var(--border)'}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between' }}>
+                  <span style={{ fontWeight: 800, fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 5 }}><Shield size={13} style={{ color: THREAT[c.threat] || 'var(--fg-3)' }} /> {c.name}</span>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: THREAT[c.threat] || 'var(--fg-3)' }}>{c.threat} threat</span>
+                </div>
+                {(c.strengths || []).length > 0 && (
+                  <div style={{ marginTop: 7 }}>
+                    {c.strengths.map((s, j) => <div key={j} style={{ fontSize: 12, color: 'var(--fg-2)', display: 'flex', gap: 6 }}><span style={{ color: 'var(--green)' }}>▲</span> {s}</div>)}
+                  </div>
+                )}
+                {(c.weaknesses || []).length > 0 && (
+                  <div style={{ marginTop: 5 }}>
+                    {c.weaknesses.map((w, j) => <div key={j} style={{ fontSize: 12, color: 'var(--fg-2)', display: 'flex', gap: 6 }}><span style={{ color: 'var(--red)' }}>▼</span> {w}</div>)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {(intel.opportunities || []).length > 0 && (
+            <div className="card" style={{ marginTop: 12, padding: '12px 14px', borderTop: '2px solid var(--amber)' }}>
+              <div style={{ fontWeight: 800, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}><Target size={15} style={{ color: 'var(--amber)' }} /> Where to attack</div>
+              {intel.opportunities.map((o, i) => <div key={i} style={{ fontSize: 13, color: 'var(--fg-1)', display: 'flex', gap: 7, marginBottom: 5 }}><span style={{ color: 'var(--amber)', fontWeight: 800 }}>{i + 1}.</span> {o}</div>)}
+            </div>
+          )}
+        </div>
+      )}
 
       {errs.length > 0 && (
         <div className="notice" style={{ fontSize: 12 }}>{errs.length} query(ies) failed: {errs.join(' · ')}</div>
