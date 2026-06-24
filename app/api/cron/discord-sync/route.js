@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
-import { syncDiscordCore } from '@/app/(main)/messages/actions';
+import { syncDiscordCore } from '@/lib/discordSync';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
