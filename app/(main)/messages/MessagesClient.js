@@ -85,7 +85,7 @@ export default function MessagesClient({ comms, discordReady, readReady, canDele
             <MessageSquare size={13} /> {reading ? 'Reading…' : 'Have Hank read #sheetz'}
           </button>
         </div>
-        {hankA && <div style={{ fontSize: 13.5, lineHeight: 1.5, padding: '9px 11px', borderRadius: 8, background: 'var(--surface-2)', borderLeft: `3px solid ${hankA.ok ? 'var(--accent)' : 'var(--red)'}` }}>{hankA.ok ? <><strong style={{ color: 'var(--accent)' }}>🔧 Hank:</strong> {hankA.answer}{hankA.posted && <span className="muted" style={{ fontSize: 11 }}> · posted to #sheetz</span>}</> : <span style={{ color: 'var(--red)' }}>{hankA.msg}</span>}</div>}
+        {hankA && <div style={{ fontSize: 13.5, lineHeight: 1.5, padding: '9px 11px', borderRadius: 8, background: 'var(--surface-2)', borderLeft: `3px solid ${hankA.ok ? 'var(--accent)' : 'var(--red)'}` }}>{hankA.ok ? <><strong style={{ color: 'var(--accent)' }}>🔧 Pipe Wrench Hank:</strong> {hankA.answer}{hankA.posted && <span className="muted" style={{ fontSize: 11 }}> · posted to #sheetz</span>}</> : <span style={{ color: 'var(--red)' }}>{hankA.msg}</span>}</div>}
       </form>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, margin: '0 0 8px', flexWrap: 'wrap' }}>
