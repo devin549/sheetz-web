@@ -47,6 +47,7 @@ export default function BookingForm({ techs }) {
   const [verifying, setVerifying] = useState(false);
   const [verifyMsg, setVerifyMsg] = useState(null);
   const [service, setService] = useState('');
+  const [howHeard, setHowHeard] = useState('');
   const [priority, setPriority] = useState('normal');
   const [showAdmin, setShowAdmin] = useState(false);
   const [serviceConsent, setServiceConsent] = useState(true);
@@ -65,8 +66,10 @@ export default function BookingForm({ techs }) {
   async function pick(c) {
     setPicked(c); setAddr(c.address || ''); setResults([]); setSnap(null);
     const s = await customerSnapshot(c.id); setSnap(s);
+    // repeat customer (has prior work) → pre-fill the marketing source so it's one less step
+    if (s && (s.lifetimeJobs > 0 || s.lifetimeRevenue > 0)) setHowHeard('Repeat customer');
   }
-  function clearPicked() { setPicked(null); setSnap(null); setQuery(''); }
+  function clearPicked() { setPicked(null); setSnap(null); setQuery(''); setHowHeard(''); }
 
   function doVerify() {
     setVerifyMsg(null); setVerifying(true);
@@ -98,7 +101,7 @@ export default function BookingForm({ techs }) {
     start(async () => {
       const res = await createBooking(fd);
       setMsg(res);
-      if (res.ok) { form.reset(); clearPicked(); setAddr(''); setCity(''); setStateV('KY'); setZip(''); setGeo({}); setVerifyMsg(null); setService(''); setPriority('normal'); setMarketingConsent(false); setServiceConsent(true); setSendConfirm(true); router.refresh(); }
+      if (res.ok) { form.reset(); clearPicked(); setAddr(''); setCity(''); setStateV('KY'); setZip(''); setGeo({}); setVerifyMsg(null); setService(''); setHowHeard(''); setPriority('normal'); setMarketingConsent(false); setServiceConsent(true); setSendConfirm(true); router.refresh(); }
     });
   }
 
@@ -250,8 +253,8 @@ export default function BookingForm({ techs }) {
             <div><span style={label}>Warranty / provider</span><input name="warrantyProvider" placeholder="provider name" style={input} autoComplete="off" /></div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-            <div><span style={label}>How did they hear about us?</span>
-              <select name="howHeard" defaultValue="" style={input}><option value="">— ask the caller —</option>{HOW_HEARD.map((h) => <option key={h} value={h}>{h}</option>)}</select>
+            <div><span style={label}>How did they hear about us?{howHeard === 'Repeat customer' && <span style={{ color: 'var(--green)', textTransform: 'none', fontWeight: 700 }}> · auto</span>}</span>
+              <select name="howHeard" value={howHeard} onChange={(e) => setHowHeard(e.target.value)} style={input}><option value="">— ask the caller —</option>{HOW_HEARD.map((h) => <option key={h} value={h}>{h}</option>)}</select>
             </div>
             <div><span style={label}>Referral code</span><input name="referralCode" placeholder="which customer sent them?" style={input} autoComplete="off" /></div>
           </div>
