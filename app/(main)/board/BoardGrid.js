@@ -40,6 +40,8 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   const moveRef = useRef(null);                      // {jobId, offsetX, offsetY, durationHours, w, sx, sy}
   const hoverRef = useRef(null);
   const didMove = useRef(false);
+  const ghostRef = useRef(null); // floating drag ghost — positioned imperatively so it tracks the cursor with no per-frame re-render
+  const positionGhost = () => { const el = ghostRef.current, m = moveRef.current; if (el && m && m.lastX != null) el.style.transform = `translate3d(${m.lastX}px, ${m.lastY}px, 0)`; };
   const techName = (id) => { const t = techs.find((x) => x.id === id); return t ? t.name : ''; };
   const refresh = () => router.refresh();
 
@@ -149,52 +151,73 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   }
   function dragStart(e, jobId) { e.dataTransfer.setData('text/job-id', jobId); e.dataTransfer.effectAllowed = 'move'; }
 
-  // start a custom move-drag for a job already on the grid
+  // Move a job already on the grid. We DON'T commit to a drag on mousedown — only once the pointer
+  // travels past a small threshold. That keeps a plain click a click (opens the panel) and makes
+  // pickup/drop feel deliberate instead of grabbing on every touch. The ghost is positioned via a
+  // ref (no per-frame React render), so it tracks the cursor 1:1 with no float/lag.
   function startMove(e, j) {
     if (e.button !== 0 || j.statusKey === 'done') return;
-    e.preventDefault(); e.stopPropagation();
+    e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
-    moveRef.current = { jobId: j.id, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top, durationHours: (j.duration_min || 60) / 60, w: rect.width, sx: e.clientX, sy: e.clientY };
-    didMove.current = false; hoverRef.current = null; setHover(null);
-    setMoveDrag({ jobId: j.id, mouseX: e.clientX, mouseY: e.clientY });
-    setMoveHover(null);
-  }
-  useEffect(() => {
-    if (!moveDrag) return;
-    let rafId = 0, pending = null;
-    const flush = () => {
-      rafId = 0; if (!pending) return;
-      const { x: mx, y: my } = pending; pending = null;
-      const m = moveRef.current; const body = bodyRef.current; if (!m || !body) return;
-      setMoveDrag((d) => d && { ...d, mouseX: mx, mouseY: my });
-      if (Math.abs(mx - m.sx) > 4 || Math.abs(my - m.sy) > 4) didMove.current = true;
-      // auto-scroll when the cursor nears the grid's left/right edge (reach off-screen hours)
-      const g = gridRef.current;
-      if (g) { const gr = g.getBoundingClientRect(); const EDGE = 70; if (mx > gr.right - EDGE) g.scrollLeft += 22; else if (mx < gr.left + TECH_COL + EDGE) g.scrollLeft = Math.max(0, g.scrollLeft - 22); }
-      const r = body.getBoundingClientRect();
-      const laneX = mx - r.left - TECH_COL - m.offsetX;
-      const tech = nearestTechRow(Math.floor((my - r.top) / ROW_H)); // forgiving — snaps to closest tech
-      if (!tech) { hoverRef.current = null; setMoveHover(null); return; }
-      const snapped = Math.round((laneX / PX_PER_HOUR) * 4) / 4;
-      const startHour = Math.max(0, Math.min(24 - m.durationHours, snapped));
-      const hv = { techId: tech.id, startHour }; hoverRef.current = hv; setMoveHover(hv);
+    const m = {
+      jobId: j.id, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top,
+      durationHours: (j.duration_min || 60) / 60, w: rect.width, sx: e.clientX, sy: e.clientY,
+      active: false, lastX: null, lastY: null,
     };
-    const onMove = (e) => { pending = { x: e.clientX, y: e.clientY }; if (!rafId) rafId = requestAnimationFrame(flush); };
+    moveRef.current = m;
+    didMove.current = false; hoverRef.current = null; setHover(null);
+
+    let rafId = 0, pend = null;
+    const THRESH = 6; // px the pointer must travel before a click becomes a drag
+    const flush = () => {
+      rafId = 0; if (!pend) return;
+      const { x: mx, y: my } = pend; pend = null;
+      const mm = moveRef.current; const body = bodyRef.current; if (!mm || !body) return;
+      // activate only after clearing the threshold → a click stays a click
+      if (!mm.active) {
+        if (Math.abs(mx - mm.sx) < THRESH && Math.abs(my - mm.sy) < THRESH) return;
+        mm.active = true; didMove.current = true;
+        if (typeof document !== 'undefined') { document.body.style.cursor = 'grabbing'; document.body.style.userSelect = 'none'; }
+        setMoveDrag({ jobId: mm.jobId }); // one render: shows ghost + hides the original
+      }
+      // position the ghost imperatively — no per-frame React render, so no lag/float
+      mm.lastX = mx - mm.offsetX; mm.lastY = my - mm.offsetY; positionGhost();
+      // gentle, proportional auto-scroll near the lane edges (ramps with depth, no runaway)
+      const g = gridRef.current;
+      if (g) {
+        const gr = g.getBoundingClientRect(), EDGE = 60, MAX = 10;
+        if (mx > gr.right - EDGE) g.scrollLeft += Math.ceil(((mx - (gr.right - EDGE)) / EDGE) * MAX);
+        else if (mx < gr.left + TECH_COL + EDGE) g.scrollLeft = Math.max(0, g.scrollLeft - Math.ceil((((gr.left + TECH_COL + EDGE) - mx) / EDGE) * MAX));
+      }
+      // forgiving snap target — nearest tech row + 15-min slot
+      const r = body.getBoundingClientRect();
+      const laneX = mx - r.left - TECH_COL - mm.offsetX;
+      const tech = nearestTechRow(Math.floor((my - r.top) / ROW_H));
+      if (!tech) { if (hoverRef.current) { hoverRef.current = null; setMoveHover(null); } return; }
+      const snapped = Math.round((laneX / PX_PER_HOUR) * 4) / 4;
+      const startHour = Math.max(0, Math.min(24 - mm.durationHours, snapped));
+      const prev = hoverRef.current;
+      if (!prev || prev.techId !== tech.id || prev.startHour !== startHour) {
+        const hv = { techId: tech.id, startHour }; hoverRef.current = hv; setMoveHover(hv); // re-render ONLY when the slot changes
+      }
+    };
+    const onMove = (ev) => { pend = { x: ev.clientX, y: ev.clientY }; if (!rafId) rafId = requestAnimationFrame(flush); };
     const onUp = () => {
       if (rafId) cancelAnimationFrame(rafId);
-      const m = moveRef.current, hv = hoverRef.current;
-      if (m && hv && didMove.current) {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      if (typeof document !== 'undefined') { document.body.style.cursor = ''; document.body.style.userSelect = ''; }
+      const mm = moveRef.current, hv = hoverRef.current;
+      if (mm && mm.active && hv && didMove.current) {
         const d = new Date(); d.setHours(Math.floor(hv.startHour), Math.round((hv.startHour % 1) * 60), 0, 0);
         const iso = d.toISOString();
-        start(async () => { await assignTech(m.jobId, hv.techId, iso); router.refresh(); });
+        start(async () => { await assignTech(mm.jobId, hv.techId, iso); router.refresh(); });
       }
       moveRef.current = null; hoverRef.current = null; setMoveDrag(null); setMoveHover(null);
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-    return () => { if (rafId) cancelAnimationFrame(rafId); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moveDrag?.jobId]);
+  }
 
   // hour lines only — the 15-min slot lines are hidden for a cleaner grid
   const laneBg = `repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px ${PX_PER_HOUR}px)`;
@@ -362,14 +385,16 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
       ))}
       {tray.length > 0 && <div className="muted" style={{ fontSize: 11 }}>Needs-reschedule + blocked-closeout buckets light up with the supervisor QA pass (Phase B).</div>}
 
-      {/* floating drag ghost — follows the cursor while moving a job (live-board feel) */}
+      {/* floating drag ghost — positioned imperatively (ref) so it tracks the cursor 1:1 with no lag */}
       {moveDrag && (() => {
         const j = jobs.find((x) => x.id === moveDrag.jobId); if (!j) return null;
         const m = moveRef.current;
+        const target = techName(moveHover ? moveHover.techId : j.techId);
         return (
-          <div style={{ position: 'fixed', left: moveDrag.mouseX - (m ? m.offsetX : 0), top: moveDrag.mouseY - (m ? m.offsetY : 0), width: (m ? m.w : 120) - 2, height: ROW_H - 14, pointerEvents: 'none', zIndex: 9999, background: 'var(--surface-3)', border: `1px solid ${ACCENT}`, borderRadius: 4, padding: '3px 5px', overflow: 'hidden', boxShadow: '0 8px 22px rgba(0,0,0,.45)' }}>
+          <div ref={(el) => { ghostRef.current = el; positionGhost(); }}
+            style={{ position: 'fixed', left: 0, top: 0, transform: `translate3d(${m ? m.lastX : 0}px, ${m ? m.lastY : 0}px, 0)`, willChange: 'transform', width: (m ? m.w : 120) - 2, minWidth: 96, height: ROW_H - 14, pointerEvents: 'none', zIndex: 9999, background: 'var(--surface-3)', border: `1px solid ${ACCENT}`, borderRadius: 5, padding: '3px 6px', overflow: 'hidden', boxShadow: '0 12px 28px rgba(0,0,0,.5)', opacity: 0.97 }}>
             <div style={{ fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.customer}</div>
-            <div className="muted" style={{ fontSize: 9 }}>{fmtTime(j.scheduledISO)}</div>
+            <div className="muted" style={{ fontSize: 9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fmtTime(j.scheduledISO)} <span style={{ color: ACCENT, fontWeight: 700 }}>→ {target || 'pick a tech'}</span></div>
           </div>
         );
       })()}
@@ -383,7 +408,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
           {(hover.job.job_type || hover.job.amount) && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>🔧 {[hover.job.job_type, hover.job.amount ? money(hover.job.amount) : null].filter(Boolean).join(' · ')}</div>}
           {techName(hover.job.techId) && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>👷 {techName(hover.job.techId)}</div>}
           {hover.job.phone && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>📞 {hover.job.phone}</div>}
-          <div className="muted" style={{ fontSize: 10, marginTop: 6, opacity: 0.7 }}>click = details · right-click = actions</div>
+          <div className="muted" style={{ fontSize: 10, marginTop: 6, opacity: 0.7 }}>{canAssign ? 'drag = move · ' : ''}click = details · right-click = actions</div>
         </div>
       )}
 
