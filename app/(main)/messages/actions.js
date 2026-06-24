@@ -64,6 +64,17 @@ export async function hankReadFeed() {
   return { ok: r.ok, msg: r.msg };
 }
 
+// Resolve = "handled, clear it off the desk" (NOT delete). Any signed-in triager can resolve; the row
+// stays for the record. Pass done=false to re-open.
+export async function resolveMessage(id, done = true) {
+  const g = await gate();
+  if (!g || !g.sb) return { ok: false, msg: 'Your role can’t triage here.' };
+  const upd = done ? { resolved_at: new Date().toISOString(), resolved_by: g.who } : { resolved_at: null, resolved_by: null };
+  try { await g.sb.from('cb_comms').update(upd).eq('id', id); } catch (_) { return { ok: false, msg: 'Could not update — run migration 61.' }; }
+  revalidatePath('/messages');
+  return { ok: true, msg: done ? 'Resolved.' : 'Re-opened.' };
+}
+
 // Hide a line from the shared feed (soft delete — the row stays for the audit trail).
 export async function deleteMessage(id) {
   const supabase = createClient();
