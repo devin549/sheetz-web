@@ -2,8 +2,17 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { addUser, setRole, setTechLink } from './actions';
+import { addUser, setRole, setTechLink, setTechPosition } from './actions';
 import { roleMeta } from '@/lib/roles';
+
+// Roster positions — who can take field jobs. 'office' drops off the booking picker + board rows.
+const POSITION_OPTS = [
+  { id: 'tech', label: 'Tech' },
+  { id: 'helper', label: 'Helper' },
+  { id: 'sales', label: 'Salesman' },
+  { id: 'supervisor', label: 'Supervisor' },
+  { id: 'office', label: 'Office (no jobs)' },
+];
 
 function suggestPassword() {
   // readable temp password Devin can hand off: Word + 4 digits + symbol
@@ -46,6 +55,14 @@ export default function TeamManager({ roleOptions, users, techs = [] }) {
     const fd = new FormData();
     fd.set('id', id); fd.set('techId', techId);
     const res = await setTechLink(fd);
+    setMsg(res);
+    router.refresh();
+  }
+
+  async function onPositionChange(id, position) {
+    const fd = new FormData();
+    fd.set('id', id); fd.set('position', position);
+    const res = await setTechPosition(fd);
     setMsg(res);
     router.refresh();
   }
@@ -112,6 +129,28 @@ export default function TeamManager({ roleOptions, users, techs = [] }) {
           </div>
         );
       })}
+
+      {/* ── Field roster — who can take jobs ── */}
+      {techs.length > 0 && (
+        <>
+          <h3 style={{ margin: '24px 0 4px', fontSize: 12, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Field roster ({techs.length})
+          </h3>
+          <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>Who shows in the Job Booking tech picker + on the board. Set office staff to <strong>Office</strong> and they drop off both.</p>
+          {techs.map((t) => (
+            <div key={t.id} className="card" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, alignItems: 'center', padding: '10px 14px' }}>
+              <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {t.name}
+                {t.position === 'office' && <span className="pill" style={{ marginLeft: 8, fontSize: 10, color: 'var(--fg-3)' }}>off the board</span>}
+              </div>
+              <select defaultValue={t.position || 'tech'} onChange={(e) => onPositionChange(t.id, e.target.value)}
+                style={{ ...inputStyle, width: 'auto', borderColor: t.position === 'office' ? 'var(--border)' : 'var(--amber)' }}>
+                {POSITION_OPTS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+            </div>
+          ))}
+        </>
+      )}
     </>
   );
 }

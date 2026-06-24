@@ -29,9 +29,10 @@ export default async function Team() {
   const sb = getSupabaseAdmin();
   const { data, error } = await sb.auth.admin.listUsers({ page: 1, perPage: 200 });
 
-  // techs (for the tech-link picker) + profiles (server-authoritative role + tech link)
-  const { data: techData } = await sb.from('techs').select('id, name').order('name');
-  const techs = (techData || []).map((t) => ({ id: t.id, name: t.name }));
+  // techs (for the tech-link picker + position editor) + profiles (server-authoritative role + tech link)
+  let techQ = await sb.from('techs').select('id, name, position, active').order('name');
+  if (techQ.error) techQ = await sb.from('techs').select('id, name').order('name'); // pre-38 fallback
+  const techs = (techQ.data || []).map((t) => ({ id: t.id, name: t.name, position: t.position || 'tech', active: t.active !== false }));
   const profById = {};
   try { const { data: pData } = await sb.from('profiles').select('user_id, role, tech_id'); (pData || []).forEach((p) => { profById[p.user_id] = p; }); } catch (_) {}
   const profilesReady = Object.keys(profById).length > 0;

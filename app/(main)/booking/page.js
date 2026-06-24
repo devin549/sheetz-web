@@ -11,7 +11,9 @@ export default async function Booking() {
     return <div className="wrap"><div className="h1">Job Booking</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel.</div></div>;
   }
   const sb = getSupabaseAdmin();
-  let tRes = await sb.from('techs').select('id, name').order('name');
+  // Field-assignable roster only — office staff are excluded (set on /team). Graceful pre-migration.
+  let tRes = await sb.from('techs').select('id, name, position').neq('position', 'office').order('name');
+  if (tRes.error) tRes = await sb.from('techs').select('id, name').order('name');
   const techs = (tRes.data || []).map((t) => ({ id: t.id, name: t.name }));
 
   return (

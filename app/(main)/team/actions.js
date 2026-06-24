@@ -70,6 +70,22 @@ export async function setRole(formData) {
   return { ok: true, msg: 'Role updated.' };
 }
 
+// Set a roster person's POSITION — controls who shows in the Job Booking picker + board rows.
+// 'office' = not field-assignable. (Separate from login role: this is the roster, not a login.)
+const POSITIONS = ['tech', 'helper', 'sales', 'supervisor', 'office'];
+export async function setTechPosition(formData) {
+  let sb;
+  try { ({ sb } = await assertManager()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const id = String(formData.get('id') || '');
+  const position = String(formData.get('position') || '');
+  if (!id || !POSITIONS.includes(position)) return { ok: false, msg: 'Bad request.' };
+
+  const { error } = await sb.from('techs').update({ position }).eq('id', id);
+  if (error) return { ok: false, msg: /position|schema cache|column/i.test(error.message || '') ? 'Run supabase/38_tech_position.sql first.' : error.message };
+  revalidatePath('/team'); revalidatePath('/booking'); revalidatePath('/board');
+  return { ok: true, msg: 'Position updated.' };
+}
+
 // Link (or unlink) a login to a tech row so a tech sees ONLY their own jobs. techId '' = unlink.
 export async function setTechLink(formData) {
   let sb;

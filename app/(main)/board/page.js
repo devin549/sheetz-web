@@ -55,7 +55,9 @@ export default async function Board({ searchParams }) {
   if (res.error && /column .* does not exist/i.test(res.error.message || '')) res = await run('');
   const rawJobs = res.data || [];
 
-  let tRes = await sb.from('techs').select('id, name, crew').order('name');
+  // Field-assignable roster only — office staff excluded (set on /team). Graceful pre-migration.
+  let tRes = await sb.from('techs').select('id, name, crew, position').neq('position', 'office').order('name');
+  if (tRes.error) tRes = await sb.from('techs').select('id, name, crew').order('name');
   if (tRes.error) tRes = await sb.from('techs').select('id, name').order('name');
   const techs = (tRes.data || []).map((t) => ({ id: t.id, name: t.name, crew: t.crew || 'Crew' }));
 
