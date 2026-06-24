@@ -84,7 +84,7 @@ export default function PayrollClient({ week, weekEnd, today, prevWeek, nextWeek
         {week !== today && <Link href="/payroll" className="pill" style={{ cursor: 'pointer' }}>This week</Link>}
         <span style={{ marginLeft: 'auto', fontWeight: 800, color: locked ? 'var(--green)' : 'var(--amber)' }}>{run ? (locked ? 'APPROVED' : 'DRAFT') : 'No run'}</span>
       </div>
-      <p className="muted" style={{ fontSize: 12 }}>CB week (Sun–Sat). Commission = % of completed-job revenue; enter hours for hourly. <strong>Nothing is sent</strong> — approval just locks the run; export to your payroll file is a separate step.</p>
+      <p className="muted" style={{ fontSize: 12 }}>CB week (Sun–Sat). Commission = % of completed-job revenue; <strong>hours auto-fill</strong> from on-site time (started→completed) — editable. <strong>Nothing is sent</strong> — approval just locks the run; export to your payroll file is a separate step.</p>
       {msg && <div className="muted" style={{ fontSize: 12, color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.msg}</div>}
 
       {/* Pay rates */}

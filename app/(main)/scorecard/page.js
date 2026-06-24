@@ -1,6 +1,7 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requirePerm } from '@/lib/guard';
 import { nyTodayStr, nyDayWindow } from '@/lib/day';
+import { onsiteHours } from '@/lib/hours';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,7 @@ export default async function Scorecard() {
 
   const run = (extra) => sb.from('jobs').select('id, status, tech_id, scheduled_at' + extra)
     .gte('scheduled_at', startISO).lt('scheduled_at', endISO);
-  let jRes = await run(', amount, completed_at');
+  let jRes = await run(', amount, completed_at, started_at');
   if (jRes.error && /column .* does not exist/i.test(jRes.error.message || '')) jRes = await run('');
   const jobs = (jRes.data || []).filter((j) => !String(j.status || '').toLowerCase().includes('cancel'));
 
@@ -48,10 +49,11 @@ export default async function Scorecard() {
     let pass = 0, fail = 0;
     mine.forEach((j) => { const m = reviewByJob[j.id]; if (m) { pass += m.pass || 0; fail += m.fail || 0; } });
     const reviewed = pass + fail;
-    return { t, jobs: mine.length, done, late, revenue, pass, fail, qa: reviewed ? Math.round((pass / reviewed) * 100) : null };
+    const hours = mine.reduce((s, j) => s + onsiteHours(j.started_at, j.completed_at), 0);
+    return { t, jobs: mine.length, done, late, revenue, hours, pass, fail, qa: reviewed ? Math.round((pass / reviewed) * 100) : null };
   }).sort((a, b) => b.revenue - a.revenue || b.done - a.done);
 
-  const tot = rows.reduce((a, r) => ({ jobs: a.jobs + r.jobs, done: a.done + r.done, late: a.late + r.late, revenue: a.revenue + r.revenue }), { jobs: 0, done: 0, late: 0, revenue: 0 });
+  const tot = rows.reduce((a, r) => ({ jobs: a.jobs + r.jobs, done: a.done + r.done, late: a.late + r.late, revenue: a.revenue + r.revenue, hours: a.hours + r.hours }), { jobs: 0, done: 0, late: 0, revenue: 0, hours: 0 });
   const Cell = ({ children, w, color, bold }) => <td style={{ padding: '10px 12px', textAlign: w === 'l' ? 'left' : 'right', color: color || 'var(--fg-1)', fontWeight: bold ? 800 : 500, fontFamily: w === 'l' ? 'inherit' : 'var(--mono)', whiteSpace: 'nowrap' }}>{children}</td>;
   const Th = ({ children, l }) => <th style={{ padding: '8px 12px', textAlign: l ? 'left' : 'right', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--fg-3)', borderBottom: '1px solid var(--border)' }}>{children}</th>;
 
@@ -62,7 +64,7 @@ export default async function Scorecard() {
       <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead><tr>
-            <Th l>Tech</Th><Th>Jobs</Th><Th>Done</Th><Th>Late</Th><Th>Revenue</Th><Th>QA pass</Th>
+            <Th l>Tech</Th><Th>Jobs</Th><Th>Done</Th><Th>Late</Th><Th>Hours</Th><Th>Revenue</Th><Th>QA pass</Th>
           </tr></thead>
           <tbody>
             {rows.map((r) => (
@@ -77,6 +79,7 @@ export default async function Scorecard() {
                 <Cell>{r.jobs}</Cell>
                 <Cell color="var(--green)" bold>{r.done}</Cell>
                 <Cell color={r.late ? 'var(--red)' : 'var(--fg-3)'} bold={!!r.late}>{r.late || '—'}</Cell>
+                <Cell color="var(--fg-3)">{r.hours ? r.hours.toFixed(1) : '—'}</Cell>
                 <Cell bold>{money(r.revenue)}</Cell>
                 <Cell color={r.qa == null ? 'var(--fg-3)' : r.qa >= 80 ? 'var(--green)' : 'var(--amber)'}>{r.qa == null ? '—' : r.qa + '%'}</Cell>
               </tr>
@@ -86,7 +89,7 @@ export default async function Scorecard() {
           {rows.length > 0 && (
             <tfoot><tr style={{ borderTop: '2px solid var(--border-strong)' }}>
               <Cell w="l" bold>Team</Cell><Cell bold>{tot.jobs}</Cell><Cell bold color="var(--green)">{tot.done}</Cell>
-              <Cell bold color={tot.late ? 'var(--red)' : 'var(--fg-3)'}>{tot.late || '—'}</Cell><Cell bold>{money(tot.revenue)}</Cell><Cell>—</Cell>
+              <Cell bold color={tot.late ? 'var(--red)' : 'var(--fg-3)'}>{tot.late || '—'}</Cell><Cell color="var(--fg-3)">{tot.hours ? tot.hours.toFixed(1) : '—'}</Cell><Cell bold>{money(tot.revenue)}</Cell><Cell>—</Cell>
             </tr></tfoot>
           )}
         </table>

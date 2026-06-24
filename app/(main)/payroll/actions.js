@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { revalidatePath } from 'next/cache';
 import { nyDayWindow } from '@/lib/day';
+import { onsiteHours } from '@/lib/hours';
 
 const PAYROLL_ROLES = ['owner', 'admin', 'gm', 'om', 'accounting'];
 const APPROVE_ROLES = ['owner', 'admin', 'gm', 'om'];
@@ -55,9 +56,9 @@ export async function generateRun(weekStart) {
   if (existing.data) return { ok: true, runId: existing.data.id, msg: 'Draft already exists.' };
 
   const startISO = nyDayWindow(ws).startISO, endISO = nyDayWindow(weekEnd).endISO;
-  const { data: jobs } = await ctx.sb.from('jobs').select('tech_id, tech_name, amount').not('tech_id', 'is', null).gte('completed_at', startISO).lt('completed_at', endISO);
+  const { data: jobs } = await ctx.sb.from('jobs').select('tech_id, tech_name, amount, started_at, completed_at').not('tech_id', 'is', null).gte('completed_at', startISO).lt('completed_at', endISO);
   const byTech = {};
-  (jobs || []).forEach((j) => { const m = (byTech[j.tech_id] = byTech[j.tech_id] || { name: j.tech_name || '', count: 0, rev: 0 }); m.count++; m.rev += Number(j.amount) || 0; if (j.tech_name) m.name = j.tech_name; });
+  (jobs || []).forEach((j) => { const m = (byTech[j.tech_id] = byTech[j.tech_id] || { name: j.tech_name || '', count: 0, rev: 0, hours: 0 }); m.count++; m.rev += Number(j.amount) || 0; m.hours += onsiteHours(j.started_at, j.completed_at); if (j.tech_name) m.name = j.tech_name; });
 
   const { data: pays } = await ctx.sb.from('pay_profiles').select('tech_id, pay_type, commission_pct, hourly_rate, weekly_salary');
   const payByTech = {}; (pays || []).forEach((p) => { payByTech[p.tech_id] = p; });
@@ -69,14 +70,16 @@ export async function generateRun(weekStart) {
   if (rErr) return { ok: false, msg: rErr.message };
 
   const lines = techIds.map((tid) => {
-    const j = byTech[tid] || { name: '', count: 0, rev: 0 };
+    const j = byTech[tid] || { name: '', count: 0, rev: 0, hours: 0 };
     const p = payByTech[tid] || { pay_type: 'commission', commission_pct: 0, hourly_rate: 0, weekly_salary: 0 };
     const comm = ['commission', 'hourly_comm'].includes(p.pay_type) ? Math.round((j.rev * (Number(p.commission_pct) || 0) / 100) * 100) : 0;
+    const hours = Math.round((j.hours || 0) * 100) / 100;                  // auto on-site hours from job timeline
     const salaryBase = p.pay_type === 'salary' ? cents(p.weekly_salary) : 0;
+    const hourlyCents = ['hourly', 'hourly_comm'].includes(p.pay_type) ? Math.round(hours * (Number(p.hourly_rate) || 0) * 100) : salaryBase;
     return {
       run_id: run.id, tech_id: tid, tech_name: j.name || nameById[tid] || 'Tech', pay_type: p.pay_type,
       jobs_count: j.count, revenue_cents: Math.round(j.rev * 100), commission_cents: comm,
-      hours: 0, hourly_cents: salaryBase, bonus_cents: 0, adjust_cents: 0,
+      hours, hourly_cents: hourlyCents, bonus_cents: 0, adjust_cents: 0,
     };
   });
   if (lines.length) { const { error: lErr } = await ctx.sb.from('cb_payroll_lines').insert(lines); if (lErr) return { ok: false, msg: lErr.message }; }
