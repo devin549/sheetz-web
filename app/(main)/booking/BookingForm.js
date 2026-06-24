@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { searchCustomersForBooking, createBooking, customerSnapshot } from './actions';
+import { searchCustomersForBooking, createBooking, customerSnapshot, verifyAddress } from './actions';
 import { triageFor } from '@/lib/triage';
 import BookingTriage from './BookingTriage';
-import { Search, UserPlus, X, Phone, Mail, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Search, UserPlus, X, Phone, Mail, AlertTriangle, ChevronDown, ChevronRight, MapPin } from 'lucide-react';
 
 const input = { width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '10px 11px', fontSize: 14, fontFamily: 'inherit' };
 const label = { fontSize: 11, fontWeight: 700, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '.05em', display: 'block', marginBottom: 4 };
@@ -40,6 +40,12 @@ export default function BookingForm({ techs }) {
   const [picked, setPicked] = useState(null);
   const [snap, setSnap] = useState(null);          // co-pilot snapshot for picked customer
   const [addr, setAddr] = useState('');
+  const [city, setCity] = useState('');
+  const [stateV, setStateV] = useState('KY');
+  const [zip, setZip] = useState('');
+  const [geo, setGeo] = useState({});
+  const [verifying, setVerifying] = useState(false);
+  const [verifyMsg, setVerifyMsg] = useState(null);
   const [service, setService] = useState('');
   const [priority, setPriority] = useState('normal');
   const [showAdmin, setShowAdmin] = useState(false);
@@ -61,6 +67,21 @@ export default function BookingForm({ techs }) {
   }
   function clearPicked() { setPicked(null); setSnap(null); setQuery(''); }
 
+  function doVerify() {
+    setVerifyMsg(null); setVerifying(true);
+    (async () => {
+      const r = await verifyAddress({ street: addr, city, state: stateV, zip });
+      setVerifying(false);
+      if (!r.ok) { setVerifyMsg({ ok: false, t: r.msg }); return; }
+      if (r.street) setAddr(r.street);
+      if (r.city) setCity(r.city);
+      if (r.state) setStateV(r.state);
+      if (r.zip) setZip(r.zip);
+      setGeo({ lat: r.lat, lng: r.lng });
+      setVerifyMsg({ ok: true, t: (r.partial ? '⚠ Close match: ' : '✓ Verified: ') + r.formatted, partial: r.partial });
+    })();
+  }
+
   function onSubmit(e) {
     e.preventDefault();
     const form = e.currentTarget;
@@ -75,7 +96,7 @@ export default function BookingForm({ techs }) {
     start(async () => {
       const res = await createBooking(fd);
       setMsg(res);
-      if (res.ok) { form.reset(); clearPicked(); setAddr(''); setService(''); setPriority('normal'); setMarketingConsent(false); setServiceConsent(true); router.refresh(); }
+      if (res.ok) { form.reset(); clearPicked(); setAddr(''); setCity(''); setStateV('KY'); setZip(''); setGeo({}); setVerifyMsg(null); setService(''); setPriority('normal'); setMarketingConsent(false); setServiceConsent(true); router.refresh(); }
     });
   }
 
@@ -155,12 +176,18 @@ export default function BookingForm({ techs }) {
 
       {/* 2 · Service location */}
       <Section n="2" title="Service location" />
-      <input name="address" value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="Street address (defaults to customer)" style={input} autoComplete="off" />
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 0.7fr 1fr', gap: 8 }}>
-        <input name="city" placeholder="City" style={input} autoComplete="off" />
-        <input name="state" defaultValue="KY" placeholder="State" style={input} autoComplete="off" />
-        <input name="zip" placeholder="ZIP" style={input} autoComplete="off" />
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input name="address" value={addr} onChange={(e) => { setAddr(e.target.value); setVerifyMsg(null); setGeo({}); }} placeholder="Street address (defaults to customer)" style={{ ...input, flex: 1 }} autoComplete="off" />
+        <button type="button" onClick={doVerify} disabled={verifying} className="btn" style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, opacity: verifying ? 0.6 : 1 }}><MapPin size={14} /> {verifying ? 'Verifying…' : 'Verify'}</button>
       </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 0.7fr 1fr', gap: 8 }}>
+        <input name="city" value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" style={input} autoComplete="off" />
+        <input name="state" value={stateV} onChange={(e) => setStateV(e.target.value)} placeholder="State" style={input} autoComplete="off" />
+        <input name="zip" value={zip} onChange={(e) => setZip(e.target.value)} placeholder="ZIP" style={input} autoComplete="off" />
+      </div>
+      {verifyMsg && <div style={{ fontSize: 12, fontWeight: 700, color: verifyMsg.ok ? (verifyMsg.partial ? 'var(--amber)' : 'var(--green)') : 'var(--red)' }}>{verifyMsg.t}</div>}
+      <input type="hidden" name="lat" value={geo.lat || ''} />
+      <input type="hidden" name="lng" value={geo.lng || ''} />
 
       {/* 3 · The job */}
       <Section n="3" title="The job" />

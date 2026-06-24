@@ -54,6 +54,41 @@ export async function customerSnapshot(id) {
   };
 }
 
+// Verify a service address via Google Maps geocoding → canonical street/city/state/zip + lat/lng.
+// Stops typos + bad addresses before a truck rolls.
+export async function verifyAddress(parts) {
+  try { await assertBooker(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const key = process.env.GOOGLE_MAPS_KEY;
+  if (!key) return { ok: false, msg: 'No Google Maps key — add GOOGLE_MAPS_KEY in Vercel.' };
+  const q = [parts && parts.street, parts && parts.city, parts && parts.state, parts && parts.zip].map((s) => clean(s, 120)).filter(Boolean).join(', ');
+  if (!q) return { ok: false, msg: 'Enter an address first.' };
+
+  let json;
+  try {
+    const r = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q)}&region=us&key=${key}`);
+    json = await r.json();
+  } catch (e) { return { ok: false, msg: 'Verify failed: ' + (e && e.message ? e.message : String(e)) }; }
+  if (json.status !== 'OK' || !json.results || !json.results.length) {
+    return { ok: false, msg: json.status === 'ZERO_RESULTS' ? 'No match — double-check the address.' : 'Verify error: ' + (json.status || 'unknown') };
+  }
+  const res = json.results[0];
+  const comp = (type) => res.address_components.find((x) => x.types.includes(type)) || null;
+  const sn = comp('street_number'), route = comp('route');
+  const city = comp('locality') || comp('sublocality') || comp('postal_town');
+  const st = comp('administrative_area_level_1'), zip = comp('postal_code');
+  const loc = res.geometry && res.geometry.location;
+  return {
+    ok: true,
+    formatted: res.formatted_address,
+    street: [sn && sn.long_name, route && route.long_name].filter(Boolean).join(' ') || null,
+    city: city ? city.long_name : null,
+    state: st ? st.short_name : null,
+    zip: zip ? zip.long_name : null,
+    lat: loc ? loc.lat : null, lng: loc ? loc.lng : null,
+    partial: !!res.partial_match,
+  };
+}
+
 // Decode a water-heater model #/serial → real specs (brand, capacity, fuel, vent, age). The live
 // HTML "Decode" pulled nothing up; this wires it to Claude so it actually returns the unit.
 export async function decodeWaterHeater(model, serial) {
@@ -138,6 +173,8 @@ export async function createBooking(formData) {
   const city = clean(formData.get('city'), 80) || null;
   const state = clean(formData.get('state'), 8) || null;
   const zip = clean(formData.get('zip'), 12) || null;
+  const lat = Number(formData.get('lat')) || null;
+  const lng = Number(formData.get('lng')) || null;
   const arrivalWindow = clean(formData.get('arrivalWindow'), 60) || null;
   const businessUnit = clean(formData.get('businessUnit'), 60) || null;
   const poNumber = clean(formData.get('poNumber'), 60) || null;
@@ -180,7 +217,7 @@ export async function createBooking(formData) {
     customer_id: customerId, status: 'scheduled', job_type: jobType, priority,
     scheduled_at: scheduledISO || null, duration_min: durationMin, amount,
     tech_id: techId, tech_name: techName, assigned_at: techId ? new Date().toISOString() : null,
-    address: address || null, city, business_unit: businessUnit,
+    address: address || null, city, business_unit: businessUnit, lat, lng,
   };
   let triage = null;
   try { const t = JSON.parse(String(formData.get('triage') || 'null')); if (t && typeof t === 'object' && Object.keys(t).length) triage = t; } catch (_) { triage = null; }
