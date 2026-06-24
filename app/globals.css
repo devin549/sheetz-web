@@ -151,6 +151,8 @@ a:hover { color: var(--amber-bright); }
 /* Board: breathing snap-target while dragging a job (ported from the live board's .drop-breathe). */
 @keyframes cbBreathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 .cb-breathe { animation: cbBreathe 1s ease-in-out infinite; }
+@keyframes cbSpin { to { transform: rotate(360deg); } }
+.cb-spin { animation: cbSpin .8s linear infinite; }
 
 /* ── Mobile shell — rail collapses to a floating menu + drawer (≤820px) ─────── */
 .cb-burger { display: none; }
