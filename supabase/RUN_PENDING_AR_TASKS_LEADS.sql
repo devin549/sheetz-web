@@ -630,3 +630,12 @@ alter table public.memberships add column if not exists billing_status   text de
 alter table public.memberships add column if not exists benefits         text;
 alter table public.memberships add column if not exists discount_pct     numeric;
 alter table public.memberships add column if not exists next_service_due date;
+
+-- ===== 53_job_handoff.sql =====
+-- Dispatch handoff context — the "what the tech needs to know" fields captured at booking and shown
+-- on the board/job panel. Idempotent, additive. Run in the Supabase SQL editor.
+alter table public.jobs add column if not exists customer_promise text;   -- what we promised the customer
+alter table public.jobs add column if not exists access_notes     text;   -- gate code, dog, parking, lockbox
+alter table public.jobs add column if not exists sold_scope       text;   -- what was sold / scope of work
+alter table public.jobs add column if not exists must_tell_tech   text;   -- 🚨 critical heads-up for the tech
+alter table public.jobs add column if not exists csr              text;   -- who booked it

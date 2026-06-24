@@ -98,6 +98,16 @@ export default function JobPanel({ job, techName, techs = [], canStatus, canAssi
             {job.address && <div onClick={openMap} title="Open in Maps" style={{ fontSize: 12, color: '#64b5f6', cursor: 'pointer', marginTop: 4, lineHeight: 1.4 }}>📍 {job.address}</div>}
           </Section>
 
+          {(job.mustTell || job.promise || job.access || job.scope || job.csr) && (
+            <Section label="Dispatch handoff">
+              {job.mustTell && <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', background: 'color-mix(in oklab, var(--red) 12%, transparent)', borderRadius: 6, padding: '6px 8px', marginBottom: 6 }}>🚨 {job.mustTell}</div>}
+              {job.promise && <div style={{ fontSize: 12, marginTop: 2 }}><span className="muted">Promise: </span>{job.promise}</div>}
+              {job.access && <div style={{ fontSize: 12, marginTop: 2 }}><span className="muted">Access: </span>{job.access}</div>}
+              {job.scope && <div style={{ fontSize: 12, marginTop: 2 }}><span className="muted">Sold scope: </span>{job.scope}</div>}
+              {job.csr && <div style={{ fontSize: 12, marginTop: 2 }}><span className="muted">Booked by: </span>{job.csr}</div>}
+            </Section>
+          )}
+
           <Section label="Schedule"><KV k="Start" v={startStr} /></Section>
 
           <Section label="Job file">

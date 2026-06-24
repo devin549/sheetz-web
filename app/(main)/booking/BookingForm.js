@@ -251,6 +251,15 @@ export default function BookingForm({ techs }) {
         </div>
       </div>
 
+      {/* 5 · Dispatch handoff — what the tech needs to know */}
+      <Section n="5" title="Dispatch handoff" />
+      <div><span style={label}>🚨 Must tell the tech</span><input name="mustTell" placeholder="critical heads-up — gas smell, aggressive dog, prior bad visit…" style={{ ...input, borderColor: 'var(--amber)' }} autoComplete="off" /></div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+        <div><span style={label}>Customer promise</span><input name="customerPromise" placeholder="what we promised them" style={input} autoComplete="off" /></div>
+        <div><span style={label}>Access notes</span><input name="accessNotes" placeholder="gate code, parking, lockbox" style={input} autoComplete="off" /></div>
+        <div><span style={label}>Sold scope</span><input name="soldScope" placeholder="what was sold / scope" style={input} autoComplete="off" /></div>
+      </div>
+
       {/* Billing & admin (collapsible) */}
       <button type="button" onClick={() => setShowAdmin((s) => !s)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 0, color: 'var(--amber)', cursor: 'pointer', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', padding: 0, marginTop: 2 }}>
         {showAdmin ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Billing &amp; admin · marketing

@@ -52,7 +52,8 @@ export default async function Board({ searchParams }) {
     .select('id, status, priority, scheduled_at, tech_id' + extra + ', customers(name, address, phone), techs(name)')
     .or(dayFilter)
     .order('scheduled_at', { ascending: true });
-  let res = await run(', job_number, job_type, amount, tech_name, duration_min');
+  let res = await run(', job_number, job_type, amount, tech_name, duration_min, customer_promise, access_notes, sold_scope, must_tell_tech, csr');
+  if (res.error && /column .* does not exist/i.test(res.error.message || '')) res = await run(', job_number, job_type, amount, tech_name, duration_min'); // pre-53
   if (res.error && /column .* does not exist/i.test(res.error.message || '')) res = await run('');
   const rawJobs = res.data || [];
 
@@ -85,6 +86,9 @@ export default async function Board({ searchParams }) {
   // active members → ⭐ badge on the board (match by customer name; graceful if no table)
   const memberNames = new Set();
   try { const { data: mem } = await sb.from('memberships').select('customer').eq('status', 'active'); (mem || []).forEach((m) => { const n = String(m.customer || '').trim().toLowerCase(); if (n) memberNames.add(n); }); } catch (_) { /* ignore */ }
+  // do-not-service customers → 🚫 badge on the board
+  const dnsNames = new Set();
+  try { const { data: dns } = await sb.from('customers').select('name').eq('do_not_service', true); (dns || []).forEach((c) => { const n = String(c.name || '').trim().toLowerCase(); if (n) dnsNames.add(n); }); } catch (_) { /* ignore */ }
 
   const gridJobs = [], tray = [], techStatus = {};
   const rank = { onsite: 3, enroute: 2, late: 2, hold: 1, scheduled: 0, done: -1 };
@@ -105,6 +109,8 @@ export default async function Board({ searchParams }) {
       status: j.status, statusKey: sk, priority: j.priority, amount: amt, job_type: j.job_type || '',
       scheduledISO: j.scheduled_at, techId: j.tech_id || null,
       member: memberNames.has((((j.customers && j.customers.name) || '')).trim().toLowerCase()),
+      dns: dnsNames.has((((j.customers && j.customers.name) || '')).trim().toLowerCase()),
+      mustTell: j.must_tell_tech || '', csr: j.csr || '', promise: j.customer_promise || '', access: j.access_notes || '', scope: j.sold_scope || '',
     };
     if (j.tech_id && when) gridJobs.push(base);
     else tray.push(base);

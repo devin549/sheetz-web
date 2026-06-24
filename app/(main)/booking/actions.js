@@ -263,7 +263,8 @@ export async function createBooking(formData) {
   };
   let triage = null;
   try { const t = JSON.parse(String(formData.get('triage') || 'null')); if (t && typeof t === 'object' && Object.keys(t).length) triage = t; } catch (_) { triage = null; }
-  const extra = { notes: notes || null, job_class: jobClass, arrival_window: arrivalWindow, po_number: poNumber, claim_number: claimNumber, warranty_provider: warrantyProvider, how_heard: howHeard, referral_code: referralCode, state, zip, triage };
+  const extra = { notes: notes || null, job_class: jobClass, arrival_window: arrivalWindow, po_number: poNumber, claim_number: claimNumber, warranty_provider: warrantyProvider, how_heard: howHeard, referral_code: referralCode, state, zip, triage,
+    customer_promise: clean(formData.get('customerPromise'), 300) || null, access_notes: clean(formData.get('accessNotes'), 300) || null, sold_scope: clean(formData.get('soldScope'), 300) || null, must_tell_tech: clean(formData.get('mustTell'), 300) || null, csr: ctx.profile.name || ctx.user.email };
   let ins = await sb.from('jobs').insert({ ...base, ...extra }).select('id').single();
   if (ins.error && /column|schema cache/i.test(ins.error.message || '')) {
     ins = await sb.from('jobs').insert(base).select('id').single(); // pre-39 fallback: book with the core fields
