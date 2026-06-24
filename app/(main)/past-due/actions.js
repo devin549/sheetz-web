@@ -6,6 +6,7 @@ import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 import { isEmailConfigured, sendOne, appBaseUrl } from '@/lib/email';
+import { createInvoiceCheckout, isStripeConfigured } from '@/lib/stripe';
 import { COMPANY } from '@/lib/company';
 import { revalidatePath } from 'next/cache';
 
@@ -70,6 +71,28 @@ async function custName(sb, customerId) {
   if (!customerId) return '';
   const { data } = await sb.from('customers').select('name').eq('id', customerId).maybeSingle();
   return (data && data.name) || '';
+}
+
+// Create a Stripe pay link for a customer's collectible balance → office texts/emails it; the webhook
+// marks the invoice(s) paid when they pay. No card data touches us.
+export async function createPayLink(customerId, amountDollars, customerName) {
+  let sb;
+  try { ({ sb } = await assertCanMark()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!isStripeConfigured()) return { ok: false, msg: 'Add STRIPE_SECRET_KEY in Vercel (use a sk_test_… key first).' };
+  const cents = Math.round((Number(amountDollars) || 0) * 100);
+  if (cents < 50) return { ok: false, msg: 'Nothing collectible to bill.' };
+  const name = customerName || (await custName(sb, customerId));
+  // If it's a single open invoice, tag it so the webhook can mark that exact one paid.
+  let invoiceId = null, invoiceNumber = null;
+  try {
+    const { data } = await sb.from('invoices').select('id, invoice_number').eq('customer_id', customerId).eq('status', 'open').limit(2);
+    if (data && data.length === 1) { invoiceId = data[0].id; invoiceNumber = data[0].invoice_number; }
+  } catch (_) {}
+  const r = await createInvoiceCheckout({ amountCents: cents, invoiceNumber, customerName: name, invoiceId, customerId });
+  if (!r.ok) return { ok: false, msg: 'Stripe: ' + r.error };
+  // Log that a pay link was generated (audit trail).
+  try { await sb.from('ar_activity').insert({ action: 'pay_link_created', customer_id: customerId || null, customer_name: name || null, invoice_number: invoiceNumber, amount: cents / 100, by_email: 'paylink' }); } catch (_) {}
+  return { ok: true, url: r.url };
 }
 
 // Mark one invoice paid → it drops out of past-due + logs to the AR ledger.

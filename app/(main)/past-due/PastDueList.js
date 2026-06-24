@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { markInvoicePaid, markCustomerPaid, setArNote, setInvoiceDoubtful, markCustomerDoubtful } from './actions';
+import { markInvoicePaid, markCustomerPaid, setArNote, setInvoiceDoubtful, markCustomerDoubtful, createPayLink } from './actions';
 import CollectionsTimeline from './CollectionsTimeline';
 
 // Ashley's per-customer A/R note ("Sent to Attorney 4/22", "DO NOT SERVICE", "Pays Weekly"…).
@@ -63,6 +63,8 @@ export default function PastDueList({ customers, canMark, summary }) {
   const [pending, start] = useTransition();
   const [busyId, setBusyId] = useState(null);
   const [err, setErr] = useState(null);
+  const [payLinks, setPayLinks] = useState({});
+  function makePayLink(c) { if (pending) return; setBusyId('pl-' + c.cid); setErr(null); start(async () => { const r = await createPayLink(c.cid, c.total, c.name); setBusyId(null); if (r.ok) setPayLinks((p) => ({ ...p, [c.cid]: r.url })); else setErr(r.msg); }); }
 
   const [q, setQ] = useState('');
   const [bucket, setBucket] = useState('all');
@@ -193,6 +195,13 @@ export default function PastDueList({ customers, canMark, summary }) {
                             {busyId === 'db-' + c.cid ? '…' : (c.doubtful > 0 && c.total === 0) ? '↩ Restore balance' : '🚫 Mark balance doubtful'}
                           </button>
                           {c.total > 0 && (
+                            <button onClick={() => makePayLink(c)} disabled={pending}
+                              title="Create a Stripe pay page for this balance — text/email it to the customer"
+                              style={{ background: 'transparent', color: '#635bff', border: '1px solid #635bff', borderRadius: 7, padding: '5px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: pending && busyId === 'pl-' + c.cid ? 0.6 : 1 }}>
+                              {busyId === 'pl-' + c.cid ? 'Creating…' : '💳 Pay link'}
+                            </button>
+                          )}
+                          {c.total > 0 && (
                             <button onClick={() => run('cust-' + c.cid, () => markCustomerPaid(c.cid))} disabled={pending}
                               style={{ background: 'var(--green)', color: '#fff', border: 0, borderRadius: 7, padding: '5px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: pending && busyId === 'cust-' + c.cid ? 0.6 : 1 }}>
                               {busyId === 'cust-' + c.cid ? 'Marking…' : `✓ Mark all paid (${money(c.total)})`}
@@ -201,6 +210,14 @@ export default function PastDueList({ customers, canMark, summary }) {
                         </span>
                       )}
                     </div>
+                    {payLinks[c.cid] && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '0 0 8px', padding: '8px 10px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid #635bff' }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 700, color: '#635bff' }}>💳 Pay link</span>
+                        <input readOnly value={payLinks[c.cid]} onFocus={(e) => e.target.select()} style={{ flex: '1 1 200px', minWidth: 0, background: 'var(--surface-1)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 6, padding: '5px 8px', fontSize: 12 }} />
+                        <button onClick={() => navigator.clipboard && navigator.clipboard.writeText(payLinks[c.cid])} style={{ background: '#635bff', color: '#fff', border: 0, borderRadius: 6, padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Copy</button>
+                        <a href={payLinks[c.cid]} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>Open ↗</a>
+                      </div>
+                    )}
                     {c.invoices.map((i) => (
                       <div key={i.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 10, padding: '5px 0', borderBottom: '1px solid var(--border)', alignItems: 'center', fontSize: 12.5, opacity: i.doubtful ? 0.6 : 1 }}>
                         <span style={{ textDecoration: i.doubtful ? 'line-through' : 'none' }}>#{i.invoice_number}{i.city ? <span className="muted" style={{ fontSize: 11 }}> · {i.city}</span> : ''}{i.doubtful && <span className="muted" style={{ fontSize: 10, marginLeft: 6 }}>🚫 doubtful</span>}</span>
