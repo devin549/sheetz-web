@@ -12,7 +12,7 @@ export default async function Memberships() {
   }
   const sb = getSupabaseAdmin();
   const res = await sb.from('memberships')
-    .select('id, customer, plan, status, price_cents, period, started_on, renews_on, note, created_by')
+    .select('*')
     .order('status').order('renews_on', { ascending: true, nullsFirst: false }).limit(500);
 
   if (res.error && /could not find|does not exist|schema cache/i.test(res.error.message || '')) {

@@ -25,22 +25,39 @@ export async function createMembership(formData) {
   if (!g.ok) return g;
 
   const customer = String(formData.get('customer') || '').trim().slice(0, 160);
+  const customer_id = String(formData.get('customerId') || '').trim() || null;
   const plan = String(formData.get('plan') || '').trim().slice(0, 120);
   const period = formData.get('period') === 'month' ? 'month' : 'year';
   const price_cents = Math.max(0, Math.round((Number(formData.get('price')) || 0) * 100));
   const started_on = String(formData.get('started_on') || '').slice(0, 10) || null;
   const renews_on = String(formData.get('renews_on') || '').slice(0, 10) || null;
   const note = String(formData.get('note') || '').trim().slice(0, 500) || null;
+  const billing_status = ['current', 'past_due', 'comp'].includes(formData.get('billing_status')) ? formData.get('billing_status') : 'current';
+  const benefits = String(formData.get('benefits') || '').trim().slice(0, 300) || null;
+  const discount_pct = formData.get('discount_pct') === '' || formData.get('discount_pct') == null ? null : Math.max(0, Math.min(100, Number(formData.get('discount_pct')) || 0));
+  const next_service_due = String(formData.get('next_service_due') || '').slice(0, 10) || null;
   if (!customer || !plan) return { ok: false, msg: 'Customer and plan are required.' };
 
-  const row = { customer, plan, period, price_cents, note, status: 'active', created_by: g.who };
-  if (started_on) row.started_on = started_on;
-  if (renews_on) row.renews_on = renews_on;
-
-  const { error } = await g.sb.from('memberships').insert(row);
-  if (error) return { ok: false, msg: missing(error) ? 'Run supabase/35_memberships.sql first.' : error.message };
+  const base = { customer, customer_id, plan, period, price_cents, note, status: 'active', created_by: g.who };
+  if (started_on) base.started_on = started_on;
+  if (renews_on) base.renews_on = renews_on;
+  const extra = { billing_status, benefits, discount_pct, next_service_due };
+  let ins = await g.sb.from('memberships').insert({ ...base, ...extra });
+  if (ins.error && /column|schema cache/i.test(ins.error.message || '')) ins = await g.sb.from('memberships').insert(base); // pre-52
+  if (ins.error) return { ok: false, msg: missing(ins.error) ? 'Run supabase/35_memberships.sql first.' : ins.error.message };
   revalidatePath('/memberships');
   return { ok: true, msg: `Enrolled ${customer} in ${plan}.` };
+}
+
+// Typeahead to link a membership to a customer record (phone-tolerant).
+export async function searchMembershipCustomers(q) {
+  const g = await gate();
+  if (!g.ok) return [];
+  const term = String(q || '').trim();
+  if (term.length < 2) return [];
+  const rpc = await g.sb.rpc('search_customers', { term });
+  if (rpc.error) return [];
+  return (rpc.data || []).slice(0, 8).map((c) => ({ id: c.id, name: c.name || 'Customer', phone: c.phone || '' }));
 }
 
 export async function setMembershipStatus(id, status) {

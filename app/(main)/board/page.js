@@ -82,6 +82,10 @@ export default async function Board({ searchParams }) {
   }
   const canContact = can(role, 'contactCustomer');
 
+  // active members → ⭐ badge on the board (match by customer name; graceful if no table)
+  const memberNames = new Set();
+  try { const { data: mem } = await sb.from('memberships').select('customer').eq('status', 'active'); (mem || []).forEach((m) => { const n = String(m.customer || '').trim().toLowerCase(); if (n) memberNames.add(n); }); } catch (_) { /* ignore */ }
+
   const gridJobs = [], tray = [], techStatus = {};
   const rank = { onsite: 3, enroute: 2, late: 2, hold: 1, scheduled: 0, done: -1 };
   let dayRevenue = 0;
@@ -100,6 +104,7 @@ export default async function Board({ searchParams }) {
       duration_min: j.duration_min || null, photoCount: photoCount[j.id] || 0,
       status: j.status, statusKey: sk, priority: j.priority, amount: amt, job_type: j.job_type || '',
       scheduledISO: j.scheduled_at, techId: j.tech_id || null,
+      member: memberNames.has((((j.customers && j.customers.name) || '')).trim().toLowerCase()),
     };
     if (j.tech_id && when) gridJobs.push(base);
     else tray.push(base);

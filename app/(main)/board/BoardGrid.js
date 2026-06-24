@@ -253,7 +253,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
       >
         {late && <span className="alert-dot" style={{ position: 'absolute', top: 4, right: 4, margin: 0 }} aria-hidden="true" />}
         <div style={{ fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: late ? 'var(--red)' : 'var(--fg-1)' }}>
-          {pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.customer}
+          {pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.member && <span title="Member">⭐ </span>}{j.customer}
         </div>
         <div className="muted" style={{ fontSize: 9, display: 'flex', alignItems: 'center', gap: 4 }}>
           <span>{fmtTime(j.scheduledISO)}{live ? ` · ${dur}m` : (j.amount ? ' · ' + money(j.amount) : '')}</span>
@@ -290,7 +290,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
         onClick={() => setSel(j)} onContextMenu={(e) => openMenu(e, j)}
         className="card" style={{ borderLeft: `3px solid ${pr ? pr.color : (j.techId ? ACCENT : 'var(--red)')}`, cursor: 'pointer', padding: '10px 12px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
-          <span style={{ fontWeight: 700, fontSize: 13 }}>{pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.customer}</span>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>{pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.member && <span title="Member">⭐ </span>}{j.customer}</span>
           <span className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{j.scheduledISO ? fmtTime(j.scheduledISO) : 'no time'}</span>
         </div>
         {j.address && <div className="muted" style={{ fontSize: 11, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}><MapPin size={11} /> {j.address}</div>}

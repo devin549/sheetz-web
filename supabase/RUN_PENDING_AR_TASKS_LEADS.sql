@@ -622,3 +622,11 @@ alter table public.reviews add column if not exists recovery_owner text;
 alter table public.reviews add column if not exists request_status text default 'none';  -- none | requested | received
 create index if not exists reviews_customer_idx on public.reviews (customer_id);
 create index if not exists reviews_tech_idx on public.reviews (tech_id);
+
+-- ===== 52_membership_fields.sql =====
+-- Memberships → real recurring revenue: billing status, benefits, discount, next service due.
+-- Idempotent, additive. Run in the Supabase SQL editor.
+alter table public.memberships add column if not exists billing_status   text default 'current';  -- current | past_due | comp
+alter table public.memberships add column if not exists benefits         text;
+alter table public.memberships add column if not exists discount_pct     numeric;
+alter table public.memberships add column if not exists next_service_due date;
