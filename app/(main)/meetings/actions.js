@@ -6,6 +6,7 @@ import { loadProfile } from '@/lib/profile';
 import { postToDiscord } from '@/lib/discord';
 import { FIELD_POSITIONS } from '@/lib/positions';
 import { requiredNames } from '@/lib/meetings';
+import { googleCalendarLink } from '@/lib/calendar';
 import { revalidatePath } from 'next/cache';
 
 // Who can SEND a meeting: field supervisor, GM, office manager, owner.
@@ -43,7 +44,9 @@ export async function createMeeting(formData) {
   const when = starts.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const everyone = audience === 'everyone';
   const who = everyone ? '@everyone' : (audience.startsWith('mgr:') ? `${audience.slice(4)}’s crew` : `${audience} crew`);
-  await postToDiscord(`📅 MEETING — ${title}\n${when}${row.location ? ` @ ${row.location}` : ''}\nFor ${who}. 👍 Acknowledge in the app → Meetings (and it adds to your calendar).`, { everyone });
+  // Drop a tap-to-add calendar link right in the Discord post, so it works for Discord-watchers too.
+  const cal = googleCalendarLink({ title, startISO: row.starts_at, durationMin: row.duration_min, location: row.location || '', details: row.notes || '' });
+  await postToDiscord(`📅 MEETING — ${title}\n${when}${row.location ? ` @ ${row.location}` : ''}\nFor ${who}. 👍 to confirm.${cal ? `\n🗓️ Add to your calendar: ${cal}` : ''}`, { everyone });
   revalidatePath('/meetings');
   return { ok: true, msg: 'Meeting sent — crew must acknowledge.' };
 }
