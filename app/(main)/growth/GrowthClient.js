@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { runRankScan, analyzeCompetition } from './actions';
-import { RefreshCw, TrendingUp, TrendingDown, Minus, MapPin, Trophy, Sparkles, Target, Shield } from 'lucide-react';
+import { runRankScan, analyzeCompetition, sendGrowthDigest } from './actions';
+import { RefreshCw, TrendingUp, TrendingDown, Minus, MapPin, Trophy, Sparkles, Target, Shield, Mail } from 'lucide-react';
 
 const THREAT = { high: 'var(--red)', medium: 'var(--amber)', low: 'var(--fg-3)' };
 
@@ -47,6 +47,13 @@ export default function GrowthClient({ latest, prev, scannedAt }) {
     setAnalyzing(false);
     if (r.ok) setIntel(r.data); else setIntelMsg(r.msg);
   }
+  const [digesting, setDigesting] = useState(false);
+  async function emailDigest() {
+    setMsg(null); setDigesting(true);
+    const r = await sendGrowthDigest();
+    setDigesting(false);
+    setMsg(r);
+  }
 
   const total = latest.length;
   const top3 = latest.filter((r) => r.cb_rank != null && r.cb_rank <= 3).length;
@@ -64,6 +71,11 @@ export default function GrowthClient({ latest, prev, scannedAt }) {
         {total > 0 && (
           <button type="button" className="btn" onClick={analyze} disabled={analyzing} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', color: 'var(--fg-1)', border: '1px solid var(--border)', opacity: analyzing ? 0.6 : 1 }}>
             <Sparkles size={15} className={analyzing ? 'cb-spin' : ''} /> {analyzing ? 'Analyzing…' : 'Analyze competition'}
+          </button>
+        )}
+        {total > 0 && (
+          <button type="button" className="btn" onClick={emailDigest} disabled={digesting} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', color: 'var(--fg-1)', border: '1px solid var(--border)', opacity: digesting ? 0.6 : 1 }}>
+            <Mail size={15} /> {digesting ? 'Sending…' : 'Email me the digest'}
           </button>
         )}
         <span className="muted" style={{ fontSize: 12 }}>Last scan: {fmtWhen(scannedAt)}{pending ? ' · this takes ~15s' : ''}</span>

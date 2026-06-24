@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 import { CB_MATCH, rankScanCore, pricingScanCore } from '@/lib/growthScan';
+import { buildDigest } from '@/lib/growthDigest';
+import { sendOne, isEmailConfigured } from '@/lib/email';
 import { revalidatePath } from 'next/cache';
 
 const MANAGE = ['owner', 'admin', 'gm', 'marketing', 'sales', 'om'];
@@ -39,6 +41,23 @@ export async function scanCompetitorPricing(name, location, monthsBack = 4) {
   const r = await pricingScanCore(g.sb, { comp: name, loc: location, role: g.profile.role, scannedBy: g.profile.name || g.user.email, monthsBack: Math.max(1, Math.min(12, Number(monthsBack) || 4)) });
   if (r.ok) revalidatePath('/growth');
   return r;
+}
+
+// Email the Friday growth digest on demand (also runs weekly via the cron). Recipient = DIGEST_TO
+// env, else the requester's own email. Logged to cb_comms.
+export async function sendGrowthDigest() {
+  const g = await gate();
+  if (!g) return { ok: false, msg: 'Your role can’t do this.' };
+  if (!g.sb) return { ok: false, msg: 'Server not configured.' };
+  if (!isEmailConfigured) return { ok: false, msg: 'Add EMAIL_API_KEY (Resend) + EMAIL_FROM in Vercel to email the digest.' };
+  const to = (process.env.DIGEST_TO || g.user.email || '').split(',')[0].trim();
+  if (!to) return { ok: false, msg: 'No recipient — set DIGEST_TO in Vercel or use a login with an email.' };
+
+  const d = await buildDigest(g.sb);
+  if (!d.hasContent) return { ok: false, msg: 'Nothing to report yet — run a rank scan first.' };
+  const r = await sendOne({ to, subject: d.subject, html: d.html });
+  try { await g.sb.from('cb_comms').insert({ channel: 'email', to_addr: to, body: d.subject, status: r.ok ? 'sent' : 'failed', error: r.ok ? null : r.error, sent_by: g.profile.name || g.user.email }); } catch (_) {}
+  return r.ok ? { ok: true, msg: `Digest emailed to ${to}.` } : { ok: false, msg: 'Email failed: ' + (r.error || 'unknown') };
 }
 
 // AI competitive read — aggregates the latest scan's competitors → threat/strengths/weaknesses + attack plan.
