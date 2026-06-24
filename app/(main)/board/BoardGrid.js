@@ -6,6 +6,7 @@ import { assignTech, updateJobStatus, setDuration } from './actions';
 import { ACCENT, STATUS_DOT, crewColor, initials, priorityOf, hourLabel, money, fmtTime } from './boardTokens';
 import JobPanel from './JobPanel';
 import { ContextMenu, CancelModal, DurationModal } from './JobActions';
+import PersonCard from '@/components/PersonCard';
 import { Wrench, MapPin, Camera, Inbox } from 'lucide-react';
 
 // Layout — absolute px-per-hour grid, the same model the live board uses so the now-line and
@@ -329,7 +330,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
               return (
                 <div key={t.id} style={{ display: 'flex', height: ROW_H, borderBottom: '1px solid var(--border)' }}>
                   <div style={{ width: TECH_COL, flexShrink: 0, position: 'sticky', left: 0, background: 'var(--bg)', zIndex: 3, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px', borderRight: '1px solid var(--border)' }}>
-                    <span style={{ width: 26, height: 26, borderRadius: '50%', background: crewColor(t.crew || 'Crew'), color: '#fff', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{initials(t.name)}</span>
+                    <PersonCard name={t.name}><span style={{ width: 26, height: 26, borderRadius: '50%', background: crewColor(t.crew || 'Crew'), color: '#fff', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{initials(t.name)}</span></PersonCard>
                     <span style={{ minWidth: 0 }}>
                       <span style={{ fontSize: 12, fontWeight: 700, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
                       <span style={{ fontSize: 9, display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--fg-3)' }}>{st ? <><Dot k={st} /> {st}</> : 'idle'}</span>
