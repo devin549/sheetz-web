@@ -6,6 +6,7 @@ import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 import { sendSms } from '@/lib/twilio';
+import { sendOne, isEmailConfigured } from '@/lib/email';
 import { revalidatePath } from 'next/cache';
 
 async function assertBooker() {
@@ -233,27 +234,34 @@ export async function createBooking(formData) {
     await sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile.name || ctx.user.email, role: ctx.profile.role, action: 'job.book', entity: 'job', entity_id: String(job.id), detail: { jobType } });
   } catch (_) {}
 
-  // Booking confirmation text — HUMAN-initiated (CSR ticked "send"), consent-gated, logged. Never
-  // blocks the booking: if the text can't go, the job is still booked and we report why.
-  let sms = null;
+  // Booking confirmation — HUMAN-initiated (CSR ticked "send"), consent-gated, text AND email, logged.
+  // Never blocks the booking: if a channel can't go, the job is still booked and we report why.
+  const who = ctx.profile.name || ctx.user.email;
+  const sentBits = [];
   const wantConfirm = formData.get('sendConfirm') === 'on' || formData.get('sendConfirm') === 'true';
-  if (wantConfirm) {
-    let phone = newPhone;
-    if (!phone) { const { data: cust } = await sb.from('customers').select('phone, phones').eq('id', customerId).maybeSingle(); phone = (cust && (cust.phone || cust.phones)) || ''; }
-    if (!serviceConsent) sms = { ok: false, msg: 'no text consent' };
-    else if (!phone) sms = { ok: false, msg: 'no phone on file' };
-    else {
-      const whenStr = scheduledISO ? new Date(scheduledISO).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  if (wantConfirm && !serviceConsent) sentBits.push('not sent — no consent');
+  else if (wantConfirm) {
+    let phone = newPhone, email = customerEmail, nm = newName;
+    if (!phone || !email || !nm) { const { data: cust } = await sb.from('customers').select('name, phone, phones, email').eq('id', customerId).maybeSingle(); if (cust) { phone = phone || cust.phone || cust.phones || ''; email = email || cust.email || ''; nm = nm || cust.name || ''; } }
+    const whenStr = scheduledISO ? new Date(scheduledISO).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+    const log = (channel, to, body, r) => { try { return sb.from('cb_comms').insert({ channel, to_addr: to, customer_id: customerId, job_id: String(job.id), body, status: r.ok ? 'sent' : 'failed', provider_id: r.sid || null, error: r.ok ? null : (r.msg || r.error), sent_by: who }); } catch (_) {} };
+    if (phone) {
       const body = `Clog Busterz Plumbing: you're booked for ${jobType}${whenStr ? ` on ${whenStr}` : ''}. We'll text when we're on the way. Reply STOP to opt out.`;
-      sms = await sendSms(phone, body);
-      try {
-        await sb.from('cb_comms').insert({ channel: 'sms', to_addr: (sms && sms.to) || phone, customer_id: customerId, job_id: String(job.id), body, status: sms.ok ? 'sent' : 'failed', provider_id: sms.sid || null, error: sms.ok ? null : sms.msg, sent_by: ctx.profile.name || ctx.user.email });
-      } catch (_) {}
+      const r = await sendSms(phone, body); await log('sms', (r && r.to) || phone, body, r);
+      sentBits.push(r.ok ? 'text sent' : `text not sent (${r.msg})`);
     }
+    if (email) {
+      const subject = `You're booked — Clog Busterz Plumbing`;
+      const html = `<!doctype html><html><body style="margin:0;background:#f4f3ef;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a"><div style="max-width:560px;margin:0 auto;padding:24px"><div style="background:#fff;border:1px solid #e3e0d8;border-radius:10px;overflow:hidden"><div style="background:#FF6B00;color:#fff;padding:14px 20px;font-weight:800;font-size:16px">Clog Busterz Plumbing</div><div style="padding:22px 20px;font-size:14px"><p>Hi ${nm || 'there'},</p><p>You're booked for <strong>${jobType}</strong>${whenStr ? ` on <strong>${whenStr}</strong>` : ''}${address ? ` at ${address}` : ''}.</p><p>We'll text or call when your tech is on the way. Questions? Just reply to this email.</p></div><div style="padding:14px 20px;border-top:1px solid #eee;font-size:11px;color:#888">Clog Busterz Plumbing</div></div></div></body></html>`;
+      const r = isEmailConfigured ? await sendOne({ to: email, subject, html }) : { ok: false, error: 'no email key' };
+      await log('email', email, subject, r);
+      sentBits.push(r.ok ? 'email sent' : 'email not sent');
+    }
+    if (!phone && !email) sentBits.push('no phone/email on file');
   }
 
   revalidatePath('/board');
   revalidatePath('/job-records');
-  const tail = sms ? (sms.ok ? ' Confirmation text sent.' : ` (text not sent: ${sms.msg})`) : '';
+  const tail = sentBits.length ? ' · ' + sentBits.join(', ') : '';
   return { ok: true, msg: 'Job booked.' + tail, jobId: job.id };
 }
