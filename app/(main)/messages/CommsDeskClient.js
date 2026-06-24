@@ -106,6 +106,7 @@ export default function CommsDeskClient({ comms, people, actions = [], discordRe
   const FILTERS = [
     { k: 'action', label: `Needs action${counts.action ? ` · ${counts.action}` : ''}` },
     { k: 'all', label: 'All' },
+    { k: 'meeting', label: '📅 Meeting' },
     { k: 'helper', label: 'Helper' }, { k: 'tool', label: 'Tool' }, { k: 'fuel_shop', label: 'Fuel/shop' },
     { k: 'customer', label: 'Customer' }, { k: 'schedule', label: 'Schedule' }, { k: 'urgent', label: 'Urgent' },
     { k: 'resolved', label: 'Resolved' },
