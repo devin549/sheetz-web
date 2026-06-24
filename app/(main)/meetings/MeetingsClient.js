@@ -2,15 +2,15 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { createMeeting, acknowledgeMeeting, deleteMeeting } from './actions';
+import { createMeeting, acknowledgeMeeting, deleteMeeting, nudgePending } from './actions';
 import { googleCalendarLink } from '@/lib/calendar';
-import { ThumbsUp, CalendarPlus, Check, Send, Trash2, Users, MapPin, Clock, ChevronDown } from 'lucide-react';
+import { ThumbsUp, CalendarPlus, Check, Send, Trash2, Users, MapPin, Clock, ChevronDown, Bell } from 'lucide-react';
 
 const input = { width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 10px', fontSize: 14, fontFamily: 'inherit' };
 const lbl = { fontSize: 10.5, fontWeight: 700, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '.05em', display: 'block', marginBottom: 3 };
 const whenStr = (iso) => { try { return new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
 
-function MeetingCard({ m, canCreate, myName, onAck, onDel, busy }) {
+function MeetingCard({ m, canCreate, myName, onAck, onDel, onNudge, nudged, busy }) {
   const [showWho, setShowWho] = useState(false);
   const cal = googleCalendarLink({ title: m.title, startISO: m.starts_at, durationMin: m.duration_min, location: m.location || '', details: m.notes || '' });
   const past = new Date(m.starts_at).getTime() < Date.now();
@@ -43,6 +43,7 @@ function MeetingCard({ m, canCreate, myName, onAck, onDel, busy }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
           <span style={{ fontWeight: 700, color: m.pending.length ? 'var(--amber)' : 'var(--green)' }}>{ackedCount} of {m.requiredCount} acknowledged</span>
           {canCreate && m.pending.length > 0 && <button onClick={() => setShowWho((s) => !s)} className="pill" style={{ cursor: 'pointer', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3 }}><ChevronDown size={11} /> {m.pending.length} pending</button>}
+          {canCreate && m.pending.length > 0 && <button onClick={() => onNudge(m.id)} disabled={busy} className="pill" style={{ cursor: 'pointer', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--accent)' }}><Bell size={11} /> {nudged ? 'Nudged' : 'Nudge pending'}</button>}
         </div>
         {canCreate && showWho && (
           <div style={{ marginTop: 6, fontSize: 12 }}>
@@ -61,6 +62,9 @@ export default function MeetingsClient({ meetings, crewNames, canCreate, myName,
   const [open, setOpen] = useState(false);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [nudged, setNudged] = useState({});
+
+  function onNudge(id) { if (busy) return; setBusy(true); start(async () => { const r = await nudgePending(id); setBusy(false); setMsg(r); if (r.ok) setNudged((n) => ({ ...n, [id]: true })); }); }
 
   function submit(e) {
     e.preventDefault(); const form = e.currentTarget;
@@ -100,7 +104,7 @@ export default function MeetingsClient({ meetings, crewNames, canCreate, myName,
 
       {!meetings.length && <div className="card"><span className="muted">No meetings scheduled.{canCreate ? ' Send one above.' : ''}</span></div>}
       <div style={{ display: 'grid', gap: 8 }}>
-        {meetings.map((m) => <MeetingCard key={m.id} m={m} canCreate={canCreate} myName={myName} onAck={onAck} onDel={onDel} busy={busy || pending} />)}
+        {meetings.map((m) => <MeetingCard key={m.id} m={m} canCreate={canCreate} myName={myName} onAck={onAck} onDel={onDel} onNudge={onNudge} nudged={nudged[m.id]} busy={busy || pending} />)}
       </div>
     </>
   );

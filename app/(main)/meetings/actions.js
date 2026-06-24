@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { postToDiscord } from '@/lib/discord';
+import { FIELD_POSITIONS } from '@/lib/positions';
 import { revalidatePath } from 'next/cache';
 
 // Who can SEND a meeting: field supervisor, GM, office manager, owner.
@@ -54,6 +55,28 @@ export async function acknowledgeMeeting(meetingId) {
   if (error) return { ok: false, msg: /meeting_acks|does not exist|schema cache/i.test(error.message) ? 'Run migration 63 first.' : error.message };
   revalidatePath('/meetings');
   return { ok: true, msg: 'Got it — see you there. 👍' };
+}
+
+// Sender nudges everyone who still hasn't acknowledged — posts a reminder to #sheetz naming them.
+export async function nudgePending(meetingId) {
+  const g = await me();
+  if (!g || !g.sb) return { ok: false, msg: 'Not signed in.' };
+  if (!SENDERS.includes(g.role)) return { ok: false, msg: 'Not allowed.' };
+  const sb = g.sb;
+  const { data: m } = await sb.from('meetings').select('*').eq('id', meetingId).maybeSingle();
+  if (!m) return { ok: false, msg: 'Meeting not found.' };
+  let roster = [];
+  try { const { data } = await sb.from('techs').select('name, crew, position, active').limit(500); roster = (data || []).filter((t) => t.name); } catch (_) {}
+  const field = roster.filter((t) => t.active !== false && (!t.position || FIELD_POSITIONS.includes(String(t.position).toLowerCase().replace(/\s+/g, '_'))));
+  const required = (m.audience === 'everyone' ? field : field.filter((t) => (t.crew || '') === m.audience)).map((t) => t.name);
+  const { data: acks } = await sb.from('meeting_acks').select('tech_name').eq('meeting_id', meetingId);
+  const acked = new Set((acks || []).map((a) => String(a.tech_name).toLowerCase()));
+  const pending = required.filter((n) => !acked.has(n.toLowerCase()));
+  if (!pending.length) return { ok: true, msg: 'Everyone has acknowledged. 🎉' };
+  const when = new Date(m.starts_at).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const r = await postToDiscord(`⏰ Reminder — ${m.title} (${when}). Still need 👍 from: ${pending.join(', ')}. Acknowledge in the app → Meetings.`);
+  revalidatePath('/meetings');
+  return { ok: !!r.ok, msg: r.ok ? `Nudged ${pending.length} in #sheetz.` : `Couldn’t post: ${r.error}` };
 }
 
 export async function deleteMeeting(meetingId) {
