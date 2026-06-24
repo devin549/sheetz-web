@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
-import { searchAccounts, loadAccount } from './actions';
-import { Search, Phone, Mail, MapPin, Repeat, AlertTriangle, Loader2 } from 'lucide-react';
+import { searchAccounts, loadAccount, logInteraction, completeFollowup } from './actions';
+import { Search, Phone, Mail, MapPin, Repeat, AlertTriangle, Loader2, Check, Clock } from 'lucide-react';
+
+const IX_KINDS = ['call', 'note', 'followup', 'sms', 'email', 'visit', 'complaint', 'promise'];
 
 const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString();
 const dt = (s) => { if (!s) return '—'; try { return new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); } catch { return String(s).slice(0, 10); } };
@@ -32,6 +34,23 @@ export default function AccountsClient() {
 
   const c = acct && acct.customer;
   const phones = c ? (c.phones || c.phone || '') : '';
+
+  // CRM timeline (log interactions + follow-ups)
+  const [pending, startTx] = useTransition();
+  const [ixKind, setIxKind] = useState('call');
+  const [ixSummary, setIxSummary] = useState('');
+  const [ixDue, setIxDue] = useState('');
+  const [ixMsg, setIxMsg] = useState(null);
+  async function reload() { if (!c) return; const a = await loadAccount(c.id); setAcct(a); }
+  function submitIx(e) {
+    e.preventDefault();
+    if (!ixSummary.trim()) { setIxMsg('Write a summary.'); return; }
+    const fd = new FormData();
+    fd.set('customerId', c.id); fd.set('customerName', c.name || ''); fd.set('kind', ixKind); fd.set('summary', ixSummary); if (ixDue) fd.set('dueDate', ixDue);
+    setIxMsg(null);
+    startTx(async () => { const r = await logInteraction(fd); if (r.ok) { setIxSummary(''); setIxDue(''); await reload(); } else setIxMsg(r.msg); });
+  }
+  const completeIx = (id) => startTx(async () => { await completeFollowup(id); await reload(); });
 
   return (
     <>
@@ -147,6 +166,35 @@ export default function AccountsClient() {
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+
+          {/* CRM timeline — interactions + follow-ups */}
+          <div style={{ marginTop: 16 }}>
+            <h3 style={{ fontSize: 12, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '.05em', margin: '0 0 8px' }}>Activity &amp; follow-ups</h3>
+            <form onSubmit={submitIx} className="card" style={{ display: 'grid', gap: 8, marginBottom: 10, opacity: pending ? 0.7 : 1 }}>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <select value={ixKind} onChange={(e) => setIxKind(e.target.value)} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '8px 10px', fontSize: 13, textTransform: 'capitalize' }}>{IX_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}</select>
+                <input value={ixSummary} onChange={(e) => setIxSummary(e.target.value)} placeholder="What happened / what to do" style={{ flex: '1 1 220px', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '8px 10px', fontSize: 14 }} autoComplete="off" />
+                <input type="date" value={ixDue} onChange={(e) => setIxDue(e.target.value)} title="Set a date → makes it an open follow-up" style={{ background: 'var(--surface-2)', border: `1px solid ${ixDue ? 'var(--amber)' : 'var(--border)'}`, color: 'var(--fg-1)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                <button type="submit" className="btn" disabled={pending} style={{ padding: '8px 12px' }}>{ixDue ? 'Set follow-up' : 'Log'}</button>
+              </div>
+              {ixMsg && <span style={{ fontSize: 12.5, color: 'var(--red)', fontWeight: 700 }}>{ixMsg}</span>}
+            </form>
+            {!(acct.interactions || []).length && <div className="muted" style={{ fontSize: 13 }}>No activity yet — log a call, note, or follow-up.</div>}
+            <div style={{ display: 'grid', gap: 6 }}>
+              {(acct.interactions || []).map((ix) => {
+                const openFu = ix.status === 'open';
+                return (
+                  <div key={ix.id} className="card" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', flexWrap: 'wrap', borderLeft: `3px solid ${openFu ? 'var(--amber)' : 'var(--border)'}` }}>
+                    <span className="pill" style={{ fontSize: 10, textTransform: 'capitalize' }}>{ix.kind}</span>
+                    <span style={{ flex: '1 1 160px', fontSize: 13 }}>{ix.summary}</span>
+                    {openFu && ix.due_date && <span style={{ fontSize: 11.5, color: 'var(--amber)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Clock size={12} /> due {dt(ix.due_date)}</span>}
+                    <span className="muted" style={{ fontSize: 11 }}>{ix.owner || ix.created_by || ''} · {dt(ix.created_at)}</span>
+                    {openFu && <button type="button" className="pill" onClick={() => completeIx(ix.id)} disabled={pending} style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--green)' }}><Check size={12} /> done</button>}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </>
