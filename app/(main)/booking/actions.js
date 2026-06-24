@@ -32,6 +32,27 @@ export async function searchCustomersForBooking(q) {
   return (data || []).map((c) => ({ id: c.id, name: c.name || 'Customer', phone: c.phone || '', address: c.address || '' }));
 }
 
+// Dispatcher Co-Pilot: history, value, balance + red flags for a picked customer (before you book).
+export async function customerSnapshot(id) {
+  let sb;
+  try { ({ sb } = await assertBooker()); } catch { return null; }
+  if (!id) return null;
+  const { data: c } = await sb.from('customers')
+    .select('name, phone, email, address, lifetime_revenue, lifetime_jobs, last_job_completed, do_not_service, do_not_mail, type')
+    .eq('id', id).maybeSingle();
+  if (!c) return null;
+  let openBalance = 0;
+  try {
+    const { data: inv } = await sb.from('invoices').select('balance, status').eq('customer_id', id).eq('status', 'open').limit(200);
+    openBalance = (inv || []).reduce((s, i) => s + (Number(i.balance) || 0), 0);
+  } catch (_) { openBalance = 0; }
+  return {
+    name: c.name || 'Customer', phone: c.phone || '', email: c.email || '', address: c.address || '',
+    lifetimeRevenue: Number(c.lifetime_revenue) || 0, lifetimeJobs: Number(c.lifetime_jobs) || 0,
+    lastJob: c.last_job_completed || null, openBalance, doNotService: !!c.do_not_service, doNotMail: !!c.do_not_mail, type: c.type || '',
+  };
+}
+
 // Create a booking: find-or-create the customer, then insert the job (status scheduled).
 export async function createBooking(formData) {
   let ctx;
@@ -42,13 +63,30 @@ export async function createBooking(formData) {
   const newName = clean(formData.get('newName'), 120);
   const newPhone = clean(formData.get('newPhone'), 40);
   const newAddress = clean(formData.get('newAddress'), 200);
+  const customerEmail = clean(formData.get('customerEmail'), 160).toLowerCase();
   const jobType = clean(formData.get('jobType'), 120);
+  const jobClass = clean(formData.get('jobClass'), 40) || null;
   const scheduledISO = clean(formData.get('scheduledISO'), 40);
   const durationMin = Math.max(15, Math.min(720, parseInt(formData.get('durationMin'), 10) || 60));
   const techId = clean(formData.get('techId'), 80) || null;
   const priority = ['normal', 'urgent', 'emergency'].includes(formData.get('priority')) ? formData.get('priority') : 'normal';
   const amount = Math.max(0, Number(formData.get('amount')) || 0);
   const address = clean(formData.get('address'), 200) || newAddress;
+  const city = clean(formData.get('city'), 80) || null;
+  const state = clean(formData.get('state'), 8) || null;
+  const zip = clean(formData.get('zip'), 12) || null;
+  const arrivalWindow = clean(formData.get('arrivalWindow'), 60) || null;
+  const businessUnit = clean(formData.get('businessUnit'), 60) || null;
+  const poNumber = clean(formData.get('poNumber'), 60) || null;
+  const claimNumber = clean(formData.get('claimNumber'), 60) || null;
+  const warrantyProvider = clean(formData.get('warrantyProvider'), 80) || null;
+  const howHeard = clean(formData.get('howHeard'), 80) || null;
+  const referralCode = clean(formData.get('referralCode'), 60) || null;
+  const contacts = clean(formData.get('contacts'), 400);
+  let notes = clean(formData.get('notes'), 1000);
+  if (contacts) notes = (notes ? notes + '\n' : '') + 'Other contacts: ' + contacts;
+  const serviceConsent = formData.get('serviceConsent') === 'on' || formData.get('serviceConsent') === 'true';
+  const marketingConsent = formData.get('marketingConsent') === 'on' || formData.get('marketingConsent') === 'true';
 
   if (!jobType) return { ok: false, msg: 'What’s the job? (service type)' };
   if (scheduledISO && Number.isNaN(Date.parse(scheduledISO))) return { ok: false, msg: 'Bad date/time.' };
@@ -57,22 +95,36 @@ export async function createBooking(formData) {
   if (!customerId) {
     if (!newName) return { ok: false, msg: 'Pick a customer or enter a new name.' };
     const { data: created, error: cErr } = await sb.from('customers')
-      .insert({ name: newName, phone: newPhone || null, address: newAddress || null })
+      .insert({ name: newName, phone: newPhone || null, address: newAddress || null, email: customerEmail || null })
       .select('id').single();
     if (cErr) return { ok: false, msg: 'Customer: ' + cErr.message };
     customerId = created.id;
   }
 
+  // capture consent + email on the customer (we never auto-send — this records permission).
+  const consentPatch = { sms_consent: serviceConsent, marketing_consent: marketingConsent, consent_source: 'web_booking', consent_ts: new Date().toISOString() };
+  if (customerEmail) consentPatch.email = customerEmail;
+  let cu = await sb.from('customers').update(consentPatch).eq('id', customerId);
+  if (cu.error && /marketing_consent|column|schema cache/i.test(cu.error.message || '')) {
+    delete consentPatch.marketing_consent; // pre-39 fallback
+    await sb.from('customers').update(consentPatch).eq('id', customerId);
+  }
+
   let techName = null;
   if (techId) { const { data: t } = await sb.from('techs').select('name').eq('id', techId).maybeSingle(); techName = (t && t.name) || null; }
 
-  const patch = {
+  const base = {
     customer_id: customerId, status: 'scheduled', job_type: jobType, priority,
     scheduled_at: scheduledISO || null, duration_min: durationMin, amount,
     tech_id: techId, tech_name: techName, assigned_at: techId ? new Date().toISOString() : null,
-    address: address || null,
+    address: address || null, city, business_unit: businessUnit,
   };
-  const { data: job, error: jErr } = await sb.from('jobs').insert(patch).select('id').single();
+  const extra = { notes: notes || null, job_class: jobClass, arrival_window: arrivalWindow, po_number: poNumber, claim_number: claimNumber, warranty_provider: warrantyProvider, how_heard: howHeard, referral_code: referralCode, state, zip };
+  let ins = await sb.from('jobs').insert({ ...base, ...extra }).select('id').single();
+  if (ins.error && /column|schema cache/i.test(ins.error.message || '')) {
+    ins = await sb.from('jobs').insert(base).select('id').single(); // pre-39 fallback: book with the core fields
+  }
+  const job = ins.data; const jErr = ins.error;
   if (jErr) return { ok: false, msg: 'Job: ' + jErr.message };
 
   try {

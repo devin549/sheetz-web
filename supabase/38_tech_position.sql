@@ -4,7 +4,9 @@
 alter table public.techs add column if not exists position text not null default 'tech';
 -- positions: tech | helper | sales | supervisor | office
 
--- Seed the known office/management staff so they drop off the field picker immediately.
+-- Seed the clearly pure-office staff so they drop off the field picker immediately.
+-- NOTE: the owner + supervisors still run calls and keep the tech/iPad view, so they stay
+-- field-eligible (default 'tech') — set them to 'supervisor' on /team if you want the label.
 -- Only touches rows still at the default — never overrides a position you've set on /team.
 update public.techs set position = 'office'
-  where position = 'tech' and name in ('Devin Tackett', 'Ronnie Mchone', 'Tracey Mills', 'Ashley Payne');
+  where position = 'tech' and name in ('Tracey Mills', 'Ashley Payne');
