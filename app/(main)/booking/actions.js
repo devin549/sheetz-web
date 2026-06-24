@@ -191,6 +191,9 @@ export async function createBooking(formData) {
 
   if (!jobType) return { ok: false, msg: 'What’s the job? (service type)' };
   if (scheduledISO && Number.isNaN(Date.parse(scheduledISO))) return { ok: false, msg: 'Bad date/time.' };
+  // Insurance/warranty providers MUST carry a claim # (OnCourse, AWR, Pivotal, HomeServe, or class).
+  const claimReq = jobClass === 'insurance' || jobClass === 'warranty' || ['OnCourse', 'AWR', 'Pivotal', 'HomeServe'].includes(warrantyProvider);
+  if (claimReq && !claimNumber) return { ok: false, msg: `Claim # is required for ${warrantyProvider || jobClass} jobs.` };
 
   // create the customer if this is a new one
   if (!customerId) {
@@ -211,8 +214,13 @@ export async function createBooking(formData) {
     await sb.from('customers').update(consentPatch).eq('id', customerId);
   }
 
-  let techName = null;
-  if (techId) { const { data: t } = await sb.from('techs').select('name').eq('id', techId).maybeSingle(); techName = (t && t.name) || null; }
+  let techName = null, techPhone = null;
+  if (techId) {
+    let t = await sb.from('techs').select('name, phone').eq('id', techId).maybeSingle();
+    if (t.error) t = await sb.from('techs').select('name').eq('id', techId).maybeSingle(); // pre-43
+    techName = (t.data && t.data.name) || null;
+    techPhone = (t.data && t.data.phone) || null;
+  }
 
   const base = {
     customer_id: customerId, status: 'scheduled', job_type: jobType, priority,
@@ -237,13 +245,24 @@ export async function createBooking(formData) {
   // Booking confirmation — HUMAN-initiated (CSR ticked "send"), consent-gated, text AND email, logged.
   // Never blocks the booking: if a channel can't go, the job is still booked and we report why.
   const who = ctx.profile.name || ctx.user.email;
+  const whenStr = scheduledISO ? new Date(scheduledISO).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
   const sentBits = [];
+
+  // Warranty/dispatch.me jobs → text the assigned tech the app link to tap "On My Way" when they head
+  // out (feeds the dispatch.me On-My-Way scorecard). Set DISPATCHME_APP_URL to your exact deep link.
+  if (claimReq && techId && techPhone) {
+    const link = process.env.DISPATCHME_APP_URL || 'https://dispatch.me';
+    const body = `New ${warrantyProvider || 'warranty'} job (dispatch.me): ${jobType}${whenStr ? ` ${whenStr}` : ''}. Open the app and tap "On My Way" when you head out → ${link}`;
+    const r = await sendSms(techPhone, body);
+    try { await sb.from('cb_comms').insert({ channel: 'sms', to_addr: (r && r.to) || techPhone, customer_id: customerId, job_id: String(job.id), body, status: r.ok ? 'sent' : 'failed', provider_id: r.sid || null, error: r.ok ? null : r.msg, sent_by: who }); } catch (_) {}
+    sentBits.push(r.ok ? 'tech got dispatch.me link' : `tech link not sent (${r.msg})`);
+  }
+
   const wantConfirm = formData.get('sendConfirm') === 'on' || formData.get('sendConfirm') === 'true';
   if (wantConfirm && !serviceConsent) sentBits.push('not sent — no consent');
   else if (wantConfirm) {
     let phone = newPhone, email = customerEmail, nm = newName;
     if (!phone || !email || !nm) { const { data: cust } = await sb.from('customers').select('name, phone, phones, email').eq('id', customerId).maybeSingle(); if (cust) { phone = phone || cust.phone || cust.phones || ''; email = email || cust.email || ''; nm = nm || cust.name || ''; } }
-    const whenStr = scheduledISO ? new Date(scheduledISO).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
     const log = (channel, to, body, r) => { try { return sb.from('cb_comms').insert({ channel, to_addr: to, customer_id: customerId, job_id: String(job.id), body, status: r.ok ? 'sent' : 'failed', provider_id: r.sid || null, error: r.ok ? null : (r.msg || r.error), sent_by: who }); } catch (_) {} };
     if (phone) {
       const body = `Clog Busterz Plumbing: you're booked for ${jobType}${whenStr ? ` on ${whenStr}` : ''}. We'll text when we're on the way. Reply STOP to opt out.`;

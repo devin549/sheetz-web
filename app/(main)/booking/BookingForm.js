@@ -26,6 +26,9 @@ const JOB_PRESETS = ['Drain unclog', 'Water heater', 'Toilet', 'Leak repair', 'S
 const PRIORITIES = [{ v: 'normal', label: 'Normal', color: 'var(--fg-2)' }, { v: 'urgent', label: 'Urgent', color: 'var(--amber)' }, { v: 'emergency', label: 'Emergency', color: 'var(--red)' }];
 const JOB_CLASSES = [{ v: 'residential', l: 'General (residential)' }, { v: 'commercial', l: 'Commercial' }, { v: 'warranty', l: 'Warranty' }, { v: 'insurance', l: 'Insurance' }];
 const BUSINESS_UNITS = ['Plumbing', 'Drain Cleaning', 'FloodBusterz', 'HVAC'];
+const WARRANTY_PROVIDERS = ['OnCourse', 'AWR', 'Pivotal', 'HomeServe', 'Other'];
+// These providers (or an insurance/warranty job class) REQUIRE a claim # before booking.
+const CLAIM_PROVIDERS = ['OnCourse', 'AWR', 'Pivotal', 'HomeServe'];
 const ARRIVAL_WINDOWS = ['8–10 AM', '10 AM–12 PM', '12–2 PM', '2–4 PM', '4–6 PM', 'Anytime'];
 const HOW_HEARD = ['Google', 'Repeat customer', 'Referral', 'Facebook', 'Yard sign', 'Truck wrap', 'Nextdoor', 'Other'];
 
@@ -48,6 +51,8 @@ export default function BookingForm({ techs }) {
   const [verifyMsg, setVerifyMsg] = useState(null);
   const [service, setService] = useState('');
   const [howHeard, setHowHeard] = useState('');
+  const [jobClass, setJobClass] = useState('residential');
+  const [provider, setProvider] = useState('');
   const [priority, setPriority] = useState('normal');
   const [showAdmin, setShowAdmin] = useState(false);
   const [serviceConsent, setServiceConsent] = useState(true);
@@ -86,12 +91,19 @@ export default function BookingForm({ techs }) {
     })();
   }
 
+  const claimRequired = jobClass === 'insurance' || jobClass === 'warranty' || CLAIM_PROVIDERS.includes(provider);
+  useEffect(() => { if (claimRequired) setShowAdmin(true); }, [claimRequired]);
+
   function onSubmit(e) {
     e.preventDefault();
     const form = e.currentTarget;
     const fd = new FormData(form);
     if (picked) fd.set('customerId', picked.id);
     fd.set('jobType', service); fd.set('priority', priority);
+    if (claimRequired && !String(fd.get('claimNumber') || '').trim()) {
+      setShowAdmin(true); setMsg({ ok: false, msg: `Claim # is required for ${provider || jobClass} jobs — add it before booking.` });
+      return;
+    }
     fd.set('serviceConsent', serviceConsent ? 'true' : 'false');
     fd.set('marketingConsent', marketingConsent ? 'true' : 'false');
     fd.set('sendConfirm', sendConfirm ? 'true' : 'false');
@@ -101,7 +113,7 @@ export default function BookingForm({ techs }) {
     start(async () => {
       const res = await createBooking(fd);
       setMsg(res);
-      if (res.ok) { form.reset(); clearPicked(); setAddr(''); setCity(''); setStateV('KY'); setZip(''); setGeo({}); setVerifyMsg(null); setService(''); setHowHeard(''); setPriority('normal'); setMarketingConsent(false); setServiceConsent(true); setSendConfirm(true); router.refresh(); }
+      if (res.ok) { form.reset(); clearPicked(); setAddr(''); setCity(''); setStateV('KY'); setZip(''); setGeo({}); setVerifyMsg(null); setService(''); setHowHeard(''); setJobClass('residential'); setProvider(''); setPriority('normal'); setMarketingConsent(false); setServiceConsent(true); setSendConfirm(true); router.refresh(); }
     });
   }
 
@@ -206,7 +218,7 @@ export default function BookingForm({ techs }) {
         <input value={service} onChange={(e) => setService(e.target.value)} placeholder="Service — tap a type above or type it" style={input} required autoComplete="off" />
       </div>
       <div><span style={label}>Job class</span>
-        <select name="jobClass" defaultValue="residential" style={input}>{JOB_CLASSES.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}</select>
+        <select name="jobClass" value={jobClass} onChange={(e) => setJobClass(e.target.value)} style={input}>{JOB_CLASSES.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}</select>
       </div>
 
       {/* Adaptive triage — appears when the service matches (water heater, drain/sewer) */}
@@ -249,9 +261,12 @@ export default function BookingForm({ techs }) {
             <div><span style={label}>Customer PO #</span><input name="poNumber" placeholder="defaults to job #" style={input} autoComplete="off" /></div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-            <div><span style={label}>Claim #</span><input name="claimNumber" placeholder="warranty claim #" style={input} autoComplete="off" /></div>
-            <div><span style={label}>Warranty / provider</span><input name="warrantyProvider" placeholder="provider name" style={input} autoComplete="off" /></div>
+            <div><span style={label}>Warranty / provider</span>
+              <select name="warrantyProvider" value={provider} onChange={(e) => setProvider(e.target.value)} style={input}><option value="">— none —</option>{WARRANTY_PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}</select>
+            </div>
+            <div><span style={label}>Claim #{claimRequired && <span style={{ color: 'var(--red)' }}> *</span>}</span><input name="claimNumber" placeholder={claimRequired ? 'required for this provider' : 'warranty claim #'} style={{ ...input, borderColor: claimRequired ? 'var(--amber)' : 'var(--border)' }} autoComplete="off" /></div>
           </div>
+          {claimRequired && <div style={{ fontSize: 11.5, color: 'var(--amber)', fontWeight: 700, marginTop: -4 }}>⚠ {provider || (jobClass === 'insurance' ? 'Insurance' : 'Warranty')} jobs can&apos;t book without a claim #.</div>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
             <div><span style={label}>How did they hear about us?{howHeard === 'Repeat customer' && <span style={{ color: 'var(--green)', textTransform: 'none', fontWeight: 700 }}> · auto</span>}</span>
               <select name="howHeard" value={howHeard} onChange={(e) => setHowHeard(e.target.value)} style={input}><option value="">— ask the caller —</option>{HOW_HEARD.map((h) => <option key={h} value={h}>{h}</option>)}</select>

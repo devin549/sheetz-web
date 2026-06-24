@@ -86,6 +86,19 @@ export async function setTechPosition(formData) {
   return { ok: true, msg: 'Position updated.' };
 }
 
+// Set a roster person's phone — so the office can text them (dispatch.me link, etc.).
+export async function setTechPhone(formData) {
+  let sb;
+  try { ({ sb } = await assertManager()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const id = String(formData.get('id') || '');
+  const phone = String(formData.get('phone') || '').trim().slice(0, 40);
+  if (!id) return { ok: false, msg: 'Bad request.' };
+  const { error } = await sb.from('techs').update({ phone: phone || null }).eq('id', id);
+  if (error) return { ok: false, msg: /phone|column|schema cache/i.test(error.message || '') ? 'Run supabase/43_tech_phone.sql first.' : error.message };
+  revalidatePath('/team');
+  return { ok: true, msg: 'Phone saved.' };
+}
+
 // Link (or unlink) a login to a tech row so a tech sees ONLY their own jobs. techId '' = unlink.
 export async function setTechLink(formData) {
   let sb;

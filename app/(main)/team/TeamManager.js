@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { addUser, setRole, setTechLink, setTechPosition } from './actions';
+import { addUser, setRole, setTechLink, setTechPosition, setTechPhone } from './actions';
 import { roleMeta } from '@/lib/roles';
 
 // Roster positions — who can take field jobs. 'office' drops off the booking picker + board rows.
@@ -65,6 +65,13 @@ export default function TeamManager({ roleOptions, users, techs = [] }) {
     const res = await setTechPosition(fd);
     setMsg(res);
     router.refresh();
+  }
+
+  async function onPhoneSave(id, phone) {
+    const fd = new FormData();
+    fd.set('id', id); fd.set('phone', phone);
+    const res = await setTechPhone(fd);
+    setMsg(res);
   }
 
   return (
@@ -138,11 +145,13 @@ export default function TeamManager({ roleOptions, users, techs = [] }) {
           </h3>
           <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>Who shows in the Job Booking tech picker + on the board. Set office staff to <strong>Office</strong> and they drop off both.</p>
           {techs.map((t) => (
-            <div key={t.id} className="card" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, alignItems: 'center', padding: '10px 14px' }}>
+            <div key={t.id} className="card" style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 10, alignItems: 'center', padding: '10px 14px' }}>
               <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {t.name}
                 {t.position === 'office' && <span className="pill" style={{ marginLeft: 8, fontSize: 10, color: 'var(--fg-3)' }}>off the board</span>}
               </div>
+              <input defaultValue={t.phone || ''} placeholder="cell #" onBlur={(e) => { if (e.target.value.trim() !== (t.phone || '')) onPhoneSave(t.id, e.target.value.trim()); }}
+                title="Tech cell — for dispatch.me link + on-the-way texts" style={{ ...inputStyle, width: 130 }} />
               <select defaultValue={t.position || 'tech'} onChange={(e) => onPositionChange(t.id, e.target.value)}
                 style={{ ...inputStyle, width: 'auto', borderColor: t.position === 'office' ? 'var(--border)' : 'var(--amber)' }}>
                 {POSITION_OPTS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
