@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { syncDiscordCore } from '@/lib/discordSync';
+import { detectRescheduleProposals } from '@/lib/hankActions';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,5 +21,8 @@ export async function GET(request) {
   const sb = getSupabaseAdmin();
   if (!sb) return NextResponse.json({ ok: false, error: 'No admin client' }, { status: 500 });
   const r = await syncDiscordCore(sb);
-  return NextResponse.json(r, { status: r.ok ? 200 : 500 });
+  // After pulling new chatter, let Hank propose any reschedule actions (best-effort, never blocks the sync).
+  let actions = null;
+  try { actions = await detectRescheduleProposals(sb); } catch (_) {}
+  return NextResponse.json({ ...r, actions }, { status: r.ok ? 200 : 500 });
 }

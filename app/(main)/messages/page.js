@@ -33,11 +33,15 @@ export default async function CommsDesk() {
   if (pQ.error) pQ = await sb.from('techs').select('name, position').limit(400);
   if (!pQ.error) people = (pQ.data || []).filter((p) => p.name);
 
+  // Proposed actions (reschedules Hank caught) awaiting a human confirm.
+  let actions = [];
+  try { const aQ = await sb.from('comms_actions').select('id, kind, summary, customer_name, tech_name, reason, old_date, new_date').eq('status', 'proposed').order('created_at', { ascending: false }).limit(20); if (!aQ.error) actions = aQ.data || []; } catch (_) {}
+
   return (
     <div className="wrap" style={{ maxWidth: 880 }}>
       <div className="h1">Comms Desk</div>
       <p className="muted">What happened, who owns it, what needs done — built on the #sheetz feed (Captain Hook).</p>
-      <CommsDeskClient comms={comms} people={people} discordReady={discordConfigured()} readReady={discordReadConfigured()} canDelete={canDelete} commsMissing={!!res.error} />
+      <CommsDeskClient comms={comms} people={people} actions={actions} discordReady={discordConfigured()} readReady={discordReadConfigured()} canDelete={canDelete} commsMissing={!!res.error} />
     </div>
   );
 }

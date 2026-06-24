@@ -6,6 +6,9 @@ import { loadProfile } from '@/lib/profile';
 import { postToDiscord } from '@/lib/discord';
 import { syncDiscordCore } from '@/lib/discordSync';
 import { askHankCore, runHank } from '@/lib/hank';
+import { detectRescheduleProposals, rescheduleDraft } from '@/lib/hankActions';
+import { sendSms } from '@/lib/twilio';
+import { sendOne, isEmailConfigured } from '@/lib/email';
 import { revalidatePath } from 'next/cache';
 
 const MANAGE = ['owner', 'admin', 'gm', 'om', 'csr', 'dispatcher', 'marketing', 'sales', 'accounting', 'fs', 'foreman'];
@@ -40,8 +43,10 @@ export async function syncDiscordNow() {
   const g = await gate();
   if (!g || !g.sb) return { ok: false, msg: 'Your role can’t do that.' };
   const r = await syncDiscordCore(g.sb);
+  let extra = '';
+  try { const a = await detectRescheduleProposals(g.sb); if (a.proposed) extra = ` · ${a.proposed} reschedule${a.proposed === 1 ? '' : 's'} to confirm`; } catch (_) {}
   revalidatePath('/messages');
-  return { ok: r.ok, msg: r.msg };
+  return { ok: r.ok, msg: r.msg + extra };
 }
 
 // Ask Hank directly — answers from live CB data; optionally posts the answer into #sheetz.
@@ -62,6 +67,70 @@ export async function hankReadFeed() {
   const r = await runHank(g.sb, { autoPost: true });
   revalidatePath('/messages');
   return { ok: r.ok, msg: r.msg };
+}
+
+// Run Hank's action detector (also fires on the discord-sync cron). Proposes reschedules; never applies.
+export async function scanActions() {
+  const g = await gate();
+  if (!g || !g.sb) return { ok: false, msg: 'Not allowed.' };
+  const r = await detectRescheduleProposals(g.sb);
+  revalidatePath('/messages');
+  if (r.err) return { ok: false, msg: 'Hank: ' + r.err };
+  return { ok: true, msg: r.proposed ? `Hank proposed ${r.proposed} reschedule${r.proposed === 1 ? '' : 's'}.` : 'No new actions.' };
+}
+
+// Confirm a proposed reschedule → move the job (keep the tech) + save the reason. Returns a customer draft.
+export async function applyReschedule(actionId) {
+  const g = await gate();
+  if (!g || !g.sb) return { ok: false, msg: 'Not allowed.' };
+  const sb = g.sb;
+  const { data: a } = await sb.from('comms_actions').select('*').eq('id', actionId).maybeSingle();
+  if (!a) return { ok: false, msg: 'Action not found.' };
+  if (a.status !== 'proposed') return { ok: false, msg: `Already ${a.status}.` };
+  if (!a.job_id || !a.new_date) return { ok: false, msg: 'Missing job or date.' };
+  let job = null;
+  try { const { data } = await sb.from('jobs').select('customer_id, customer_name, job_type, notes').eq('id', a.job_id).maybeSingle(); job = data; } catch (_) {}
+  const note = `Rescheduled ${a.days}d${a.reason ? ': ' + a.reason : ''} (per ${a.tech_name || 'crew'}, confirmed by ${g.who})`;
+  const payload = { scheduled_at: a.new_date };
+  if (job && 'notes' in job) payload.notes = [job.notes, note].filter(Boolean).join(' | ');
+  let { error } = await sb.from('jobs').update(payload).eq('id', a.job_id);
+  if (error && /notes/.test(error.message || '')) { delete payload.notes; ({ error } = await sb.from('jobs').update(payload).eq('id', a.job_id)); }
+  if (error) return { ok: false, msg: 'Could not move the job: ' + error.message };
+  await sb.from('comms_actions').update({ status: 'applied', applied_by: g.who, applied_at: new Date().toISOString() }).eq('id', actionId);
+  if (a.source_comms_id) { try { await sb.from('cb_comms').update({ resolved_at: new Date().toISOString(), resolved_by: g.who }).eq('id', a.source_comms_id); } catch (_) {} }
+  const draft = rescheduleDraft({ customerName: a.customer_name || (job && job.customer_name), jobType: job && job.job_type, newDate: a.new_date, reason: a.reason });
+  revalidatePath('/messages');
+  return { ok: true, msg: 'Job moved — customer notice drafted (not sent).', draft };
+}
+
+export async function dismissAction(actionId) {
+  const g = await gate();
+  if (!g || !g.sb) return { ok: false, msg: 'Not allowed.' };
+  try { await g.sb.from('comms_actions').update({ status: 'dismissed', applied_by: g.who, applied_at: new Date().toISOString() }).eq('id', actionId); } catch (_) { return { ok: false, msg: 'Failed.' }; }
+  revalidatePath('/messages');
+  return { ok: true, msg: 'Dismissed.' };
+}
+
+// Approver taps "Send notice" → consent-gated text/email to the customer. NEVER auto-sent.
+export async function sendRescheduleNotice(actionId) {
+  const g = await gate();
+  if (!g || !g.sb) return { ok: false, msg: 'Not allowed.' };
+  const sb = g.sb;
+  const { data: a } = await sb.from('comms_actions').select('*').eq('id', actionId).maybeSingle();
+  if (!a || !a.job_id) return { ok: false, msg: 'Action not found.' };
+  const { data: job } = await sb.from('jobs').select('customer_id, customer_name, job_type, customers(name, phone, phones, email, sms_consent)').eq('id', a.job_id).maybeSingle();
+  const c = (job && job.customers) || {};
+  const phone = c.phone || (Array.isArray(c.phones) ? c.phones[0] : c.phones) || '';
+  const email = c.email || '';
+  const body = rescheduleDraft({ customerName: c.name || a.customer_name, jobType: job && job.job_type, newDate: a.new_date, reason: a.reason });
+  const bits = [];
+  const log = (channel, to, r) => { try { return sb.from('cb_comms').insert({ channel, direction: 'out', to_addr: to, customer_id: job && job.customer_id, job_id: a.job_id, body, status: r.ok ? 'sent' : 'failed', error: r.ok ? null : (r.msg || r.error), sent_by: g.who }); } catch (_) {} };
+  if (phone && c.sms_consent) { const r = await sendSms(phone, body); await log('sms', (r && r.to) || phone, r); bits.push(r.ok ? 'text sent' : `text not sent (${r.msg})`); }
+  else if (phone) bits.push('no text consent');
+  if (email) { const r = isEmailConfigured ? await sendOne({ to: email, subject: 'Appointment update — Clog Busterz Plumbing', html: `<p>${body}</p>` }) : { ok: false, error: 'no email key' }; await log('email', email, r); bits.push(r.ok ? 'email sent' : 'email not sent'); }
+  if (!phone && !email) bits.push('no phone/email on file');
+  revalidatePath('/messages');
+  return { ok: bits.some((b) => b.includes('sent')), msg: bits.join(', ') };
 }
 
 // Mini employee card behind a Comms Desk avatar: on/off shift, current job, truck, phone, tools out.

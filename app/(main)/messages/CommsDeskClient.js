@@ -3,9 +3,9 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { postTeamMessage, syncDiscordNow, askHank, hankReadFeed, resolveMessage, employeeCard } from './actions';
+import { postTeamMessage, syncDiscordNow, askHank, hankReadFeed, resolveMessage, employeeCard, applyReschedule, dismissAction, sendRescheduleNotice } from './actions';
 import { labelFor, LABELS, ACTIONABLE, initials, avatarHue } from '@/lib/commsTriage';
-import { Send, RefreshCw, Wrench, Check, RotateCcw, MessageSquarePlus, ArrowUpRight, ArrowRight, Phone, MessageSquare, MapPin, X } from 'lucide-react';
+import { Send, RefreshCw, Wrench, Check, RotateCcw, MessageSquarePlus, ArrowUpRight, ArrowRight, Phone, MessageSquare, MapPin, X, CalendarClock } from 'lucide-react';
 
 const dt = (s) => { try { return new Date(s).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
 const tm = (s) => { try { return new Date(s).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
@@ -29,7 +29,7 @@ function Avatar({ name, photo, isHank }) {
   return <div style={{ ...base, background: `hsl(${hue} 45% 42%)` }}>{initials(name)}</div>;
 }
 
-export default function CommsDeskClient({ comms, people, discordReady, readReady, canDelete, commsMissing }) {
+export default function CommsDeskClient({ comms, people, actions = [], discordReady, readReady, canDelete, commsMissing }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [syncing, startSync] = useTransition();
@@ -45,6 +45,13 @@ export default function CommsDeskClient({ comms, people, discordReady, readReady
   const [busyId, setBusyId] = useState(null);
   const [card, setCard] = useState(null);             // { loading } | employee-card data
   const [cardLoad, startCard] = useTransition();
+  const [actBusy, setActBusy] = useState(null);
+  const [drafts, setDrafts] = useState({});           // actionId -> { draft } after confirm
+  const [actGone, setActGone] = useState({});         // actionId -> true once handled
+
+  function confirmAction(id) { if (actBusy) return; setActBusy(id); start(async () => { const r = await applyReschedule(id); setActBusy(null); if (r.ok) { setDrafts((d) => ({ ...d, [id]: r.draft })); router.refresh(); } else setToast(r); }); }
+  function dropAction(id) { if (actBusy) return; setActBusy(id); start(async () => { const r = await dismissAction(id); setActBusy(null); setActGone((g) => ({ ...g, [id]: true })); router.refresh(); if (!r.ok) setToast(r); }); }
+  function sendNotice(id) { if (actBusy) return; setActBusy(id); start(async () => { const r = await sendRescheduleNotice(id); setActBusy(null); setToast(r); setDrafts((d) => { const n = { ...d }; delete n[id]; return n; }); }); }
 
   function openCard(name) { setCard({ loading: true, name }); startCard(async () => { const r = await employeeCard(name); setCard(r && r.ok ? r : { error: true, name }); }); }
   function mention(name) { setCard(null); setPanel('post'); setText((t) => (t ? t : `@${name} `)); }
@@ -123,6 +130,38 @@ export default function CommsDeskClient({ comms, people, discordReady, readReady
         </div>
       </div>
       {toast && <div style={{ fontSize: 12.5, fontWeight: 700, color: toast.ok ? 'var(--green)' : 'var(--red)', margin: '-4px 0 10px' }}>{toast.msg}</div>}
+
+      {/* Hank's caught actions — propose → one-tap confirm → drafted customer notice (never auto-sent). */}
+      {actions.filter((a) => !actGone[a.id]).map((a) => {
+        const draft = drafts[a.id];
+        return (
+          <div key={a.id} className="card" style={{ marginBottom: 10, border: '1px solid var(--accent)', background: 'var(--surface-1)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+              <CalendarClock size={18} style={{ color: 'var(--accent)', flex: '0 0 auto', marginTop: 1 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '.04em' }}>🔧 Hank caught a reschedule</div>
+                <div style={{ fontSize: 13.5, marginTop: 3, lineHeight: 1.45 }}>{a.summary}</div>
+                {!draft ? (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
+                    <button onClick={() => confirmAction(a.id)} disabled={actBusy === a.id} className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, padding: '6px 12px' }}><Check size={14} /> {actBusy === a.id ? 'Moving…' : 'Confirm reschedule'}</button>
+                    <button onClick={() => dropAction(a.id)} disabled={actBusy === a.id} className="btn btn-ghost" style={{ fontSize: 12.5, padding: '6px 12px' }}>Dismiss</button>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 9 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', marginBottom: 4 }}>✓ Job moved. Customer notice drafted (not sent):</div>
+                    <div style={{ fontSize: 12.5, padding: '8px 10px', borderRadius: 7, background: 'var(--surface-2)', border: '1px solid var(--border)', lineHeight: 1.4 }}>{draft}</div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                      <button onClick={() => sendNotice(a.id)} disabled={actBusy === a.id} className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12.5, padding: '6px 12px' }}><Send size={14} /> {actBusy === a.id ? 'Sending…' : 'Send to customer'}</button>
+                      <button onClick={() => setActGone((g) => ({ ...g, [a.id]: true }))} className="btn btn-ghost" style={{ fontSize: 12.5, padding: '6px 12px' }}>Skip — I’ll tell them</button>
+                    </div>
+                    <div className="muted" style={{ fontSize: 10.5, marginTop: 5 }}>Send is consent-gated (texts only if the customer opted in) and logged.</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
 
       {panel === 'post' && (
         <form onSubmit={post} className="card" style={{ display: 'grid', gap: 8, marginBottom: 14, border: '1px solid var(--accent)' }}>
