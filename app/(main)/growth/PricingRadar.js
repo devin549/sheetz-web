@@ -10,6 +10,7 @@ const shortLoc = (loc) => String(loc || '').replace(', United States', '').repla
 export default function PricingRadar({ competitors = [], markets = [], cbAvg = [], recent = [] }) {
   const [comp, setComp] = useState('');
   const [market, setMarket] = useState(markets[0] || '');
+  const [monthsBack, setMonthsBack] = useState(4);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [result, setResult] = useState(null);
@@ -17,7 +18,7 @@ export default function PricingRadar({ competitors = [], markets = [], cbAvg = [
   async function scan() {
     if (!comp.trim()) { setMsg({ ok: false, t: 'Enter a competitor name.' }); return; }
     setMsg(null); setResult(null); setBusy(true);
-    const r = await scanCompetitorPricing(comp, market);
+    const r = await scanCompetitorPricing(comp, market, monthsBack);
     setBusy(false);
     if (r.ok) { setResult(r); if (!r.points.length) setMsg({ ok: true, t: `No prices mentioned in ${r.reviewsScanned} recent reviews — try another competitor.` }); }
     else setMsg({ ok: false, t: r.msg });
@@ -37,6 +38,11 @@ export default function PricingRadar({ competitors = [], markets = [], cbAvg = [
             {markets.map((m) => <option key={m} value={m}>{shortLoc(m)}</option>)}
           </select>
         )}
+        <select value={monthsBack} onChange={(e) => setMonthsBack(Number(e.target.value))} title="How far back to read reviews" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 14 }}>
+          <option value={1}>1 mo</option>
+          <option value={4}>4 mo</option>
+          <option value={6}>6 mo</option>
+        </select>
         <button type="button" className="btn" onClick={scan} disabled={busy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: busy ? 0.6 : 1 }}>
           <Search size={15} className={busy ? 'cb-spin' : ''} /> {busy ? 'Mining…' : 'Scan pricing'}
         </button>
