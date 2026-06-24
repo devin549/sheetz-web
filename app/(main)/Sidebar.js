@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { navGroupsFor } from '@/lib/nav';
 import { roleMeta } from '@/lib/roles';
+import { SHELL_META } from '@/lib/shells';
 import {
   House, Truck, Calendar, ClipboardCheck, Phone, Sparkles, Users, Star, TriangleAlert,
   List, CircleCheck, Flag, Flame, Map, ChartColumn, SlidersHorizontal, Lock, ChevronDown,
@@ -17,13 +18,19 @@ const ICONS = {
 };
 const Icon = ({ name, size = 17 }) => { const C = ICONS[name] || List; return <C size={size} />; };
 
-export default function Sidebar({ role, name }) {
+export default function Sidebar({ role, name, shell = 'office', shells = ['office'] }) {
   const path = usePathname();
-  const { pinned, groups, account } = navGroupsFor(role);
+  const { pinned, groups, account } = navGroupsFor(role, shell);
   const meta = roleMeta(role);
   const [open, setOpen] = useState(false);            // mobile drawer
   const [openGroups, setOpenGroups] = useState({});   // collapsible groups
   useEffect(() => { setOpen(false); }, [path]);
+
+  // Shell switcher (Office ⇄ Field ⇄ Shop). Sets a cookie the layout reads, then lands you in that shell.
+  const switchShell = (s) => {
+    document.cookie = `cb_shell=${s}; path=/; max-age=${60 * 60 * 24 * 365}`;
+    window.location.href = s === 'tech' ? '/my-day' : s === 'shop' ? '/shop' : '/';
+  };
 
   const isActive = (it) => it.status !== 'porting' && (it.href === '/' ? path === '/' : path.startsWith(it.href));
   const activeGroup = groups.find((g) => g.items.some((it) => isActive(it)));
@@ -65,6 +72,20 @@ export default function Sidebar({ role, name }) {
 
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8, marginTop: 8 }}>
         {row(account)}
+        {shells.length > 1 && (
+          <div style={{ margin: '8px 0 4px' }}>
+            <div style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Mode</div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {shells.map((s) => (
+                <button key={s} onClick={() => s !== shell && switchShell(s)} title={`Switch to ${(SHELL_META[s] || {}).label || s}`}
+                  style={{ flex: 1, fontSize: 10.5, fontWeight: 700, padding: '5px 4px', borderRadius: 6, cursor: s === shell ? 'default' : 'pointer',
+                    background: s === shell ? 'var(--amber)' : 'var(--surface-2)', color: s === shell ? '#1a1206' : 'var(--fg-2)', border: '1px solid var(--border)' }}>
+                  {s === 'tech' ? 'Field' : s === 'shop' ? 'Shop' : 'Office'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--fg-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 6 }}>{name}</div>
         <div style={{ fontSize: 10, color: meta.color, marginBottom: 8 }}>{meta.label}</div>
         <form action="/auth/signout" method="post">
