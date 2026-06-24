@@ -7,6 +7,7 @@ import { can } from '@/lib/roles';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 import { sendSms } from '@/lib/twilio';
 import { sendOne, isEmailConfigured } from '@/lib/email';
+import { postToDiscord } from '@/lib/discord';
 import { revalidatePath } from 'next/cache';
 
 async function assertBooker() {
@@ -281,6 +282,13 @@ export async function createBooking(formData) {
   const who = ctx.profile.name || ctx.user.email;
   const whenStr = scheduledISO ? new Date(scheduledISO).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
   const sentBits = [];
+
+  // Captain Hook → #sheetz: internal booking alert (not customer-facing). Never blocks the booking.
+  try {
+    let nm2 = newName;
+    if (!nm2) { const { data: cn } = await sb.from('customers').select('name').eq('id', customerId).maybeSingle(); nm2 = (cn && cn.name) || 'Customer'; }
+    await postToDiscord(`📋 New job: ${nm2} · ${jobType}${whenStr ? ` · ${whenStr}` : ''} · ${techName || 'unassigned'}${priority !== 'normal' ? ` · ${priority.toUpperCase()}` : ''}${claimReq ? ` · ${warrantyProvider || jobClass}` : ''}`);
+  } catch (_) { /* discord best-effort */ }
 
   // Warranty/dispatch.me jobs → text the assigned tech the app link to tap "On My Way" when they head
   // out (feeds the dispatch.me On-My-Way scorecard). Set DISPATCHME_APP_URL to your exact deep link.
