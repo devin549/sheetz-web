@@ -1,8 +1,27 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Search, Sparkles, Droplets } from 'lucide-react';
-import { decodeWaterHeater } from './actions';
+import { Search, Sparkles, Droplets, Camera } from 'lucide-react';
+import { decodeWaterHeater, scanDataPlate } from './actions';
+
+// Downscale + normalize any browser-decodable photo (incl. Safari HEIC) to a JPEG data URL —
+// smaller payload, consistent format for the vision call.
+function fileToJpegDataUrl(file, maxDim = 1600, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (Math.max(width, height) > maxDim) { const s = maxDim / Math.max(width, height); width = Math.round(width * s); height = Math.round(height * s); }
+      const c = document.createElement('canvas'); c.width = width; c.height = height;
+      c.getContext('2d').drawImage(img, 0, 0, width, height);
+      try { resolve(c.toDataURL('image/jpeg', quality)); } catch (e) { reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode')); };
+    img.src = url;
+  });
+}
 
 const input = { width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '10px 11px', fontSize: 14, fontFamily: 'inherit' };
 
@@ -28,9 +47,30 @@ function Choice({ q, value, onPick }) {
 export default function BookingTriage({ config }) {
   const [a, setA] = useState({});
   const [pending, start] = useTransition();
+  const [scanning, setScanning] = useState(false);
   const [decoded, setDecoded] = useState(null);
   const [decodeMsg, setDecodeMsg] = useState(null);
   const set = (k, v) => setA((p) => ({ ...p, [k]: v }));
+
+  async function onScan(e) {
+    const file = e.target.files && e.target.files[0]; e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { setDecodeMsg('Please choose a photo.'); return; }
+    setDecodeMsg(null); setDecoded(null); setScanning(true);
+    let dataUrl;
+    try { dataUrl = await fileToJpegDataUrl(file); } catch { setScanning(false); setDecodeMsg('Couldn’t read that image — if it’s an iPhone HEIC, try a screenshot or JPG.'); return; }
+    const r = await scanDataPlate(dataUrl);
+    setScanning(false);
+    if (!r.ok) { setDecodeMsg(r.msg); return; }
+    const d = r.data;
+    setA((prev) => {
+      let next = { ...prev };
+      if (d.model) next.model = d.model;
+      if (d.serial) next.serial = d.serial;
+      return applyDecode(d, next).next;
+    });
+    setDecoded({ ...d, _applied: [d.fuel && 'fuel', d.capacity_gallons && 'size', d.tank_style && 'height'].filter(Boolean) });
+  }
 
   function applyDecode(d, base) {
     const next = { ...base };
@@ -81,12 +121,17 @@ export default function BookingTriage({ config }) {
           {q.type === 'text' && <input value={a[q.key] || ''} onChange={(e) => set(q.key, e.target.value)} placeholder={q.placeholder || ''} style={input} autoComplete="off" />}
           {q.type === 'decode' && (
             <>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input value={a[q.key] || ''} onChange={(e) => set(q.key, e.target.value)} placeholder={q.placeholder || ''} style={input} autoComplete="off" />
-                <button type="button" onClick={runDecode} disabled={pending} className="btn" style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, opacity: pending ? 0.6 : 1 }}>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <input value={a[q.key] || ''} onChange={(e) => set(q.key, e.target.value)} placeholder={q.placeholder || ''} style={{ ...input, flex: '1 1 180px' }} autoComplete="off" />
+                <button type="button" onClick={runDecode} disabled={pending || scanning} className="btn" style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, opacity: (pending || scanning) ? 0.6 : 1 }}>
                   <Search size={14} /> {pending ? 'Decoding…' : 'Decode'}
                 </button>
+                <label className="btn" style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, cursor: scanning ? 'default' : 'pointer', opacity: scanning ? 0.6 : 1, background: 'var(--surface-2)', color: 'var(--fg-1)', border: '1px solid var(--border)' }}>
+                  <Camera size={14} /> {scanning ? 'Reading…' : 'Scan plate'}
+                  <input type="file" accept="image/*" capture="environment" onChange={onScan} disabled={scanning} style={{ display: 'none' }} />
+                </label>
               </div>
+              <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>📷 Snap the rating sticker — we read the model &amp; serial for you. Non-plate photos are rejected automatically.</div>
               {decodeMsg && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 6, fontWeight: 700 }}>{decodeMsg}</div>}
               {decoded && (
                 <div className="card" style={{ marginTop: 8, padding: '10px 12px', background: 'var(--surface-1)' }}>

@@ -81,6 +81,41 @@ export async function decodeWaterHeater(model, serial) {
   return { ok: true, data };
 }
 
+// Scan a rating-plate PHOTO → read model/serial + specs with Claude vision. The model FIRST decides
+// whether the image is genuinely an appliance data plate; anything else (a person, random object,
+// meme, screenshot, unreadable, or inappropriate) is REJECTED — nothing is stored or filled.
+export async function scanDataPlate(imageDataUrl) {
+  let role;
+  try { const ctx = await assertBooker(); role = ctx.profile.role; } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!isAiConfigured(role)) return { ok: false, msg: 'No Claude key for your role yet — add ANTHROPIC_KEY_* in Vercel.' };
+
+  const match = String(imageDataUrl || '').match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
+  if (!match) return { ok: false, msg: 'Unsupported image — use a JPG or PNG photo.' };
+  const media_type = match[1], data = match[2];
+  if (data.length > 9_000_000) return { ok: false, msg: 'Photo too large — try again (it should auto-shrink).' };
+
+  const anthropic = getAnthropic(role);
+  let res;
+  try {
+    res = await anthropic.messages.create({
+      model: AI_MODEL,
+      max_tokens: 700,
+      output_config: { effort: 'low' },
+      system: 'You read appliance rating/data plates for a plumbing dispatcher. FIRST verify the image is genuinely a photo of an appliance rating/data plate or nameplate (a metal stamp or printed label showing model and serial numbers). If it is NOT a data plate — a person or body, an unrelated object or scene, a screenshot or meme, blank, too blurry/dark to read, or anything inappropriate — set is_plate=false with a short polite reason and leave the rest null. Only when it IS a readable plate, extract the data. The MODEL # encodes capacity/fuel/vent; the SERIAL # encodes the manufacture date. Return ONLY minified JSON: {is_plate:boolean, reason:string, model:(string|null), serial:(string|null), brand:(string|null), capacity_gallons:(number|null), fuel:("Natural Gas"|"Propane (LP)"|"Electric"|null), vent_type:(string|null), tank_style:("Tall"|"Short (Lowboy)"|null), year:(number|null), age_years:(number|null), summary:string, confidence:("high"|"medium"|"low")}.',
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type, data } },
+        { type: 'text', text: 'Read this water-heater data plate. If it is not a readable appliance data plate, reject it.' },
+      ] }],
+    });
+  } catch (e) { return { ok: false, msg: 'Scan error: ' + (e && e.message ? e.message : String(e)) }; }
+
+  const text = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+  let d;
+  try { d = JSON.parse(text.replace(/^```(?:json)?|```$/g, '').trim()); } catch { return { ok: false, msg: 'Couldn’t read the photo — try a clearer, straight-on shot of the plate.' }; }
+  if (!d.is_plate) return { ok: false, msg: d.reason || 'That doesn’t look like a water-heater data plate — please snap a clear photo of the rating sticker.' };
+  return { ok: true, data: d };
+}
+
 // Create a booking: find-or-create the customer, then insert the job (status scheduled).
 export async function createBooking(formData) {
   let ctx;
