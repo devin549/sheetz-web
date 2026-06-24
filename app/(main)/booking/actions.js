@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
+import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 import { revalidatePath } from 'next/cache';
 
 async function assertBooker() {
@@ -51,6 +52,33 @@ export async function customerSnapshot(id) {
     lifetimeRevenue: Number(c.lifetime_revenue) || 0, lifetimeJobs: Number(c.lifetime_jobs) || 0,
     lastJob: c.last_job_completed || null, openBalance, doNotService: !!c.do_not_service, doNotMail: !!c.do_not_mail, type: c.type || '',
   };
+}
+
+// Decode a water-heater model #/serial → real specs (brand, capacity, fuel, vent, age). The live
+// HTML "Decode" pulled nothing up; this wires it to Claude so it actually returns the unit.
+export async function decodeWaterHeater(model, serial) {
+  let role;
+  try { const ctx = await assertBooker(); role = ctx.profile.role; } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const m = clean(model, 60), s = clean(serial, 60);
+  if (!m && !s) return { ok: false, msg: 'Enter a model # (and serial if you have it).' };
+  if (!isAiConfigured(role)) return { ok: false, msg: 'No Claude key for your role yet — add ANTHROPIC_KEY_* in Vercel.' };
+
+  const anthropic = getAnthropic(role);
+  let res;
+  try {
+    res = await anthropic.messages.create({
+      model: AI_MODEL,
+      max_tokens: 600,
+      output_config: { effort: 'low' },
+      system: 'You decode residential water-heater nameplate data for a plumbing dispatcher. From the model and serial numbers, identify the unit so the tech brings the right replacement. Return ONLY minified JSON, no prose, with keys: brand, capacity_gallons (number or null), fuel ("Natural Gas"|"Propane (LP)"|"Electric"|null), vent_type (e.g. "Atmospheric","Power vent","Direct vent","Electric"|null), tank_style ("Tall"|"Short (Lowboy)"|null), year (4-digit number or null), age_years (number or null), summary (one short sentence), confidence ("high"|"medium"|"low"). Use known manufacturer model/serial conventions (Rheem/Ruud, A.O. Smith/State/American, Bradford White, Rinnai, Navien, etc.). If a field is unknown, use null — never guess wildly.',
+      messages: [{ role: 'user', content: `Model #: ${m || '(none)'}\nSerial #: ${s || '(none)'}` }],
+    });
+  } catch (e) { return { ok: false, msg: 'Decode error: ' + (e && e.message ? e.message : String(e)) }; }
+
+  const text = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+  let data;
+  try { data = JSON.parse(text.replace(/^```(?:json)?|```$/g, '').trim()); } catch { return { ok: false, msg: 'Couldn’t read the decode — try again or enter specs by hand.' }; }
+  return { ok: true, data };
 }
 
 // Create a booking: find-or-create the customer, then insert the job (status scheduled).
@@ -119,7 +147,9 @@ export async function createBooking(formData) {
     tech_id: techId, tech_name: techName, assigned_at: techId ? new Date().toISOString() : null,
     address: address || null, city, business_unit: businessUnit,
   };
-  const extra = { notes: notes || null, job_class: jobClass, arrival_window: arrivalWindow, po_number: poNumber, claim_number: claimNumber, warranty_provider: warrantyProvider, how_heard: howHeard, referral_code: referralCode, state, zip };
+  let triage = null;
+  try { const t = JSON.parse(String(formData.get('triage') || 'null')); if (t && typeof t === 'object' && Object.keys(t).length) triage = t; } catch (_) { triage = null; }
+  const extra = { notes: notes || null, job_class: jobClass, arrival_window: arrivalWindow, po_number: poNumber, claim_number: claimNumber, warranty_provider: warrantyProvider, how_heard: howHeard, referral_code: referralCode, state, zip, triage };
   let ins = await sb.from('jobs').insert({ ...base, ...extra }).select('id').single();
   if (ins.error && /column|schema cache/i.test(ins.error.message || '')) {
     ins = await sb.from('jobs').insert(base).select('id').single(); // pre-39 fallback: book with the core fields

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { searchCustomersForBooking, createBooking, customerSnapshot } from './actions';
+import { triageFor } from '@/lib/triage';
+import BookingTriage from './BookingTriage';
 import { Search, UserPlus, X, Phone, Mail, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 
 const input = { width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '10px 11px', fontSize: 14, fontFamily: 'inherit' };
@@ -174,6 +176,9 @@ export default function BookingForm({ techs }) {
       <div><span style={label}>Job class</span>
         <select name="jobClass" defaultValue="residential" style={input}>{JOB_CLASSES.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}</select>
       </div>
+
+      {/* Adaptive triage — appears when the service matches (water heater, drain/sewer) */}
+      {triageFor(service) && <BookingTriage key={triageFor(service).id} config={triageFor(service)} />}
 
       {/* 4 · Schedule & assign */}
       <Section n="4" title="Schedule & assign" />

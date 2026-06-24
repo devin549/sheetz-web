@@ -363,3 +363,8 @@ alter table public.jobs add column if not exists zip               text;
 -- Consent captured at booking (we never auto-send — this records permission + when/where).
 alter table public.customers add column if not exists marketing_consent boolean;
 -- (customers.email, sms_consent, consent_source, consent_ts already exist.)
+
+-- ===== 40_triage.sql =====
+-- Triage — structured intake answers (water-heater fuel/size, leak/shutoff, decoded unit, etc.)
+-- captured at booking, stored on the job. Idempotent, additive. Run in the Supabase SQL editor.
+alter table public.jobs add column if not exists triage jsonb;
