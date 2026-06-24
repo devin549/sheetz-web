@@ -2,14 +2,14 @@
 
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
-import { roleOf } from '@/lib/nav';
+import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { getAnthropic, isAiConfigured, keyForRole, AI_MODEL } from '@/lib/anthropic';
 
 // Gather a compact, live snapshot of the business for the model to reason over — now including
 // the top past-due customers + the single oldest invoice, so Hank can answer "who owes the most"
 // and "who has the oldest invoice".
-async function boardContext(sb) {
+export async function boardContext(sb) {
   const days = (t) => (t ? Math.floor((Date.now() - t) / 86400000) : null);
 
   const [custCount, jobRows] = await Promise.all([
@@ -60,7 +60,8 @@ export async function askBoard(question) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, msg: 'Not signed in.' };
-  const role = roleOf(user);
+  const profile = await loadProfile(user);
+  const role = profile.role;
   if (!can(role, 'seeReports')) return { ok: false, msg: 'Your role can’t use Ask the Board.' };
 
   const q = String(question || '').trim();
