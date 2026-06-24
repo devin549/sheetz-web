@@ -3,6 +3,7 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
 import JobCard from './JobCard';
+import ShareLocation from './ShareLocation';
 
 // Always read fresh (no static caching) — this is live job data.
 export const dynamic = 'force-dynamic';
@@ -125,6 +126,8 @@ export default async function MyDay({ searchParams }) {
       {note && note.kind === 'noName' && (
         <div className="notice"><strong>Your account has no name set.</strong> Ask the office to add your name on the Team screen.</div>
       )}
+
+      {!note && <ShareLocation />}
 
       {!note && (
         <>

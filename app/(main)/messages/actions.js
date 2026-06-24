@@ -50,7 +50,7 @@ export async function askHank(question, postToChannel) {
   if (!g || !g.sb) return { ok: false, msg: 'Your role can’t use Hank.' };
   const q = String(question || '').trim();
   if (!q) return { ok: false, msg: 'Ask Hank something.' };
-  const r = await askHankCore(g.sb, q, { post: !!postToChannel });
+  const r = await askHankCore(g.sb, q, { post: !!postToChannel, askerName: g.who });
   if (postToChannel && r.ok) revalidatePath('/messages');
   return r;
 }

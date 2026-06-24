@@ -7,6 +7,25 @@ import { can } from '@/lib/roles';
 import { closeoutReason } from '@/lib/qa';
 import { revalidatePath } from 'next/cache';
 
+// Tech shares their live GPS from the field (My Day "Share location") → tech_locations, so Hank can
+// route "closest tech for material/equipment" by true distance. Keyed to the signed-in tech's name.
+export async function pingLocation(lat, lng, accuracy) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const profile = user ? await loadProfile(user) : null;
+  if (!user || !profile) return { ok: false, msg: 'Not signed in.' };
+  const la = Number(lat), ln = Number(lng);
+  if (Number.isNaN(la) || Number.isNaN(ln)) return { ok: false, msg: 'No location fix.' };
+  const name = profile.name || user.email;
+  if (!name) return { ok: false, msg: 'Your account has no name — ask the office to set it on Team.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const row = { tech_name: name, tech_id: profile.tech_id || null, lat: la, lng: ln, accuracy_m: Number(accuracy) || null, source: 'web', updated_at: new Date().toISOString() };
+  const { error } = await sb.from('tech_locations').upsert(row, { onConflict: 'tech_name' });
+  if (error) return { ok: false, msg: /tech_locations|does not exist|schema cache/i.test(error.message) ? 'Run migration 60 first.' : error.message };
+  return { ok: true, msg: 'Location shared with dispatch.' };
+}
+
 // Tech updates a job's status from the iPad in the field (Rolling/En route → On site → Complete).
 // Stamps the matching timestamp. Gated to changeStatus (tech/helper-lead/foreman/office).
 const VALID = ['scheduled', 'enroute', 'on_site', 'done'];
