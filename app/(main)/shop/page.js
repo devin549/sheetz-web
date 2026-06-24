@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
+import ShopCounter from './ShopCounter';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +31,12 @@ export default async function Shop() {
   const rows = stock || [];
   const low = rows.filter(isLow);
 
+  // Shop Counter — recent issues/rentals to jobs (graceful if 46 not run yet).
+  let issues = [];
+  const iss = await sb.from('shop_issues').select('id, job_id, item_name, sku, qty, unit, total_cost_cents, kind, status, created_at').order('created_at', { ascending: false }).limit(40);
+  if (!iss.error) issues = iss.data || [];
+  const itemNames = [...new Set(rows.map((p) => p.name).filter(Boolean))].slice(0, 200);
+
   // PURCHASING VIEW — consolidate low parts across all vans into one reorder list.
   const byPart = {};
   low.forEach((p) => {
@@ -50,7 +57,12 @@ export default async function Shop() {
       <div className="h1">🏪 Shop</div>
       <p className="muted">Reorder &amp; restock from one place. Low-stock rolls up here from every van.</p>
 
-      <div className="card card-amber" style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+      <Section title="🛒 Shop counter — issue to a job">
+        <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>Parts, materials, and rentals issued to a JOB# — the cost hits the <strong>job</strong>, not tech pay.</p>
+        <ShopCounter recent={issues} items={itemNames} />
+      </Section>
+
+      <div className="card card-amber" style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginTop: 8 }}>
         <div><div style={{ fontSize: 24, fontWeight: 800, color: low.length ? '#ff8a65' : 'var(--green)', display: 'flex', alignItems: 'center', gap: 6 }}>{low.length > 0 && <span className="alert-dot amber" aria-hidden="true" />}{low.length}</div><div className="muted" style={{ fontSize: 11 }}>low line-items</div></div>
         <div><div style={{ fontSize: 24, fontWeight: 800, color: 'var(--amber)' }}>{purchaseList.length}</div><div className="muted" style={{ fontSize: 11 }}>parts to reorder</div></div>
         <div><div style={{ fontSize: 24, fontWeight: 800 }}>{trucks.length}</div><div className="muted" style={{ fontSize: 11 }}>trucks need a run</div></div>
