@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { addTool, checkOutTool, checkInTool } from './actions';
+import { SHOPS, shopLabel } from '@/lib/shops';
 import { Wrench, Plus, X } from 'lucide-react';
 
 const input = { width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 10px', fontSize: 14, fontFamily: 'inherit' };
@@ -11,6 +12,7 @@ const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString();
 
 function ToolRow({ t, techs, onOut, onIn, pending }) {
   const [pick, setPick] = useState('');
+  const [shop, setShop] = useState(t.shop_location || SHOPS[0].id);
   const out = !!t.assigned_to;
   const sub = [t.mfg, t.year, t.serial && `SN ${t.serial}`, t.value ? money(t.value) : null].filter(Boolean).join(' · ');
   return (
@@ -18,11 +20,15 @@ function ToolRow({ t, techs, onOut, onIn, pending }) {
       <div style={{ flex: '1 1 180px', minWidth: 0 }}>
         <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}><Wrench size={13} style={{ color: 'var(--fg-3)' }} /> {t.name}</div>
         {sub && <div className="muted" style={{ fontSize: 11.5 }}>{sub}</div>}
+        {!out && t.shop_location && <div className="muted" style={{ fontSize: 11.5, color: 'var(--green)' }}>📍 {shopLabel(t.shop_location)}</div>}
       </div>
       {out ? (
         <>
           <span style={{ fontSize: 12.5, fontWeight: 700 }}>{t.assigned_to}</span>
-          <button type="button" className="pill" onClick={() => onIn(t.id)} disabled={pending} style={{ cursor: 'pointer', color: 'var(--green)' }}>Check in</button>
+          <select value={shop} onChange={(e) => setShop(e.target.value)} style={{ ...input, width: 'auto', fontSize: 12 }} title="Check in to which shop">
+            {SHOPS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+          <button type="button" className="pill" onClick={() => onIn(t.id, shop)} disabled={pending} style={{ cursor: 'pointer', color: 'var(--green)' }}>Check in</button>
         </>
       ) : (
         <div style={{ display: 'flex', gap: 6 }}>
@@ -44,7 +50,7 @@ export default function ToolCheckoutClient({ tools, techs }) {
   const [msg, setMsg] = useState(null);
 
   const onOut = (id, tech) => start(async () => { const r = await checkOutTool(id, tech); setMsg(r); router.refresh(); });
-  const onIn = (id) => start(async () => { const r = await checkInTool(id); setMsg(r); router.refresh(); });
+  const onIn = (id, shop) => start(async () => { const r = await checkInTool(id, shop); setMsg(r); router.refresh(); });
   function submit(e) {
     e.preventDefault(); const form = e.currentTarget;
     setMsg(null);
@@ -87,6 +93,7 @@ export default function ToolCheckoutClient({ tools, techs }) {
             <div><span style={label}>Serial</span><input name="serial" style={input} autoComplete="off" /></div>
             <div><span style={label}>Year</span><input name="year" type="number" style={input} /></div>
             <div><span style={label}>Value $</span><input name="value" type="number" min="0" step="1" placeholder="0" style={input} /></div>
+            <div><span style={label}>Shop</span><select name="shop_location" style={input} defaultValue={SHOPS[0].id}>{SHOPS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
           </div>
           <div><button type="submit" className="btn" disabled={pending}>Add tool</button></div>
         </form>

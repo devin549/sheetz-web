@@ -11,7 +11,8 @@ export default async function ToolCheckout() {
     return <div className="wrap"><div className="h1">🧰 Tool Check-Out</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel.</div></div>;
   }
   const sb = getSupabaseAdmin();
-  const res = await sb.from('tools').select('id, name, serial, mfg, year, value, assigned_to, status').order('name');
+  let res = await sb.from('tools').select('id, name, serial, mfg, year, value, assigned_to, status, shop_location').order('name');
+  if (res.error && /shop_location/.test(res.error.message || '')) res = await sb.from('tools').select('id, name, serial, mfg, year, value, assigned_to, status').order('name');
   if (res.error && /could not find|does not exist|schema cache/i.test(res.error.message || '')) {
     return <div className="wrap"><div className="h1">🧰 Tool Check-Out</div><div className="notice">Tools need their table — run <code>supabase/05_truck_tools.sql</code> in Supabase.</div></div>;
   }

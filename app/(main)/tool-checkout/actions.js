@@ -26,9 +26,11 @@ export async function addTool(formData) {
   const row = {
     name, serial: clean(formData.get('serial'), 80) || null, mfg: clean(formData.get('mfg'), 80) || null,
     year: parseInt(formData.get('year'), 10) || null, value: Math.max(0, Number(formData.get('value')) || 0),
-    assigned_to: null, status: 'in_shop',
+    assigned_to: null, status: 'in_shop', shop_location: clean(formData.get('shop_location'), 40) || null,
   };
-  const { error } = await g.sb.from('tools').insert(row);
+  let { error } = await g.sb.from('tools').insert(row);
+  // shop_location is new (migration 59) — if the column isn't there yet, save without it.
+  if (error && /shop_location/.test(error.message || '')) { delete row.shop_location; ({ error } = await g.sb.from('tools').insert(row)); }
   if (error) return { ok: false, msg: missing(error) ? 'Run supabase/05_truck_tools.sql first.' : error.message };
   revalidatePath('/tool-checkout');
   return { ok: true, msg: `Added ${name}.` };
@@ -45,11 +47,15 @@ export async function checkOutTool(id, tech) {
   return { ok: true, msg: `Checked out to ${to}.` };
 }
 
-export async function checkInTool(id) {
+export async function checkInTool(id, shop) {
   const g = await gate();
   if (!g) return { ok: false, msg: 'Not allowed.' };
-  const { error } = await g.sb.from('tools').update({ assigned_to: null, status: 'in_shop' }).eq('id', id);
+  const upd = { assigned_to: null, status: 'in_shop' };
+  const loc = clean(shop, 40);
+  if (loc) upd.shop_location = loc;
+  let { error } = await g.sb.from('tools').update(upd).eq('id', id);
+  if (error && /shop_location/.test(error.message || '')) { delete upd.shop_location; ({ error } = await g.sb.from('tools').update(upd).eq('id', id)); }
   if (error) return { ok: false, msg: error.message };
   revalidatePath('/tool-checkout');
-  return { ok: true, msg: 'Checked back in.' };
+  return { ok: true, msg: loc ? `Checked in to ${loc}.` : 'Checked back in.' };
 }

@@ -725,3 +725,10 @@ alter table public.cb_comms add column if not exists reply_to    text;
 create index if not exists cb_comms_hank_unseen_idx
   on public.cb_comms (created_at desc)
   where channel = 'discord' and direction = 'in' and hank_seen_at is null;
+
+
+-- ===== 59_tool_shop_location.sql =====
+-- Which shop a tool sits in when it's checked back in (Richmond vs Lexington), so Hank can answer
+-- "is there a camera at the Lexington shop?" and point someone at the right place.
+-- Idempotent. Run in the Supabase SQL editor.
+alter table public.tools add column if not exists shop_location text;
