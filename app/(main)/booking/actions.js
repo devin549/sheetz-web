@@ -25,13 +25,12 @@ export async function searchCustomersForBooking(q) {
   try { ({ sb } = await assertBooker()); } catch { return []; }
   const term = clean(q, 60);
   if (term.length < 2) return [];
-  const { data, error } = await sb.from('customers')
-    .select('id, name, phone, address')
-    .or(`name.ilike.%${term}%,phone.ilike.%${term}%`)
-    .order('lifetime_revenue', { ascending: false, nullsFirst: false })
-    .limit(8);
-  if (error) return [];
-  return (data || []).map((c) => ({ id: c.id, name: c.name || 'Customer', phone: c.phone || '', address: c.address || '' }));
+  // RPC matches phones regardless of formatting (digits-only typing finds "(859) 779-8824").
+  const rpc = await sb.rpc('search_customers', { term });
+  const rows = rpc.error
+    ? (await sb.from('customers').select('id, name, phone, address').or(`name.ilike.%${term}%,phone.ilike.%${term}%`).order('lifetime_revenue', { ascending: false, nullsFirst: false }).limit(8)).data // pre-42 fallback
+    : rpc.data;
+  return (rows || []).slice(0, 8).map((c) => ({ id: c.id, name: c.name || 'Customer', phone: c.phone || '', address: c.address || '' }));
 }
 
 // Dispatcher Co-Pilot: history, value, balance + red flags for a picked customer (before you book).

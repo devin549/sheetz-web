@@ -20,7 +20,10 @@ export async function searchAccounts(q) {
   if (!sb) return [];
   const term = String(q || '').trim().replace(/[%,]/g, ' ');
   if (term.length < 2) return [];
-  const { data } = await sb.from('customers')
+  // RPC matches phones regardless of formatting (digits find "(859) 779-8824").
+  const rpc = await sb.rpc('search_customers', { term });
+  if (!rpc.error) return rpc.data || [];
+  const { data } = await sb.from('customers') // pre-42 fallback
     .select('id, name, phone, cb_number, lifetime_revenue, lifetime_jobs, last_job_completed, do_not_service')
     .or(`name.ilike.%${term}%,phone.ilike.%${term}%`)
     .order('lifetime_revenue', { ascending: false, nullsFirst: false })
