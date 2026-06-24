@@ -41,8 +41,9 @@ export async function createMeeting(formData) {
   if (error) return { ok: false, msg: /meetings|does not exist|schema cache/i.test(error.message) ? 'Run migration 63 first.' : error.message };
 
   const when = starts.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  const aud = audience === 'everyone' ? 'everyone' : `${audience} crew`;
-  await postToDiscord(`📅 MEETING — ${title}\n${when}${row.location ? ` @ ${row.location}` : ''}\nFor ${aud}. 👍 Acknowledge in the app → Meetings (and it adds to your calendar).`);
+  const everyone = audience === 'everyone';
+  const who = everyone ? '@everyone' : (audience.startsWith('mgr:') ? `${audience.slice(4)}’s crew` : `${audience} crew`);
+  await postToDiscord(`📅 MEETING — ${title}\n${when}${row.location ? ` @ ${row.location}` : ''}\nFor ${who}. 👍 Acknowledge in the app → Meetings (and it adds to your calendar).`, { everyone });
   revalidatePath('/meetings');
   return { ok: true, msg: 'Meeting sent — crew must acknowledge.' };
 }
