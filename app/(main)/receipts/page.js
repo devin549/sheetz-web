@@ -1,12 +1,12 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { requirePerm } from '@/lib/guard';
+import { requireHref } from '@/lib/guard';
 import { isAiConfigured } from '@/lib/anthropic';
 import ReceiptInboxClient from './ReceiptInboxClient';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Receipts() {
-  const { role } = await requirePerm('seeFinancials', 'seeReports');
+  const { role } = await requireHref('/receipts');
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">Receipt Inbox</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel.</div></div>;

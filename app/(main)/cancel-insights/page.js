@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { requirePerm } from '@/lib/guard';
+import { requireHref } from '@/lib/guard';
 import { CANCEL_REASONS } from '../board/boardTokens';
 
 export const dynamic = 'force-dynamic';
@@ -9,7 +9,7 @@ const fmt = (iso) => { try { return new Date(iso).toLocaleDateString([], { month
 const LABEL = Object.fromEntries(CANCEL_REASONS.map((r) => [r.code, r.label]));
 
 export default async function CancelInsights() {
-  await requirePerm('seeReports', 'seeFinancials', 'contactCustomer');
+  await requireHref('/cancel-insights');
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">Cancel Insights</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel.</div></div>;

@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { requirePerm } from '@/lib/guard';
+import { requireHref } from '@/lib/guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +8,7 @@ const fmt = (iso) => { try { return new Date(iso).toLocaleString([], { month: 's
 const shortName = (email) => String(email || '').split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase()) || '—';
 
 export default async function Payments() {
-  await requirePerm('seeFinancials', 'seeReports');
+  await requireHref('/payments');
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">Payment Ledger</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel.</div></div>;

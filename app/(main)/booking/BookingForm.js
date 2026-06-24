@@ -55,9 +55,9 @@ export default function BookingForm({ techs }) {
   const [provider, setProvider] = useState('');
   const [priority, setPriority] = useState('normal');
   const [showAdmin, setShowAdmin] = useState(false);
-  const [serviceConsent, setServiceConsent] = useState(true);
+  const [serviceConsent, setServiceConsent] = useState(false);
   const [marketingConsent, setMarketingConsent] = useState(false);
-  const [sendConfirm, setSendConfirm] = useState(true);
+  const [sendConfirm, setSendConfirm] = useState(false);
   const [msg, setMsg] = useState(null);
   const seq = useRef(0);
 
@@ -113,7 +113,7 @@ export default function BookingForm({ techs }) {
     start(async () => {
       const res = await createBooking(fd);
       setMsg(res);
-      if (res.ok) { form.reset(); clearPicked(); setAddr(''); setCity(''); setStateV('KY'); setZip(''); setGeo({}); setVerifyMsg(null); setService(''); setHowHeard(''); setJobClass('residential'); setProvider(''); setPriority('normal'); setMarketingConsent(false); setServiceConsent(true); setSendConfirm(true); router.refresh(); }
+      if (res.ok) { form.reset(); clearPicked(); setAddr(''); setCity(''); setStateV('KY'); setZip(''); setGeo({}); setVerifyMsg(null); setService(''); setHowHeard(''); setJobClass('residential'); setProvider(''); setPriority('normal'); setMarketingConsent(false); setServiceConsent(false); setSendConfirm(false); router.refresh(); }
     });
   }
 

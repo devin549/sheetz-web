@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { requirePerm } from '@/lib/guard';
+import { requireHref } from '@/lib/guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +8,7 @@ const moneyFull = (n) => '$' + Number(n || 0).toLocaleString(undefined, { maximu
 const ago = (iso) => { if (!iso) return '—'; try { const d = (Date.now() - new Date(iso).getTime()) / 86400000; if (d < 31) return Math.max(0, Math.floor(d)) + 'd'; if (d < 365) return Math.floor(d / 30) + 'mo'; return (d / 365).toFixed(1) + 'y'; } catch { return '—'; } };
 
 export default async function TopCustomers() {
-  await requirePerm('seeReports', 'seeRevenue', 'seeFinancials', 'seeAllJobs');
+  await requireHref('/top-customers');
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">Top Customers</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel.</div></div>;

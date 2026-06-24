@@ -19,6 +19,9 @@ async function assertBooker() {
   return { sb, user, profile };
 }
 const clean = (v, n = 200) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, n);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// First scalar phone — `customers.phones` can be an array; never String() an array into a To.
+const firstPhone = (c) => (c && (c.phone || (Array.isArray(c.phones) ? c.phones[0] : c.phones))) || '';
 
 // Type-ahead against the 13k customer base — name OR phone.
 export async function searchCustomersForBooking(q) {
@@ -148,7 +151,7 @@ export async function scanDataPlate(imageDataUrl) {
   const text = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
   let d;
   try { d = JSON.parse(text.replace(/^```(?:json)?|```$/g, '').trim()); } catch { return { ok: false, msg: 'Couldn’t read the photo — try a clearer, straight-on shot of the plate.' }; }
-  if (!d.is_plate) return { ok: false, msg: d.reason || 'That doesn’t look like a water-heater data plate — please snap a clear photo of the rating sticker.' };
+  if (d.is_plate !== true) return { ok: false, msg: d.reason || 'That doesn’t look like a water-heater data plate — please snap a clear photo of the rating sticker.' };
   return { ok: true, data: d };
 }
 
@@ -250,11 +253,13 @@ export async function createBooking(formData) {
 
   // Warranty/dispatch.me jobs → text the assigned tech the app link to tap "On My Way" when they head
   // out (feeds the dispatch.me On-My-Way scorecard). Set DISPATCHME_APP_URL to your exact deep link.
-  if (claimReq && techId && techPhone) {
-    const link = process.env.DISPATCHME_APP_URL || 'https://dispatch.me';
-    const body = `New ${warrantyProvider || 'warranty'} job (dispatch.me): ${jobType}${whenStr ? ` ${whenStr}` : ''}. Open the app and tap "On My Way" when you head out → ${link}`;
+  const dispatchmeUrl = process.env.DISPATCHME_APP_URL; // set to your exact "On My Way" deep link
+  if (claimReq && techId && techPhone && !dispatchmeUrl) {
+    sentBits.push('tech link skipped — set DISPATCHME_APP_URL'); // don't text a dead generic link
+  } else if (claimReq && techId && techPhone) {
+    const body = `New ${warrantyProvider || 'warranty'} job (dispatch.me): ${jobType}${whenStr ? ` ${whenStr}` : ''}. Open the app and tap "On My Way" when you head out → ${dispatchmeUrl}`;
     const r = await sendSms(techPhone, body);
-    try { await sb.from('cb_comms').insert({ channel: 'sms', to_addr: (r && r.to) || techPhone, customer_id: customerId, job_id: String(job.id), body, status: r.ok ? 'sent' : 'failed', provider_id: r.sid || null, error: r.ok ? null : r.msg, sent_by: who }); } catch (_) {}
+    try { await sb.from('cb_comms').insert({ channel: 'sms', to_addr: (r && r.to) || techPhone, customer_id: customerId, job_id: job.id, body, status: r.ok ? 'sent' : 'failed', provider_id: r.sid || null, error: r.ok ? null : r.msg, sent_by: who }); } catch (_) {}
     sentBits.push(r.ok ? 'tech got dispatch.me link' : `tech link not sent (${r.msg})`);
   }
 
@@ -262,7 +267,7 @@ export async function createBooking(formData) {
   if (wantConfirm && !serviceConsent) sentBits.push('not sent — no consent');
   else if (wantConfirm) {
     let phone = newPhone, email = customerEmail, nm = newName;
-    if (!phone || !email || !nm) { const { data: cust } = await sb.from('customers').select('name, phone, phones, email').eq('id', customerId).maybeSingle(); if (cust) { phone = phone || cust.phone || cust.phones || ''; email = email || cust.email || ''; nm = nm || cust.name || ''; } }
+    if (!phone || !email || !nm) { const { data: cust } = await sb.from('customers').select('name, phone, phones, email').eq('id', customerId).maybeSingle(); if (cust) { phone = phone || firstPhone(cust); email = email || cust.email || ''; nm = nm || cust.name || ''; } }
     const log = (channel, to, body, r) => { try { return sb.from('cb_comms').insert({ channel, to_addr: to, customer_id: customerId, job_id: String(job.id), body, status: r.ok ? 'sent' : 'failed', provider_id: r.sid || null, error: r.ok ? null : (r.msg || r.error), sent_by: who }); } catch (_) {} };
     if (phone) {
       const body = `Clog Busterz Plumbing: you're booked for ${jobType}${whenStr ? ` on ${whenStr}` : ''}. We'll text when we're on the way. Reply STOP to opt out.`;
@@ -271,7 +276,7 @@ export async function createBooking(formData) {
     }
     if (email) {
       const subject = `You're booked — Clog Busterz Plumbing`;
-      const html = `<!doctype html><html><body style="margin:0;background:#f4f3ef;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a"><div style="max-width:560px;margin:0 auto;padding:24px"><div style="background:#fff;border:1px solid #e3e0d8;border-radius:10px;overflow:hidden"><div style="background:#FF6B00;color:#fff;padding:14px 20px;font-weight:800;font-size:16px">Clog Busterz Plumbing</div><div style="padding:22px 20px;font-size:14px"><p>Hi ${nm || 'there'},</p><p>You're booked for <strong>${jobType}</strong>${whenStr ? ` on <strong>${whenStr}</strong>` : ''}${address ? ` at ${address}` : ''}.</p><p>We'll text or call when your tech is on the way. Questions? Just reply to this email.</p></div><div style="padding:14px 20px;border-top:1px solid #eee;font-size:11px;color:#888">Clog Busterz Plumbing</div></div></div></body></html>`;
+      const html = `<!doctype html><html><body style="margin:0;background:#f4f3ef;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a"><div style="max-width:560px;margin:0 auto;padding:24px"><div style="background:#fff;border:1px solid #e3e0d8;border-radius:10px;overflow:hidden"><div style="background:#FF6B00;color:#fff;padding:14px 20px;font-weight:800;font-size:16px">Clog Busterz Plumbing</div><div style="padding:22px 20px;font-size:14px"><p>Hi ${esc(nm) || 'there'},</p><p>You're booked for <strong>${esc(jobType)}</strong>${whenStr ? ` on <strong>${esc(whenStr)}</strong>` : ''}${address ? ` at ${esc(address)}` : ''}.</p><p>We'll text or call when your tech is on the way. Questions? Just reply to this email.</p></div><div style="padding:14px 20px;border-top:1px solid #eee;font-size:11px;color:#888">Clog Busterz Plumbing</div></div></div></body></html>`;
       const r = isEmailConfigured ? await sendOne({ to: email, subject, html }) : { ok: false, error: 'no email key' };
       await log('email', email, subject, r);
       sentBits.push(r.ok ? 'email sent' : 'email not sent');

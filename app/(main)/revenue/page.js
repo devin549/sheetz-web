@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { requirePerm } from '@/lib/guard';
+import { requireHref } from '@/lib/guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +19,7 @@ async function allInvoices(sb) {
 }
 
 export default async function Revenue() {
-  await requirePerm('seeFinancials', 'seeRevenue', 'seeReports');
+  await requireHref('/revenue');
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">Revenue</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel.</div></div>;
