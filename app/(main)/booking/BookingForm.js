@@ -9,6 +9,21 @@ import { Search, UserPlus, X } from 'lucide-react';
 const input = { width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '10px 11px', fontSize: 14, fontFamily: 'inherit' };
 const label = { fontSize: 11, fontWeight: 700, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '.05em', display: 'block', marginBottom: 4 };
 
+// section divider header so the form reads as a guided intake, not a wall of fields
+function Section({ n, title }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0 2px' }}>
+      <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--amber)', color: '#1a1206', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{n}</span>
+      <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--fg-2)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{title}</span>
+      <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+    </div>
+  );
+}
+
+// one-tap plumbing job types — fills the Service field so phone-booking is fast (live-board triage feel)
+const JOB_PRESETS = ['Drain unclog', 'Water heater', 'Toilet', 'Leak repair', 'Sewer / camera', 'Garbage disposal', 'Faucet / fixture', 'Sump pump', 'Repipe', 'Gas line'];
+const PRIORITIES = [{ v: 'normal', label: 'Normal', color: 'var(--fg-2)' }, { v: 'urgent', label: 'Urgent', color: 'var(--amber)' }, { v: 'emergency', label: 'Emergency', color: 'var(--red)' }];
+
 function todayStr() { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`; }
 
 export default function BookingForm({ techs }) {
@@ -19,6 +34,8 @@ export default function BookingForm({ techs }) {
   const [results, setResults] = useState([]);
   const [picked, setPicked] = useState(null);        // {id,name,phone,address}
   const [addr, setAddr] = useState('');
+  const [service, setService] = useState('');        // job type (preset chips + free text)
+  const [priority, setPriority] = useState('normal');
   const [msg, setMsg] = useState(null);
   const seq = useRef(0);
 
@@ -35,17 +52,18 @@ export default function BookingForm({ techs }) {
     const form = e.currentTarget;
     const fd = new FormData(form);
     if (picked) fd.set('customerId', picked.id);
+    fd.set('jobType', service); fd.set('priority', priority);
     const d = fd.get('date'), t = fd.get('time');
     if (d && t) { try { fd.set('scheduledISO', new Date(`${d}T${t}`).toISOString()); } catch (_) {} }
     setMsg(null);
-    start(async () => { const res = await createBooking(fd); setMsg(res); if (res.ok) { form.reset(); setPicked(null); setQuery(''); setAddr(''); router.refresh(); } });
+    start(async () => { const res = await createBooking(fd); setMsg(res); if (res.ok) { form.reset(); setPicked(null); setQuery(''); setAddr(''); setService(''); setPriority('normal'); router.refresh(); } });
   }
 
   return (
     <form onSubmit={onSubmit} className="card card-amber" style={{ display: 'grid', gap: 14 }}>
       {/* Customer */}
+      <Section n="1" title="Customer" />
       <div>
-        <span style={label}>Customer</span>
         <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
           <button type="button" onClick={() => { setMode('existing'); setPicked(null); }} className="pill" style={{ cursor: 'pointer', fontWeight: mode === 'existing' ? 800 : 600, background: mode === 'existing' ? 'var(--amber)' : 'var(--surface-2)', color: mode === 'existing' ? '#1a1206' : 'var(--fg-2)' }}>Find existing</button>
           <button type="button" onClick={() => { setMode('new'); setPicked(null); }} className="pill" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: mode === 'new' ? 800 : 600, background: mode === 'new' ? 'var(--amber)' : 'var(--surface-2)', color: mode === 'new' ? '#1a1206' : 'var(--fg-2)' }}><UserPlus size={13} /> New customer</button>
@@ -87,12 +105,20 @@ export default function BookingForm({ techs }) {
       </div>
 
       {/* Job */}
+      <Section n="2" title="The job" />
       <div>
-        <span style={label}>Service</span>
-        <input name="jobType" placeholder="e.g. Drain unclog — kitchen" style={input} required autoComplete="off" />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {JOB_PRESETS.map((p) => {
+            const on = service === p;
+            return <button type="button" key={p} onClick={() => setService(p)} className="pill" style={{ cursor: 'pointer', fontSize: 12, fontWeight: on ? 800 : 600, background: on ? 'var(--amber)' : 'var(--surface-2)', color: on ? '#1a1206' : 'var(--fg-2)', border: '1px solid var(--border)' }}>{p}</button>;
+          })}
+        </div>
+        <input value={service} onChange={(e) => setService(e.target.value)} placeholder="Service — tap a type above or type it (e.g. Drain unclog — kitchen)" style={input} required autoComplete="off" />
       </div>
       <input name="address" value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="Job address (defaults to customer)" style={input} autoComplete="off" />
 
+      {/* Schedule */}
+      <Section n="3" title="Schedule" />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
         <div><span style={label}>Date</span><input name="date" type="date" defaultValue={todayStr()} style={input} /></div>
         <div><span style={label}>Time</span><input name="time" type="time" defaultValue="09:00" style={input} /></div>
@@ -105,7 +131,12 @@ export default function BookingForm({ techs }) {
           <select name="techId" defaultValue="" style={input}><option value="">— unassigned —</option>{techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
         </div>
         <div><span style={label}>Priority</span>
-          <select name="priority" defaultValue="normal" style={input}><option value="normal">Normal</option><option value="urgent">Urgent</option><option value="emergency">Emergency</option></select>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {PRIORITIES.map((p) => {
+              const on = priority === p.v;
+              return <button type="button" key={p.v} onClick={() => setPriority(p.v)} style={{ flex: 1, cursor: 'pointer', padding: '9px 4px', borderRadius: 8, fontSize: 12, fontWeight: on ? 800 : 600, border: `1px solid ${on ? p.color : 'var(--border)'}`, background: on ? `color-mix(in oklab, ${p.color} 16%, var(--surface-2))` : 'var(--surface-2)', color: on ? p.color : 'var(--fg-2)' }}>{p.label}</button>;
+            })}
+          </div>
         </div>
         <div><span style={label}>Est. $ (optional)</span><input name="amount" type="number" min="0" step="1" placeholder="0" style={input} /></div>
       </div>
