@@ -132,6 +132,20 @@ export async function setTechSupervisor(formData) {
   return { ok: true, msg: 'Supervisor set.' };
 }
 
+// Map a roster person to their Discord name/handle — so 👍 reactions on #sheetz meeting posts match them
+// (no need for anyone to rename in Discord). Set it to what shows next to their face in Discord.
+export async function setTechDiscord(formData) {
+  let sb;
+  try { ({ sb } = await assertManager()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const id = String(formData.get('id') || '');
+  const discord_name = String(formData.get('discord_name') || '').trim().slice(0, 80);
+  if (!id) return { ok: false, msg: 'Bad request.' };
+  const { error } = await sb.from('techs').update({ discord_name: discord_name || null }).eq('id', id);
+  if (error) return { ok: false, msg: /discord|column|schema cache/i.test(error.message || '') ? 'Run supabase/61_comms_desk.sql first.' : error.message };
+  revalidatePath('/team'); revalidatePath('/messages');
+  return { ok: true, msg: 'Discord name saved.' };
+}
+
 // Set a roster person's phone — so the office can text them (dispatch.me link, etc.).
 export async function setTechPhone(formData) {
   let sb;

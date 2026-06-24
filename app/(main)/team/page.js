@@ -30,11 +30,12 @@ export default async function Team() {
   const { data, error } = await sb.auth.admin.listUsers({ page: 1, perPage: 200 });
 
   // techs (for the tech-link picker + position editor) + profiles (server-authoritative role + tech link)
-  let techQ = await sb.from('techs').select('id, name, position, active, phone, supervisor').order('name');
+  let techQ = await sb.from('techs').select('id, name, position, active, phone, supervisor, discord_name').order('name');
+  if (techQ.error) techQ = await sb.from('techs').select('id, name, position, active, phone, supervisor').order('name'); // pre-discord
   if (techQ.error) techQ = await sb.from('techs').select('id, name, position, active, phone').order('name'); // pre-64
   if (techQ.error) techQ = await sb.from('techs').select('id, name, position, active').order('name'); // pre-43
   if (techQ.error) techQ = await sb.from('techs').select('id, name').order('name'); // pre-38
-  const techs = (techQ.data || []).map((t) => ({ id: t.id, name: t.name, position: t.position || 'tech', active: t.active !== false, phone: t.phone || '', supervisor: t.supervisor || '' }));
+  const techs = (techQ.data || []).map((t) => ({ id: t.id, name: t.name, position: t.position || 'tech', active: t.active !== false, phone: t.phone || '', supervisor: t.supervisor || '', discord_name: t.discord_name || '' }));
   // People who can be a supervisor (FS / lead / GM / owner positions), for the dropdown.
   const SUP_POS = new Set(['field_supervisor', 'foreman', 'general_manager', 'owner']);
   const supervisorNames = techs.filter((t) => SUP_POS.has(t.position)).map((t) => t.name);

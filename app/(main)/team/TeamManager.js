@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { addUser, setRole, setTechLink, setTechPosition, setTechPhone, setTechSupervisor, setUserActive } from './actions';
+import { addUser, setRole, setTechLink, setTechPosition, setTechPhone, setTechSupervisor, setTechDiscord, setUserActive } from './actions';
 import { roleMeta } from '@/lib/roles';
 import { POSITIONS as POSITION_OPTS } from '@/lib/positions';
 
@@ -72,6 +72,13 @@ export default function TeamManager({ roleOptions, users, techs = [], supervisor
     const res = await setTechSupervisor(fd);
     setMsg(res);
     router.refresh();
+  }
+
+  async function onDiscordSave(id, discord_name) {
+    const fd = new FormData();
+    fd.set('id', id); fd.set('discord_name', discord_name);
+    const res = await setTechDiscord(fd);
+    setMsg(res);
   }
 
   async function onActiveToggle(id, name, active) {
@@ -174,13 +181,15 @@ export default function TeamManager({ roleOptions, users, techs = [], supervisor
           </div>
           {!shownTechs.length && <div className="muted" style={{ fontSize: 12, padding: '6px 2px' }}>No one matches.</div>}
           {shownTechs.map((t) => (
-            <div key={t.id} className="card" style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 10, alignItems: 'center', padding: '10px 14px' }}>
+            <div key={t.id} className="card" style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto auto', gap: 10, alignItems: 'center', padding: '10px 14px' }}>
               <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {t.name}
                 {!fieldIds.has(t.position || 'tech') && <span className="pill" style={{ marginLeft: 8, fontSize: 10, color: t.position === 'terminated' ? 'var(--red)' : 'var(--fg-3)' }}>{t.position === 'terminated' ? 'terminated' : 'off the board'}</span>}
               </div>
+              <input defaultValue={t.discord_name || ''} placeholder="Discord name" onBlur={(e) => { if (e.target.value.trim() !== (t.discord_name || '')) onDiscordSave(t.id, e.target.value.trim()); }}
+                title="Only if their Discord name ≠ their real name — maps 👍 reactions to this person" style={{ ...inputStyle, width: 120 }} />
               <input defaultValue={t.phone || ''} placeholder="cell #" onBlur={(e) => { if (e.target.value.trim() !== (t.phone || '')) onPhoneSave(t.id, e.target.value.trim()); }}
-                title="Tech cell — for dispatch.me link + on-the-way texts" style={{ ...inputStyle, width: 120 }} />
+                title="Tech cell — for dispatch.me link + on-the-way texts" style={{ ...inputStyle, width: 110 }} />
               <select defaultValue={t.supervisor || ''} onChange={(e) => onSupervisorChange(t.id, e.target.value)} title="Which supervisor manages this person (drives meeting targeting)"
                 style={{ ...inputStyle, width: 'auto' }}>
                 <option value="">— supervisor —</option>
