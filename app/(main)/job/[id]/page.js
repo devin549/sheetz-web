@@ -3,8 +3,9 @@ import { notFound } from 'next/navigation';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requirePerm } from '@/lib/guard';
 import { can } from '@/lib/roles';
-import { computeCloseout } from '@/lib/qa';
+import { computeCloseout, getDispo } from '@/lib/qa';
 import JobPhotos from './JobPhotos';
+import CloseoutV2 from './CloseoutV2';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
 
@@ -85,6 +86,8 @@ export default async function JobDetail({ params }) {
   const reviewByPhoto = {}; // latest review per photo (reviews are desc by created_at)
   reviews.forEach((r) => { if (!reviewByPhoto[r.photo_id]) reviewByPhoto[r.photo_id] = r; });
   const closeout = computeCloseout({ photos, reviews });
+  const dispo = await getDispo(sb, id, job);
+  const needWarranty = ['warranty', 'insurance'].includes(String(job.job_class || '').toLowerCase()) || !!job.warranty_provider;
 
   const customer = job.customers || {};
   const techName = job.tech_name || job.techs?.name || 'Unassigned';
@@ -183,6 +186,8 @@ export default async function JobDetail({ params }) {
           )}
         </div>
       )}
+
+      {!photoError && <CloseoutV2 jobId={id} dispo={dispo} needWarranty={needWarranty} />}
 
       <JobPhotos
         jobId={id}

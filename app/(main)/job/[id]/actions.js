@@ -209,3 +209,32 @@ export async function overrideCloseout(jobId, reason) {
   revalidatePath('/supervisor/jobs');
   return { ok: true, msg: 'Closeout overridden — job marked complete.' };
 }
+
+// Closeout v2 — save the disposition checklist (payment, signature, invoice, review, cash, warranty).
+export async function saveCloseout(formData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Not signed in.' };
+  const profile = await loadProfile(user);
+  if (profile.active === false || !(can(profile.role, 'changeStatus') || can(profile.role, 'qaReview') || canUploadPhotos(profile.role))) return { ok: false, msg: 'Your role can’t set closeout.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const job_id = cleanText(formData.get('jobId'), 80);
+  if (!job_id) return { ok: false, msg: 'No job.' };
+  const bool = (k) => formData.get(k) === 'true' || formData.get(k) === 'on';
+  const row = {
+    job_id,
+    payment_disposition: cleanText(formData.get('payment_disposition'), 40) || null,
+    signed: bool('signed'), signed_by: cleanText(formData.get('signed_by'), 80) || null,
+    invoice_status: cleanText(formData.get('invoice_status'), 30) || null,
+    review_requested: bool('review_requested'),
+    cash_status: cleanText(formData.get('cash_status'), 20) || null,
+    warranty_packet: bool('warranty_packet'),
+    note: cleanText(formData.get('note'), 300) || null,
+    updated_by: profile.name || user.email, updated_at: new Date().toISOString(),
+  };
+  const { error } = await sb.from('job_closeout').upsert(row, { onConflict: 'job_id' });
+  if (error) return { ok: false, msg: /schema cache|does not exist|could not find/i.test(error.message || '') ? 'Run supabase/55_job_closeout.sql first.' : error.message };
+  revalidatePath(`/job/${job_id}`); revalidatePath('/board');
+  return { ok: true, msg: 'Closeout saved.' };
+}
