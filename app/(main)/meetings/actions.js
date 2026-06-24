@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { postToDiscord } from '@/lib/discord';
 import { FIELD_POSITIONS } from '@/lib/positions';
+import { requiredNames } from '@/lib/meetings';
 import { revalidatePath } from 'next/cache';
 
 // Who can SEND a meeting: field supervisor, GM, office manager, owner.
@@ -66,9 +67,9 @@ export async function nudgePending(meetingId) {
   const { data: m } = await sb.from('meetings').select('*').eq('id', meetingId).maybeSingle();
   if (!m) return { ok: false, msg: 'Meeting not found.' };
   let roster = [];
-  try { const { data } = await sb.from('techs').select('name, crew, position, active').limit(500); roster = (data || []).filter((t) => t.name); } catch (_) {}
+  try { const { data } = await sb.from('techs').select('name, crew, position, active, supervisor').limit(500); roster = (data || []).filter((t) => t.name); } catch (_) { try { const { data } = await sb.from('techs').select('name, crew, position, active').limit(500); roster = (data || []).filter((t) => t.name); } catch (__) {} }
   const field = roster.filter((t) => t.active !== false && (!t.position || FIELD_POSITIONS.includes(String(t.position).toLowerCase().replace(/\s+/g, '_'))));
-  const required = (m.audience === 'everyone' ? field : field.filter((t) => (t.crew || '') === m.audience)).map((t) => t.name);
+  const required = requiredNames(field, m.audience);
   const { data: acks } = await sb.from('meeting_acks').select('tech_name').eq('meeting_id', meetingId);
   const acked = new Set((acks || []).map((a) => String(a.tech_name).toLowerCase()));
   const pending = required.filter((n) => !acked.has(n.toLowerCase()));

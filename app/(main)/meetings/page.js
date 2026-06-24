@@ -1,6 +1,7 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { FIELD_POSITIONS } from '@/lib/positions';
+import { requiredNames } from '@/lib/meetings';
 import MeetingsClient from './MeetingsClient';
 
 export const dynamic = 'force-dynamic';
@@ -18,16 +19,16 @@ export default async function Meetings() {
 
   // Roster for audience resolution + crew dropdown.
   let roster = [];
-  let tQ = await sb.from('techs').select('name, crew, position, active').limit(500);
+  let tQ = await sb.from('techs').select('name, crew, position, active, supervisor').limit(500);
+  if (tQ.error) tQ = await sb.from('techs').select('name, crew, position, active').limit(500);
   if (tQ.error) tQ = await sb.from('techs').select('name, crew').limit(500);
   if (!tQ.error) roster = (tQ.data || []).filter((t) => t.name);
   const fieldRoster = roster.filter((t) => t.active !== false && (!t.position || FIELD_POSITIONS.includes(String(t.position).toLowerCase().replace(/\s+/g, '_'))));
   const crewNames = [...new Set(roster.map((t) => t.crew).filter(Boolean))].sort();
-  const myCrew = (roster.find((t) => (t.name || '').toLowerCase() === myName.toLowerCase()) || {}).crew || '';
+  // How many people report to the viewer (so we know whether to offer "My crew").
+  const myManagedCount = fieldRoster.filter((t) => String(t.supervisor || '').toLowerCase() === myName.toLowerCase()).length;
 
-  const requiredFor = (audience) => (audience === 'everyone'
-    ? fieldRoster.map((t) => t.name)
-    : fieldRoster.filter((t) => (t.crew || '') === audience).map((t) => t.name));
+  const requiredFor = (audience) => requiredNames(fieldRoster, audience);
 
   // Upcoming + recent meetings.
   let meetings = [];
@@ -54,7 +55,7 @@ export default async function Meetings() {
       <div className="h1">📅 Meetings</div>
       <p className="muted">Send a meeting to your crew (or everyone). Each person taps 👍 to acknowledge — and it adds to their calendar.</p>
       {missing && <div className="notice">Meetings need their tables — run <code>supabase/63_meetings.sql</code> in Supabase.</div>}
-      <MeetingsClient meetings={meetings} crewNames={crewNames} canCreate={canCreate} myName={myName} myCrew={myCrew} />
+      <MeetingsClient meetings={meetings} crewNames={crewNames} canCreate={canCreate} myName={myName} myManagedCount={myManagedCount} />
     </div>
   );
 }

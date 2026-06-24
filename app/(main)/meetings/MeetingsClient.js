@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createMeeting, acknowledgeMeeting, deleteMeeting, nudgePending } from './actions';
 import { googleCalendarLink } from '@/lib/calendar';
+import { audienceLabel } from '@/lib/meetings';
 import { ThumbsUp, CalendarPlus, Check, Send, Trash2, Users, MapPin, Clock, ChevronDown, Bell } from 'lucide-react';
 
 const input = { width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 10px', fontSize: 14, fontFamily: 'inherit' };
@@ -23,7 +24,7 @@ function MeetingCard({ m, canCreate, myName, onAck, onDel, onNudge, nudged, busy
           <div className="muted" style={{ fontSize: 12.5, display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 3 }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Clock size={12} /> {whenStr(m.starts_at)}</span>
             {m.location && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><MapPin size={12} /> {m.location}</span>}
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Users size={12} /> {m.audience === 'everyone' ? 'Everyone' : `${m.audience} crew`}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Users size={12} /> {audienceLabel(m.audience)}</span>
           </div>
         </div>
         {canCreate && <button onClick={() => onDel(m.id)} disabled={busy} title="Remove meeting" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--fg-3)', padding: 2 }}><Trash2 size={15} /></button>}
@@ -56,7 +57,7 @@ function MeetingCard({ m, canCreate, myName, onAck, onDel, onNudge, nudged, busy
   );
 }
 
-export default function MeetingsClient({ meetings, crewNames, canCreate, myName, myCrew }) {
+export default function MeetingsClient({ meetings, crewNames, canCreate, myName, myManagedCount = 0 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [open, setOpen] = useState(false);
@@ -90,7 +91,8 @@ export default function MeetingsClient({ meetings, crewNames, canCreate, myName,
             <div><span style={lbl}>Time *</span><input name="time" type="time" style={input} required /></div>
             <div><span style={lbl}>Minutes</span><input name="duration" type="number" min="15" step="15" defaultValue={60} style={input} /></div>
             <div><span style={lbl}>Audience</span>
-              <select name="audience" defaultValue={myCrew || 'everyone'} style={input}>
+              <select name="audience" defaultValue={myManagedCount > 0 ? `mgr:${myName}` : 'everyone'} style={input}>
+                {myManagedCount > 0 && <option value={`mgr:${myName}`}>My crew — {myManagedCount} I manage</option>}
                 <option value="everyone">Everyone</option>
                 {crewNames.map((c) => <option key={c} value={c}>{c} crew</option>)}
               </select>

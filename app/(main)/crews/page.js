@@ -1,6 +1,7 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requirePerm } from '@/lib/guard';
 import { nyTodayStr } from '@/lib/day';
+import PersonCard from '@/components/PersonCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,7 @@ export default async function Crews() {
                 const helpers = helpersByTech[String(t.name || '').toLowerCase()] || [];
                 return (
                   <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                    <span style={{ width: 26, height: 26, borderRadius: '50%', background: crewColor(c), color: '#fff', fontSize: 9.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--mono)', flexShrink: 0 }}>{initials(t.name)}</span>
+                    <PersonCard name={t.name}><span style={{ width: 26, height: 26, borderRadius: '50%', background: crewColor(c), color: '#fff', fontSize: 9.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--mono)', flexShrink: 0 }}>{initials(t.name)}</span></PersonCard>
                     <span style={{ minWidth: 0 }}>
                       <span style={{ fontSize: 13, fontWeight: 600, display: 'block' }}>{t.name}</span>
                       {helpers.length > 0 && <span className="muted" style={{ fontSize: 11 }}>+ {helpers.join(', ')}</span>}

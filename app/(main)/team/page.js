@@ -30,10 +30,14 @@ export default async function Team() {
   const { data, error } = await sb.auth.admin.listUsers({ page: 1, perPage: 200 });
 
   // techs (for the tech-link picker + position editor) + profiles (server-authoritative role + tech link)
-  let techQ = await sb.from('techs').select('id, name, position, active, phone').order('name');
+  let techQ = await sb.from('techs').select('id, name, position, active, phone, supervisor').order('name');
+  if (techQ.error) techQ = await sb.from('techs').select('id, name, position, active, phone').order('name'); // pre-64
   if (techQ.error) techQ = await sb.from('techs').select('id, name, position, active').order('name'); // pre-43
   if (techQ.error) techQ = await sb.from('techs').select('id, name').order('name'); // pre-38
-  const techs = (techQ.data || []).map((t) => ({ id: t.id, name: t.name, position: t.position || 'tech', active: t.active !== false, phone: t.phone || '' }));
+  const techs = (techQ.data || []).map((t) => ({ id: t.id, name: t.name, position: t.position || 'tech', active: t.active !== false, phone: t.phone || '', supervisor: t.supervisor || '' }));
+  // People who can be a supervisor (FS / lead / GM / owner positions), for the dropdown.
+  const SUP_POS = new Set(['field_supervisor', 'foreman', 'general_manager', 'owner']);
+  const supervisorNames = techs.filter((t) => SUP_POS.has(t.position)).map((t) => t.name);
   const profById = {};
   try { const { data: pData } = await sb.from('profiles').select('user_id, role, tech_id, active'); (pData || []).forEach((p) => { profById[p.user_id] = p; }); } catch (_) {}
   const profilesReady = Object.keys(profById).length > 0;
@@ -57,7 +61,7 @@ export default async function Team() {
       <p className="muted">Add each person as you hire them and pick their position. Change anyone’s role anytime — it takes effect next time they load a page. Link a tech to their roster row so they see only their own jobs.</p>
       {error && <div className="notice">Couldn’t load logins: {error.message}</div>}
       {!profilesReady && <div className="notice" style={{ fontSize: 12 }}>Roles save to login metadata for now. Run <code>supabase/24_profiles.sql</code> to turn on the profiles table (role + tech link + audit).</div>}
-      <TeamManager roleOptions={roleOptions} users={users} techs={techs} />
+      <TeamManager roleOptions={roleOptions} users={users} techs={techs} supervisorNames={supervisorNames} />
     </div>
   );
 }

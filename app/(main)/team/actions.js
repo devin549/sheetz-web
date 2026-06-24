@@ -119,6 +119,19 @@ export async function setTechPosition(formData) {
   return { ok: true, msg: 'Position updated.' };
 }
 
+// Assign which field supervisor manages this person — drives meeting/announcement targeting ("my crew").
+export async function setTechSupervisor(formData) {
+  let sb;
+  try { ({ sb } = await assertManager()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const id = String(formData.get('id') || '');
+  const supervisor = String(formData.get('supervisor') || '').trim().slice(0, 80);
+  if (!id) return { ok: false, msg: 'Bad request.' };
+  const { error } = await sb.from('techs').update({ supervisor: supervisor || null }).eq('id', id);
+  if (error) return { ok: false, msg: /supervisor|column|schema cache/i.test(error.message || '') ? 'Run supabase/64_tech_supervisor.sql first.' : error.message };
+  revalidatePath('/team'); revalidatePath('/meetings');
+  return { ok: true, msg: 'Supervisor set.' };
+}
+
 // Set a roster person's phone — so the office can text them (dispatch.me link, etc.).
 export async function setTechPhone(formData) {
   let sb;

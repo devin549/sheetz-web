@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { addUser, setRole, setTechLink, setTechPosition, setTechPhone, setUserActive } from './actions';
+import { addUser, setRole, setTechLink, setTechPosition, setTechPhone, setTechSupervisor, setUserActive } from './actions';
 import { roleMeta } from '@/lib/roles';
 import { POSITIONS as POSITION_OPTS } from '@/lib/positions';
 
@@ -19,7 +19,7 @@ const inputStyle = {
   borderRadius: 8, padding: '9px 11px', fontSize: 14, width: '100%',
 };
 
-export default function TeamManager({ roleOptions, users, techs = [] }) {
+export default function TeamManager({ roleOptions, users, techs = [], supervisorNames = [] }) {
   const router = useRouter();
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -64,6 +64,14 @@ export default function TeamManager({ roleOptions, users, techs = [] }) {
     fd.set('id', id); fd.set('phone', phone);
     const res = await setTechPhone(fd);
     setMsg(res);
+  }
+
+  async function onSupervisorChange(id, supervisor) {
+    const fd = new FormData();
+    fd.set('id', id); fd.set('supervisor', supervisor);
+    const res = await setTechSupervisor(fd);
+    setMsg(res);
+    router.refresh();
   }
 
   async function onActiveToggle(id, name, active) {
@@ -166,13 +174,18 @@ export default function TeamManager({ roleOptions, users, techs = [] }) {
           </div>
           {!shownTechs.length && <div className="muted" style={{ fontSize: 12, padding: '6px 2px' }}>No one matches.</div>}
           {shownTechs.map((t) => (
-            <div key={t.id} className="card" style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 10, alignItems: 'center', padding: '10px 14px' }}>
+            <div key={t.id} className="card" style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 10, alignItems: 'center', padding: '10px 14px' }}>
               <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {t.name}
                 {!fieldIds.has(t.position || 'tech') && <span className="pill" style={{ marginLeft: 8, fontSize: 10, color: t.position === 'terminated' ? 'var(--red)' : 'var(--fg-3)' }}>{t.position === 'terminated' ? 'terminated' : 'off the board'}</span>}
               </div>
               <input defaultValue={t.phone || ''} placeholder="cell #" onBlur={(e) => { if (e.target.value.trim() !== (t.phone || '')) onPhoneSave(t.id, e.target.value.trim()); }}
-                title="Tech cell — for dispatch.me link + on-the-way texts" style={{ ...inputStyle, width: 130 }} />
+                title="Tech cell — for dispatch.me link + on-the-way texts" style={{ ...inputStyle, width: 120 }} />
+              <select defaultValue={t.supervisor || ''} onChange={(e) => onSupervisorChange(t.id, e.target.value)} title="Which supervisor manages this person (drives meeting targeting)"
+                style={{ ...inputStyle, width: 'auto' }}>
+                <option value="">— supervisor —</option>
+                {[...new Set([...supervisorNames, t.supervisor].filter(Boolean))].map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
               <select defaultValue={t.position || 'tech'} onChange={(e) => onPositionChange(t.id, e.target.value)}
                 style={{ ...inputStyle, width: 'auto', borderColor: t.position === 'office' ? 'var(--border)' : 'var(--amber)' }}>
                 {POSITION_OPTS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
