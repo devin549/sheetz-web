@@ -24,13 +24,87 @@ function endOfDayISO(date) {
   return d.toISOString();
 }
 
-async function safeQuery(label, queryBuilder) {
+function isColumnMismatch(message) {
+  return /column .* does not exist|could not find .* column|schema cache/i.test(message || '');
+}
+
+async function safeQuery(label, queryBuilder, options = {}) {
   try {
     const { data, error } = await queryBuilder;
-    return { label, data: data || [], error: error?.message || null };
+    return { label, data: data || [], error: error?.message || null, optional: !!options.optional };
   } catch (error) {
-    return { label, data: [], error: error?.message || String(error) };
+    return { label, data: [], error: error?.message || String(error), optional: !!options.optional };
   }
+}
+
+async function queryTodaysJobs(sb, todayStart, todayEnd) {
+  const run = (extra = '') => sb
+    .from('jobs')
+    .select('id, status, priority, scheduled_at, tech_id' + extra + ', customers(name, address, phone), techs(name)')
+    .gte('scheduled_at', todayStart)
+    .lte('scheduled_at', todayEnd)
+    .order('scheduled_at', { ascending: true })
+    .limit(250);
+
+  let res = await run(', job_number, job_type, amount, tech_name, duration_min');
+  if (res.error && isColumnMismatch(res.error.message)) res = await run(', job_type, amount');
+  if (res.error && isColumnMismatch(res.error.message)) res = await run('');
+
+  const data = (res.data || []).map((job) => ({
+    id: job.id,
+    job_number: job.job_number || null,
+    status: job.status || '',
+    priority: job.priority || '',
+    scheduled_at: job.scheduled_at || null,
+    job_type: job.job_type || '',
+    amount: Number(job.amount) || 0,
+    duration_min: job.duration_min || null,
+    customer_name: job.customers?.name || 'Customer',
+    customer_phone: job.customers?.phone || '',
+    customer_address: job.customers?.address || '',
+    tech_id: job.tech_id || null,
+    tech_name: job.tech_name || job.techs?.name || '',
+  }));
+
+  return { label: 'todaysJobs', data, error: res.error?.message || null, optional: false };
+}
+
+async function queryTopPastDue(sb) {
+  const invoices = await safeQuery(
+    'openInvoices',
+    sb
+      .from('invoices')
+      .select('id, invoice_number, invoice_date, status, total, balance, customer_id')
+      .eq('status', 'open')
+      .order('balance', { ascending: false, nullsFirst: false })
+      .limit(75)
+  );
+
+  if (invoices.error) return { label: 'topPastDue', data: [], error: invoices.error, optional: false };
+
+  const ids = [...new Set((invoices.data || []).map((row) => row.customer_id).filter(Boolean))];
+  const nameById = {};
+  if (ids.length) {
+    const customers = await safeQuery(
+      'pastDueCustomers',
+      sb.from('customers').select('id, name, phone, email').in('id', ids.slice(0, 300))
+    );
+    (customers.data || []).forEach((customer) => { nameById[customer.id] = customer; });
+  }
+
+  const data = (invoices.data || []).map((invoice) => ({
+    id: invoice.id,
+    customer_name: nameById[invoice.customer_id]?.name || 'Customer',
+    customer_phone: nameById[invoice.customer_id]?.phone || '',
+    customer_email: nameById[invoice.customer_id]?.email || '',
+    invoice_number: invoice.invoice_number || '',
+    invoice_date: invoice.invoice_date || null,
+    status: invoice.status || 'open',
+    total: Number(invoice.total) || 0,
+    balance: Number(invoice.balance) || 0,
+  }));
+
+  return { label: 'topPastDue', data, error: null, optional: false };
 }
 
 async function gatherSnapshot() {
@@ -52,16 +126,7 @@ async function gatherSnapshot() {
     recentMoves,
     cancellations,
   ] = await Promise.all([
-    safeQuery(
-      'todaysJobs',
-      sb
-        .from('jobs')
-        .select('id, job_number, customer_name, status, scheduled_at, tech_name, amount, job_type, priority')
-        .gte('scheduled_at', todayStart)
-        .lte('scheduled_at', todayEnd)
-        .order('scheduled_at', { ascending: true })
-        .limit(250)
-    ),
+    queryTodaysJobs(sb, todayStart, todayEnd),
     safeQuery(
       'openEtaReports',
       sb
@@ -69,7 +134,8 @@ async function gatherSnapshot() {
         .select('id, job_id, minutes, note, needs_help, customer_notified, created_by_name, created_at')
         .is('ack_at', null)
         .order('created_at', { ascending: false })
-        .limit(75)
+        .limit(75),
+      { optional: true }
     ),
     safeQuery(
       'failedCloseouts',
@@ -79,16 +145,10 @@ async function gatherSnapshot() {
         .eq('result', 'fail')
         .gte('created_at', sevenDaysAgo.toISOString())
         .order('created_at', { ascending: false })
-        .limit(75)
+        .limit(75),
+      { optional: true }
     ),
-    safeQuery(
-      'topPastDue',
-      sb
-        .from('invoices')
-        .select('customer_name, invoice_number, total_due, balance, due_date, aging_bucket, status')
-        .order('total_due', { ascending: false })
-        .limit(75)
-    ),
+    queryTopPastDue(sb),
     safeQuery(
       'recentReviews',
       sb
@@ -96,16 +156,18 @@ async function gatherSnapshot() {
         .select('customer_name, rating, text, source, tech_name, created_at')
         .gte('created_at', sevenDaysAgo.toISOString())
         .order('created_at', { ascending: false })
-        .limit(50)
+        .limit(50),
+      { optional: true }
     ),
     safeQuery(
       'recentMoves',
       sb
         .from('job_moves')
-        .select('job_id, action, from_tech_name, to_tech_name, moved_by, created_at')
+        .select('job_id, action, from_tech_name, to_tech_name, by_email, created_at')
         .gte('created_at', sevenDaysAgo.toISOString())
         .order('created_at', { ascending: false })
-        .limit(100)
+        .limit(100),
+      { optional: true }
     ),
     safeQuery(
       'cancellations',
@@ -127,8 +189,20 @@ async function gatherSnapshot() {
     recentMoves,
     cancellations,
   ]
-    .filter((item) => item.error)
+    .filter((item) => item.error && !item.optional)
     .map((item) => ({ source: item.label, error: item.error }));
+
+  const warnings = [
+    todaysJobs,
+    openEtaReports,
+    failedCloseouts,
+    topPastDue,
+    recentReviews,
+    recentMoves,
+    cancellations,
+  ]
+    .filter((item) => item.error && item.optional)
+    .map((item) => ({ source: item.label, warning: item.error }));
 
   return {
     generated_for: now.toISOString(),
@@ -138,6 +212,7 @@ async function gatherSnapshot() {
       seven_days_ago: sevenDaysAgo.toISOString(),
     },
     data_errors: errors,
+    optional_warnings: warnings,
     todays_jobs: todaysJobs.data,
     open_eta_reports: openEtaReports.data,
     failed_closeouts: failedCloseouts.data,
@@ -206,6 +281,7 @@ You are read-only. Do not claim you changed data, sent messages, updated payroll
 Find operational risks, money leaks, coaching opportunities, software/data gaps, and PSPN-worthy highlights.
 Be direct, practical, fair, and specific. Roast behavior only, never personal traits or protected characteristics.
 Every recommendation should be manager-approved before any customer-facing or payroll action.
+If optional_warnings mention missing optional tables such as reviews, QA, ETA, or job move history, report that as a software/data gap but do not call the whole snapshot blind when jobs or AR loaded.
       `.trim(),
       input: [
         {
@@ -228,7 +304,7 @@ Every recommendation should be manager-approved before any customer-facing or pa
       model: MODEL,
       generatedAt: new Date().toISOString(),
       report: JSON.parse(response.output_text),
-      snapshotWarnings: snapshot.data_errors,
+      snapshotWarnings: [...snapshot.data_errors, ...snapshot.optional_warnings],
     });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error.message || String(error) }, { status: 500 });
