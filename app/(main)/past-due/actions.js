@@ -92,7 +92,7 @@ export async function createPayLink(customerId, amountDollars, customerName) {
   if (!r.ok) return { ok: false, msg: 'Stripe: ' + r.error };
   // Log that a pay link was generated (audit trail).
   try { await sb.from('ar_activity').insert({ action: 'pay_link_created', customer_id: customerId || null, customer_name: name || null, invoice_number: invoiceNumber, amount: cents / 100, by_email: 'paylink' }); } catch (_) {}
-  return { ok: true, url: r.url };
+  return { ok: true, url: r.url, baseDollars: (r.baseCents || cents) / 100, feeDollars: (r.feeCents || 0) / 100, totalDollars: (r.totalCents || cents) / 100 };
 }
 
 // Mark one invoice paid → it drops out of past-due + logs to the AR ledger.

@@ -22,8 +22,11 @@ export async function POST(request) {
     const md = s.metadata || {};
     const sb = getSupabaseAdmin();
     if (sb) {
-      const paidCents = Number(s.amount_total) || 0;
-      const paidDollars = Math.round(paidCents) / 100;
+      const totalCents = Number(s.amount_total) || 0;
+      const baseCents = Number(md.base_cents) || totalCents; // the invoice amount (fee excluded)
+      const feeCents = Number(md.fee_cents) || 0;
+      const paidDollars = Math.round(baseCents) / 100;       // what clears AR
+      const totalDollars = Math.round(totalCents) / 100;     // what they actually paid (base + fee)
       // Mark the invoice paid (best-effort; tolerate schema differences).
       if (md.invoice_id) {
         try {
@@ -41,7 +44,7 @@ export async function POST(request) {
       } catch (_) {}
       // Surface it on the Comms Desk too.
       try {
-        await sb.from('cb_comms').insert({ channel: 'system', direction: 'in', to_addr: 'AR', from_name: 'Stripe', body: `💳 Payment received: $${paidDollars.toLocaleString()}${md.invoice_number ? ` on invoice ${md.invoice_number}` : ''}${md.customer_name ? ` from ${md.customer_name}` : ''}.`, status: 'sent' });
+        await sb.from('cb_comms').insert({ channel: 'system', direction: 'in', to_addr: 'AR', from_name: 'Stripe', body: `💳 Payment received: $${totalDollars.toLocaleString()}${feeCents ? ` ($${paidDollars.toLocaleString()} + $${(feeCents / 100).toLocaleString()} card fee)` : ''}${md.invoice_number ? ` on invoice ${md.invoice_number}` : ''}${md.customer_name ? ` from ${md.customer_name}` : ''}.`, status: 'sent' });
       } catch (_) {}
     }
   }
