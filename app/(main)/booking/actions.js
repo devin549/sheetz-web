@@ -51,10 +51,40 @@ export async function customerSnapshot(id) {
     const { data: inv } = await sb.from('invoices').select('balance, status').eq('customer_id', id).eq('status', 'open').limit(200);
     openBalance = (inv || []).reduce((s, i) => s + (Number(i.balance) || 0), 0);
   } catch (_) { openBalance = 0; }
+
+  // prior tech + past-issue signal (cancelled jobs) from this customer's jobs
+  let priorTech = null, cancelled = 0;
+  try {
+    const { data: jobs } = await sb.from('jobs').select('tech_name, status, scheduled_at').eq('customer_id', id).order('scheduled_at', { ascending: false }).limit(50);
+    for (const j of (jobs || [])) { if (!priorTech && j.tech_name) priorTech = j.tech_name; if (String(j.status || '').toLowerCase().includes('cancel')) cancelled++; }
+  } catch (_) { /* ignore */ }
+
+  // active membership (by customer_id or name) — graceful if table absent
+  let membership = null;
+  try {
+    const nm = String(c.name || '').toLowerCase();
+    const { data: mem, error } = await sb.from('memberships').select('plan, status, customer_id, customer');
+    if (!error && mem) { const hit = mem.find((m) => m.status === 'active' && (m.customer_id === id || String(m.customer || '').toLowerCase() === nm)); if (hit) membership = hit.plan; }
+  } catch (_) { /* ignore */ }
+
+  // low-star reviews (past issues) — match by name until reviews carry customer_id
+  let lowReviews = 0;
+  try {
+    const { data: rv } = await sb.from('reviews').select('rating').ilike('customer_name', c.name || '___none___').lte('rating', 3);
+    lowReviews = (rv || []).length;
+  } catch (_) { /* ignore */ }
+
+  // duplicate-customer warning — others sharing this exact phone
+  let duplicates = 0;
+  try {
+    if (c.phone) { const { data: dup } = await sb.from('customers').select('id').eq('phone', c.phone).neq('id', id).limit(20); duplicates = (dup || []).length; }
+  } catch (_) { /* ignore */ }
+
   return {
     name: c.name || 'Customer', phone: c.phone || '', email: c.email || '', address: c.address || '',
     lifetimeRevenue: Number(c.lifetime_revenue) || 0, lifetimeJobs: Number(c.lifetime_jobs) || 0,
     lastJob: c.last_job_completed || null, openBalance, doNotService: !!c.do_not_service, doNotMail: !!c.do_not_mail, type: c.type || '',
+    membership, priorTech, pastIssues: cancelled + lowReviews, duplicates,
   };
 }
 

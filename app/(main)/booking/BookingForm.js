@@ -142,11 +142,15 @@ export default function BookingForm({ techs }) {
                   <span style={{ fontSize: 12.5 }}><strong>{snap.lifetimeJobs}</strong> <span className="muted">jobs</span></span>
                   {snap.openBalance > 0 && <span style={{ fontSize: 12.5, color: 'var(--red)', fontWeight: 700 }}>{money(snap.openBalance)} open balance</span>}
                   {snap.lastJob && <span style={{ fontSize: 12.5 }} className="muted">last service {snap.lastJob}</span>}
+                  {snap.priorTech && <span style={{ fontSize: 12.5 }} className="muted">last tech: {snap.priorTech}</span>}
                 </div>
-                {(snap.doNotService || snap.doNotMail || snap.openBalance > 0) && (
+                {(snap.doNotService || snap.doNotMail || snap.openBalance > 0 || snap.membership || snap.pastIssues > 0 || snap.duplicates > 0) && (
                   <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {snap.membership && <span className="pill" style={{ color: 'var(--green)', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}>⭐ Member · {snap.membership}</span>}
                     {snap.doNotService && <span className="pill pill-red" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}><AlertTriangle size={11} /> Do not service</span>}
                     {snap.openBalance > 0 && <span className="pill" style={{ color: 'var(--red)', fontSize: 11 }}>Owes money — confirm before booking</span>}
+                    {snap.pastIssues > 0 && <span className="pill" style={{ color: 'var(--amber)', fontSize: 11 }}>⚠ {snap.pastIssues} past issue{snap.pastIssues === 1 ? '' : 's'}</span>}
+                    {snap.duplicates > 0 && <span className="pill" style={{ color: 'var(--red)', fontSize: 11 }}>Possible duplicate — {snap.duplicates} share this phone</span>}
                     {snap.doNotMail && <span className="pill" style={{ color: 'var(--amber)', fontSize: 11 }}>Do not mail</span>}
                   </div>
                 )}
