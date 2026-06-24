@@ -18,8 +18,13 @@ async function assertManager() {
   if (!can(profile.role, 'manageUsers')) throw new Error('Not allowed.');
   const sb = getSupabaseAdmin();
   if (!sb) throw new Error('Server not configured (SUPABASE_SERVICE_ROLE_KEY missing).');
-  return { sb, caller: user };
+  return { sb, caller: user, callerRole: profile.role };
 }
+
+// High-trust roles only an owner may grant — keeps an Office Manager (manageUsers) from minting
+// owners/accounting. Non-owner managers can still add staff + assign everyday roles.
+const HIGH_TRUST = ['owner', 'admin', 'gm', 'accounting'];
+const canGrant = (callerRole, targetRole) => !HIGH_TRUST.includes(targetRole) || ['owner', 'admin'].includes(callerRole);
 
 // Mirror a login into the server-authoritative profiles table. Guarded: if profiles isn't
 // migrated yet, this no-ops (auth user_metadata stays the fallback) — returns whether it stuck.
@@ -32,8 +37,8 @@ async function upsertProfile(sb, userId, fields) {
 
 // Create a login. Devin types name + email + temp password and picks the role (position).
 export async function addUser(formData) {
-  let sb;
-  try { ({ sb } = await assertManager()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  let sb, callerRole;
+  try { ({ sb, callerRole } = await assertManager()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
 
   const name = String(formData.get('name') || '').trim();
   const email = String(formData.get('email') || '').trim().toLowerCase();
@@ -42,6 +47,7 @@ export async function addUser(formData) {
 
   if (!email || email.indexOf('@') < 0) return { ok: false, msg: 'Enter a valid email.' };
   if (!ROLE_IDS.includes(role)) return { ok: false, msg: 'Pick a position.' };
+  if (!canGrant(callerRole, role)) return { ok: false, msg: 'Only an owner can assign owner / GM / accounting roles.' };
   if (password.length < 8) return { ok: false, msg: 'Temp password must be at least 8 characters.' };
 
   const { data: created, error } = await sb.auth.admin.createUser({
@@ -57,12 +63,13 @@ export async function addUser(formData) {
 
 // Change someone's position. Merge metadata so we never wipe their name.
 export async function setRole(formData) {
-  let sb;
-  try { ({ sb } = await assertManager()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  let sb, callerRole;
+  try { ({ sb, callerRole } = await assertManager()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
 
   const id = String(formData.get('id') || '');
   const role = String(formData.get('role') || '');
   if (!id || !ROLE_IDS.includes(role)) return { ok: false, msg: 'Bad request.' };
+  if (!canGrant(callerRole, role)) return { ok: false, msg: 'Only an owner can assign owner / GM / accounting roles.' };
 
   const { data } = await sb.auth.admin.getUserById(id);
   const meta = (data && data.user && data.user.user_metadata) || {};
