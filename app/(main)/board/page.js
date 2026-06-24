@@ -127,6 +127,13 @@ export default async function Board({ searchParams }) {
   const doneToday = gridJobs.filter((j) => j.statusKey === 'done');
   const avgTicket = doneToday.length ? Math.round(doneToday.reduce((s, j) => s + (j.amount || 0), 0) / doneToday.length) : 0;
   const actuals = { booked_day: Math.round(dayRevenue), avg_ticket: avgTicket, qa_clear: fire.qa };
+  // Reviews logged this CB week (Sun→now) → lights up the reviews_week Game Plan gauge. Graceful if no table.
+  try {
+    const nyNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const weekStart = new Date(nyNow); weekStart.setDate(nyNow.getDate() - nyNow.getDay()); weekStart.setHours(0, 0, 0, 0);
+    const rv = await sb.from('reviews').select('id', { count: 'exact', head: true }).gte('created_at', weekStart.toISOString());
+    if (!rv.error) actuals.reviews_week = rv.count || 0;
+  } catch (_) { /* reviews table not migrated yet */ }
 
   return (
     <div className="wrap" style={{ maxWidth: 'none' }}>
