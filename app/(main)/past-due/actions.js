@@ -75,7 +75,7 @@ async function custName(sb, customerId) {
 
 // Create a Stripe pay link for a customer's collectible balance → office texts/emails it; the webhook
 // marks the invoice(s) paid when they pay. No card data touches us.
-export async function createPayLink(customerId, amountDollars, customerName) {
+export async function createPayLink(customerId, amountDollars, customerName, method = 'card') {
   let sb;
   try { ({ sb } = await assertCanMark()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
   if (!isStripeConfigured()) return { ok: false, msg: 'Add STRIPE_SECRET_KEY in Vercel (use a sk_test_… key first).' };
@@ -88,11 +88,11 @@ export async function createPayLink(customerId, amountDollars, customerName) {
     const { data } = await sb.from('invoices').select('id, invoice_number').eq('customer_id', customerId).eq('status', 'open').limit(2);
     if (data && data.length === 1) { invoiceId = data[0].id; invoiceNumber = data[0].invoice_number; }
   } catch (_) {}
-  const r = await createInvoiceCheckout({ amountCents: cents, invoiceNumber, customerName: name, invoiceId, customerId });
+  const r = await createInvoiceCheckout({ amountCents: cents, invoiceNumber, customerName: name, invoiceId, customerId, method });
   if (!r.ok) return { ok: false, msg: 'Stripe: ' + r.error };
   // Log that a pay link was generated (audit trail).
-  try { await sb.from('ar_activity').insert({ action: 'pay_link_created', customer_id: customerId || null, customer_name: name || null, invoice_number: invoiceNumber, amount: cents / 100, by_email: 'paylink' }); } catch (_) {}
-  return { ok: true, url: r.url, baseDollars: (r.baseCents || cents) / 100, feeDollars: (r.feeCents || 0) / 100, totalDollars: (r.totalCents || cents) / 100 };
+  try { await sb.from('ar_activity').insert({ action: 'pay_link_created', customer_id: customerId || null, customer_name: name || null, invoice_number: invoiceNumber, amount: cents / 100, by_email: method === 'ach' ? 'paylink-ach' : 'paylink' }); } catch (_) {}
+  return { ok: true, url: r.url, method, baseDollars: (r.baseCents || cents) / 100, feeDollars: (r.feeCents || 0) / 100, totalDollars: (r.totalCents || cents) / 100 };
 }
 
 // Mark one invoice paid → it drops out of past-due + logs to the AR ledger.

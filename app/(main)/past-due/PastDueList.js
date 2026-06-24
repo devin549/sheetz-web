@@ -64,7 +64,7 @@ export default function PastDueList({ customers, canMark, summary }) {
   const [busyId, setBusyId] = useState(null);
   const [err, setErr] = useState(null);
   const [payLinks, setPayLinks] = useState({});
-  function makePayLink(c) { if (pending) return; setBusyId('pl-' + c.cid); setErr(null); start(async () => { const r = await createPayLink(c.cid, c.total, c.name); setBusyId(null); if (r.ok) setPayLinks((p) => ({ ...p, [c.cid]: r })); else setErr(r.msg); }); }
+  function makePayLink(c, method) { if (pending) return; setBusyId('pl-' + c.cid + method); setErr(null); start(async () => { const r = await createPayLink(c.cid, c.total, c.name, method); setBusyId(null); if (r.ok) setPayLinks((p) => ({ ...p, [c.cid]: r })); else setErr(r.msg); }); }
 
   const [q, setQ] = useState('');
   const [bucket, setBucket] = useState('all');
@@ -195,10 +195,17 @@ export default function PastDueList({ customers, canMark, summary }) {
                             {busyId === 'db-' + c.cid ? '…' : (c.doubtful > 0 && c.total === 0) ? '↩ Restore balance' : '🚫 Mark balance doubtful'}
                           </button>
                           {c.total > 0 && (
-                            <button onClick={() => makePayLink(c)} disabled={pending}
-                              title="Create a Stripe pay page for this balance — text/email it to the customer"
-                              style={{ background: 'transparent', color: '#635bff', border: '1px solid #635bff', borderRadius: 7, padding: '5px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: pending && busyId === 'pl-' + c.cid ? 0.6 : 1 }}>
-                              {busyId === 'pl-' + c.cid ? 'Creating…' : '💳 Pay link'}
+                            <button onClick={() => makePayLink(c, 'card')} disabled={pending}
+                              title="Card pay link (+4% convenience fee) — text/email it to the customer"
+                              style={{ background: 'transparent', color: '#635bff', border: '1px solid #635bff', borderRadius: 7, padding: '5px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: pending && busyId === 'pl-' + c.cid + 'card' ? 0.6 : 1 }}>
+                              {busyId === 'pl-' + c.cid + 'card' ? 'Creating…' : '💳 Card link'}
+                            </button>
+                          )}
+                          {c.total > 0 && (
+                            <button onClick={() => makePayLink(c, 'ach')} disabled={pending}
+                              title="Bank/ACH pay link — NO fee (best for big invoices). Settles in a few days."
+                              style={{ background: 'transparent', color: '#30a46c', border: '1px solid #30a46c', borderRadius: 7, padding: '5px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: pending && busyId === 'pl-' + c.cid + 'ach' ? 0.6 : 1 }}>
+                              {busyId === 'pl-' + c.cid + 'ach' ? 'Creating…' : '🏦 Bank link (no fee)'}
                             </button>
                           )}
                           {c.total > 0 && (
@@ -218,9 +225,11 @@ export default function PastDueList({ customers, canMark, summary }) {
                           <button onClick={() => navigator.clipboard && navigator.clipboard.writeText(payLinks[c.cid].url)} style={{ background: '#635bff', color: '#fff', border: 0, borderRadius: 6, padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Copy</button>
                           <a href={payLinks[c.cid].url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>Open ↗</a>
                         </div>
-                        {payLinks[c.cid].feeDollars > 0 && (
-                          <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>Customer pays <strong style={{ color: 'var(--fg-1)' }}>{money(payLinks[c.cid].totalDollars)}</strong> = {money(payLinks[c.cid].baseDollars)} + {money(payLinks[c.cid].feeDollars)} card convenience fee.</div>
-                        )}
+                        <div className="muted" style={{ fontSize: 11, marginTop: 5 }}>
+                          {payLinks[c.cid].method === 'ach'
+                            ? <>🏦 Bank pay — customer pays <strong style={{ color: 'var(--fg-1)' }}>{money(payLinks[c.cid].baseDollars)}</strong>, <strong style={{ color: 'var(--green)' }}>no fee</strong>. Settles in a few days.</>
+                            : <>Customer pays <strong style={{ color: 'var(--fg-1)' }}>{money(payLinks[c.cid].totalDollars)}</strong> = {money(payLinks[c.cid].baseDollars)} + {money(payLinks[c.cid].feeDollars)} card convenience fee.</>}
+                        </div>
                       </div>
                     )}
                     {c.invoices.map((i) => (
