@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
+import { sendSms } from '@/lib/twilio';
 import { revalidatePath } from 'next/cache';
 
 async function assertBooker() {
@@ -233,7 +234,27 @@ export async function createBooking(formData) {
     await sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile.name || ctx.user.email, role: ctx.profile.role, action: 'job.book', entity: 'job', entity_id: String(job.id), detail: { jobType } });
   } catch (_) {}
 
+  // Booking confirmation text — HUMAN-initiated (CSR ticked "send"), consent-gated, logged. Never
+  // blocks the booking: if the text can't go, the job is still booked and we report why.
+  let sms = null;
+  const wantConfirm = formData.get('sendConfirm') === 'on' || formData.get('sendConfirm') === 'true';
+  if (wantConfirm) {
+    let phone = newPhone;
+    if (!phone) { const { data: cust } = await sb.from('customers').select('phone, phones').eq('id', customerId).maybeSingle(); phone = (cust && (cust.phone || cust.phones)) || ''; }
+    if (!serviceConsent) sms = { ok: false, msg: 'no text consent' };
+    else if (!phone) sms = { ok: false, msg: 'no phone on file' };
+    else {
+      const whenStr = scheduledISO ? new Date(scheduledISO).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+      const body = `Clog Busterz Plumbing: you're booked for ${jobType}${whenStr ? ` on ${whenStr}` : ''}. We'll text when we're on the way. Reply STOP to opt out.`;
+      sms = await sendSms(phone, body);
+      try {
+        await sb.from('cb_comms').insert({ channel: 'sms', to_addr: (sms && sms.to) || phone, customer_id: customerId, job_id: String(job.id), body, status: sms.ok ? 'sent' : 'failed', provider_id: sms.sid || null, error: sms.ok ? null : sms.msg, sent_by: ctx.profile.name || ctx.user.email });
+      } catch (_) {}
+    }
+  }
+
   revalidatePath('/board');
   revalidatePath('/job-records');
-  return { ok: true, msg: 'Job booked.', jobId: job.id };
+  const tail = sms ? (sms.ok ? ' Confirmation text sent.' : ` (text not sent: ${sms.msg})`) : '';
+  return { ok: true, msg: 'Job booked.' + tail, jobId: job.id };
 }

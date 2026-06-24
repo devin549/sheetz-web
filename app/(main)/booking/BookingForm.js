@@ -51,6 +51,7 @@ export default function BookingForm({ techs }) {
   const [showAdmin, setShowAdmin] = useState(false);
   const [serviceConsent, setServiceConsent] = useState(true);
   const [marketingConsent, setMarketingConsent] = useState(false);
+  const [sendConfirm, setSendConfirm] = useState(true);
   const [msg, setMsg] = useState(null);
   const seq = useRef(0);
 
@@ -90,13 +91,14 @@ export default function BookingForm({ techs }) {
     fd.set('jobType', service); fd.set('priority', priority);
     fd.set('serviceConsent', serviceConsent ? 'true' : 'false');
     fd.set('marketingConsent', marketingConsent ? 'true' : 'false');
+    fd.set('sendConfirm', sendConfirm ? 'true' : 'false');
     const d = fd.get('date'), t = fd.get('time');
     if (d && t) { try { fd.set('scheduledISO', new Date(`${d}T${t}`).toISOString()); } catch (_) {} }
     setMsg(null);
     start(async () => {
       const res = await createBooking(fd);
       setMsg(res);
-      if (res.ok) { form.reset(); clearPicked(); setAddr(''); setCity(''); setStateV('KY'); setZip(''); setGeo({}); setVerifyMsg(null); setService(''); setPriority('normal'); setMarketingConsent(false); setServiceConsent(true); router.refresh(); }
+      if (res.ok) { form.reset(); clearPicked(); setAddr(''); setCity(''); setStateV('KY'); setZip(''); setGeo({}); setVerifyMsg(null); setService(''); setPriority('normal'); setMarketingConsent(false); setServiceConsent(true); setSendConfirm(true); router.refresh(); }
     });
   }
 
@@ -271,7 +273,11 @@ export default function BookingForm({ techs }) {
           <input type="checkbox" checked={marketingConsent} onChange={(e) => setMarketingConsent(e.target.checked)} style={{ marginTop: 2 }} />
           <span>OK for <strong>marketing &amp; automated follow-ups</strong> — separate opt-in</span>
         </label>
-        <div className="muted" style={{ fontSize: 10.5, marginTop: 8 }}>Consent is recorded on the customer. Nothing is auto-sent — every message still goes through a person.</div>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, cursor: serviceConsent ? 'pointer' : 'not-allowed', marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border)', opacity: serviceConsent ? 1 : 0.5 }}>
+          <input type="checkbox" checked={sendConfirm && serviceConsent} disabled={!serviceConsent} onChange={(e) => setSendConfirm(e.target.checked)} style={{ marginTop: 2 }} />
+          <span>📲 <strong>Send the booking confirmation text now</strong> — one text to this customer when you book{!serviceConsent ? ' (needs text consent above)' : ''}</span>
+        </label>
+        <div className="muted" style={{ fontSize: 10.5, marginTop: 8 }}>Consent is recorded on the customer. The only thing that sends is this one confirmation, because you ticked it — no automated blasts.</div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
