@@ -1,6 +1,8 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireRole } from '@/lib/guard';
+import { cbAvgTickets } from '@/lib/cbStats';
 import GrowthClient from './GrowthClient';
+import PricingRadar from './PricingRadar';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,11 +34,20 @@ export default async function Growth() {
   const prev = {};
   rows.filter((r) => r.scanned_at === prevT).forEach((r) => { prev[`${r.keyword}|${r.location}`] = r.cb_rank; });
 
+  // Pricing radar inputs: competitor names + markets from the latest scan, CB baseline, saved prices.
+  const compNames = [...new Set(latest.flatMap((r) => (r.local_results || []).map((p) => p.name)).filter(Boolean))];
+  const markets = [...new Set(latest.map((r) => r.location))];
+  const cbAvg = await cbAvgTickets(sb);
+  let recent = [];
+  const cp = await sb.from('competitor_pricing').select('competitor, service, price_cents, location, scanned_at').order('scanned_at', { ascending: false }).limit(40);
+  if (!cp.error) recent = cp.data || [];
+
   return (
     <div className="wrap" style={{ maxWidth: 1000 }}>
       <div className="h1">Growth & Intel</div>
       <p className="muted">Where Clog Busterz ranks for core plumbing keywords in each market. Run a scan to refresh; history builds the trend.</p>
       <GrowthClient latest={latest} prev={prev} scannedAt={latestT} hasKey />
+      <PricingRadar competitors={compNames} markets={markets} cbAvg={cbAvg} recent={recent} />
     </div>
   );
 }
