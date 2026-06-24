@@ -6,6 +6,7 @@ export async function middleware(request) {
 }
 
 export const config = {
-  // run on everything except static assets + auth callback
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|robots.txt|auth/).*)'],
+  // run on everything except static assets, auth callback, and API routes.
+  // API routes perform their own auth/secret checks (Stripe/Vapi/AI agents/etc.).
+  matcher: ['/((?!api/|_next/static|_next/image|favicon.ico|robots.txt|auth/).*)'],
 };
