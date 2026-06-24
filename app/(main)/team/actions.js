@@ -81,6 +81,29 @@ export async function setRole(formData) {
   return { ok: true, msg: 'Role updated.' };
 }
 
+// Fire / re-hire a login. Deactivating BANS the Supabase auth user (they can't sign in — getUser
+// fails immediately, so the middleware bounces them) and marks profiles.active=false. Reversible.
+// Non-owners can't deactivate a high-trust user (owner/GM/accounting). Reuses canGrant on the target.
+export async function setUserActive(formData) {
+  let sb, callerRole;
+  try { ({ sb, callerRole } = await assertManager()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const id = String(formData.get('id') || '');
+  const active = String(formData.get('active') || '') === 'true';
+  if (!id) return { ok: false, msg: 'Bad request.' };
+
+  const { data } = await sb.auth.admin.getUserById(id);
+  const meta = (data && data.user && data.user.user_metadata) || {};
+  const targetRole = meta.role || 'viewer';
+  if (!canGrant(callerRole, targetRole)) return { ok: false, msg: 'Only an owner can deactivate an owner / GM / accounting login.' };
+
+  const { error } = await sb.auth.admin.updateUserById(id, { ban_duration: active ? 'none' : '876600h' });
+  if (error) return { ok: false, msg: error.message };
+  await upsertProfile(sb, id, { active, role: targetRole, name: meta.name || '', email: (data && data.user && data.user.email) || '' });
+
+  revalidatePath('/team');
+  return { ok: true, msg: active ? 'Re-activated — they can sign in again.' : 'Deactivated — access revoked immediately.' };
+}
+
 // Set a roster person's POSITION — controls who shows in the Job Booking picker + board rows.
 // (Separate from login role: this is the field roster, not access. Access = role under logins.)
 export async function setTechPosition(formData) {

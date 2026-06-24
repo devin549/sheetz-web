@@ -35,7 +35,7 @@ export default async function Team() {
   if (techQ.error) techQ = await sb.from('techs').select('id, name').order('name'); // pre-38
   const techs = (techQ.data || []).map((t) => ({ id: t.id, name: t.name, position: t.position || 'tech', active: t.active !== false, phone: t.phone || '' }));
   const profById = {};
-  try { const { data: pData } = await sb.from('profiles').select('user_id, role, tech_id'); (pData || []).forEach((p) => { profById[p.user_id] = p; }); } catch (_) {}
+  try { const { data: pData } = await sb.from('profiles').select('user_id, role, tech_id, active'); (pData || []).forEach((p) => { profById[p.user_id] = p; }); } catch (_) {}
   const profilesReady = Object.keys(profById).length > 0;
 
   const users = (data?.users || []).map((u) => {
@@ -47,6 +47,7 @@ export default async function Team() {
       role: prof.role || (u.user_metadata && u.user_metadata.role) || 'viewer',
       techId: prof.tech_id || '',
       lastSignIn: ago(u.last_sign_in_at),
+      active: prof.active !== false && !u.banned_until,
     };
   }).sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
 

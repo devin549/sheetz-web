@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { addUser, setRole, setTechLink, setTechPosition, setTechPhone } from './actions';
+import { addUser, setRole, setTechLink, setTechPosition, setTechPhone, setUserActive } from './actions';
 import { roleMeta } from '@/lib/roles';
 import { POSITIONS as POSITION_OPTS } from '@/lib/positions';
 
@@ -66,6 +66,22 @@ export default function TeamManager({ roleOptions, users, techs = [] }) {
     setMsg(res);
   }
 
+  async function onActiveToggle(id, name, active) {
+    if (!active && !window.confirm(`Deactivate ${name || 'this login'}? They lose access immediately. You can re-activate later.`)) return;
+    const fd = new FormData();
+    fd.set('id', id); fd.set('active', active ? 'true' : 'false');
+    const res = await setUserActive(fd);
+    setMsg(res);
+    router.refresh();
+  }
+
+  // Field-roster filtering (so it isn't an endless scroll)
+  const [rosterQ, setRosterQ] = useState('');
+  const [posFilter, setPosFilter] = useState('all');
+  const posCounts = techs.reduce((m, t) => { const p = t.position || 'tech'; m[p] = (m[p] || 0) + 1; return m; }, {});
+  const fieldIds = new Set(POSITION_OPTS.filter((p) => p.field).map((p) => p.id));
+  const shownTechs = techs.filter((t) => (posFilter === 'all' || (t.position || 'tech') === posFilter) && (!rosterQ.trim() || t.name.toLowerCase().includes(rosterQ.trim().toLowerCase())));
+
   return (
     <>
       {/* ── Add a hire ── */}
@@ -107,12 +123,17 @@ export default function TeamManager({ roleOptions, users, techs = [] }) {
         return (
           <div key={u.id} className="card" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, alignItems: 'center' }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name || u.email}</div>
+              <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name || u.email}{u.active === false && <span className="pill pill-red" style={{ marginLeft: 8, fontSize: 10 }}>deactivated</span>}</div>
               <div className="muted" style={{ fontSize: 12 }}>
                 {u.email}{u.lastSignIn ? ` · last in ${u.lastSignIn}` : ' · never signed in'}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end', opacity: u.active === false ? 0.6 : 1 }}>
+              <button type="button" onClick={() => onActiveToggle(u.id, u.name || u.email, u.active === false)}
+                title={u.active === false ? 'Re-activate this login' : 'Deactivate — revoke access now'}
+                style={{ ...inputStyle, width: 'auto', cursor: 'pointer', color: u.active === false ? 'var(--green)' : 'var(--red)', borderColor: u.active === false ? 'var(--green)' : 'var(--border)' }}>
+                {u.active === false ? 'Re-activate' : 'Deactivate'}
+              </button>
               {(u.role === 'tech' || u.role === 'helper') && (
                 <select value={u.techId || ''} onChange={(e) => onTechChange(u.id, e.target.value)} title="Link to a tech row → they see only their jobs"
                   style={{ ...inputStyle, width: 'auto', maxWidth: 170, borderColor: u.techId ? 'var(--green)' : 'var(--border)' }}>
@@ -135,12 +156,20 @@ export default function TeamManager({ roleOptions, users, techs = [] }) {
           <h3 style={{ margin: '24px 0 4px', fontSize: 12, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             Field roster ({techs.length})
           </h3>
-          <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>Job title on the <strong>board</strong> — controls who shows in the Job Booking picker + as a board row. Office titles (Dispatcher, Accounting, Office Manager, Office) don&apos;t take jobs. <strong>What each person can SEE</strong> (financials, growth) is their <strong>login role</strong> up under “Current logins,” not this.</p>
-          {techs.map((t) => (
+          <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>Job title on the <strong>board</strong> — controls who shows in the Job Booking picker + as a board row. <strong>What each person can SEE</strong> (financials, growth) is their <strong>login role</strong> up under “Current logins,” not this.</p>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+            <input value={rosterQ} onChange={(e) => setRosterQ(e.target.value)} placeholder="Search name…" style={{ ...inputStyle, width: 170 }} />
+            <button type="button" onClick={() => setPosFilter('all')} className="pill" style={{ cursor: 'pointer', fontWeight: posFilter === 'all' ? 800 : 600, background: posFilter === 'all' ? 'var(--amber)' : 'var(--surface-2)', color: posFilter === 'all' ? '#1a1206' : 'var(--fg-2)' }}>All {techs.length}</button>
+            {POSITION_OPTS.filter((p) => posCounts[p.id]).map((p) => (
+              <button type="button" key={p.id} onClick={() => setPosFilter(p.id)} className="pill" style={{ cursor: 'pointer', fontWeight: posFilter === p.id ? 800 : 600, background: posFilter === p.id ? 'var(--amber)' : 'var(--surface-2)', color: posFilter === p.id ? '#1a1206' : 'var(--fg-2)' }}>{p.label} {posCounts[p.id]}</button>
+            ))}
+          </div>
+          {!shownTechs.length && <div className="muted" style={{ fontSize: 12, padding: '6px 2px' }}>No one matches.</div>}
+          {shownTechs.map((t) => (
             <div key={t.id} className="card" style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 10, alignItems: 'center', padding: '10px 14px' }}>
               <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {t.name}
-                {t.position === 'office' && <span className="pill" style={{ marginLeft: 8, fontSize: 10, color: 'var(--fg-3)' }}>off the board</span>}
+                {!fieldIds.has(t.position || 'tech') && <span className="pill" style={{ marginLeft: 8, fontSize: 10, color: t.position === 'terminated' ? 'var(--red)' : 'var(--fg-3)' }}>{t.position === 'terminated' ? 'terminated' : 'off the board'}</span>}
               </div>
               <input defaultValue={t.phone || ''} placeholder="cell #" onBlur={(e) => { if (e.target.value.trim() !== (t.phone || '')) onPhoneSave(t.id, e.target.value.trim()); }}
                 title="Tech cell — for dispatch.me link + on-the-way texts" style={{ ...inputStyle, width: 130 }} />
