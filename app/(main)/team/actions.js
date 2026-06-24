@@ -2,17 +2,20 @@
 
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
-import { roleOf } from '@/lib/nav';
 import { can, ROLE_IDS } from '@/lib/roles';
 import { POSITION_IDS } from '@/lib/positions';
+import { loadProfile } from '@/lib/profile';
 import { revalidatePath } from 'next/cache';
 
 // Re-check the CALLER can manage users on every action — a server action is a public RPC,
-// so guarding only the page is not enough. Returns the admin client + caller, or throws.
+// so guarding only the page is not enough. Authorizes off the profiles table (same source of
+// truth as every page guard), not auth metadata. Returns the admin client + caller, or throws.
 async function assertManager() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user || !can(roleOf(user), 'manageUsers')) throw new Error('Not allowed.');
+  if (!user) throw new Error('Not allowed.');
+  const profile = await loadProfile(user);
+  if (!can(profile.role, 'manageUsers')) throw new Error('Not allowed.');
   const sb = getSupabaseAdmin();
   if (!sb) throw new Error('Server not configured (SUPABASE_SERVICE_ROLE_KEY missing).');
   return { sb, caller: user };

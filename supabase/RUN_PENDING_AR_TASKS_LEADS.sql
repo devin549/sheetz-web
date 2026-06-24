@@ -1,4 +1,6 @@
 -- Pending tables paste — run once in Supabase SQL Editor. Idempotent.
+-- PREREQUISITE: assumes migrations 13–26 already ran (esp. 23_job_photo_spine = job_photos), which
+-- 29_receipts FKs. On the live DB they're applied. On a fresh DB, run 01–26 first or this stops at 29.
 
 -- ===== 12_ar_activity.sql =====
 -- AR activity ledger — the "accounting bot keeping track". Every mark-paid (and later: payments,
