@@ -1,6 +1,5 @@
 -- Pending tables paste — run once in Supabase SQL Editor. Idempotent.
--- PREREQUISITE: assumes migrations 13–26 already ran (esp. 23_job_photo_spine = job_photos), which
--- 29_receipts FKs. On the live DB they're applied. On a fresh DB, run 01–26 first or this stops at 29.
+-- PREREQUISITE: assumes migrations 13-26 already ran (esp. 23_job_photo_spine = job_photos), which 29_receipts FKs.
 
 -- ===== 12_ar_activity.sql =====
 -- AR activity ledger — the "accounting bot keeping track". Every mark-paid (and later: payments,
@@ -339,7 +338,8 @@ alter table public.reviews enable row level security;
 -- picker + the dispatch board rows show everyone EXCEPT 'office'. Editable on /team.
 -- Idempotent. Run in the Supabase SQL editor.
 alter table public.techs add column if not exists position text not null default 'tech';
--- positions: tech | helper | sales | supervisor | office
+-- positions (see lib/positions.js — the app validates writes): field = tech | helper | salesman |
+-- field_supervisor | general_manager | owner ; office = dispatcher | office_manager | accounting | office
 
 -- Seed the clearly pure-office staff so they drop off the field picker immediately.
 -- NOTE: the owner + supervisors still run calls and keep the tech/iPad view, so they stay
@@ -425,3 +425,24 @@ $$;
 -- Tech phone — so the office can text the assigned tech (e.g. the dispatch.me "On My Way" link on
 -- warranty jobs). Set on /team. Idempotent, additive. Run in the Supabase SQL editor.
 alter table public.techs add column if not exists phone text;
+
+-- ===== 44_seo_rankings.sql =====
+-- SEO rank scans — where Clog Busterz ranks for core plumbing keywords per market (via SerpAPI).
+-- Each "Run scan" inserts one row per keyword×location, so history builds for trend. Idempotent.
+create extension if not exists pgcrypto;
+
+create table if not exists public.seo_rankings (
+  id            uuid primary key default gen_random_uuid(),
+  keyword       text not null,
+  location      text not null,
+  cb_rank       int,                 -- organic position (null = not found in top results)
+  cb_in_local   boolean default false,  -- present in the Google local/map pack
+  top_results   jsonb,               -- [{rank,title,domain}] organic competitors above/around us
+  local_results jsonb,               -- [{name,rating}] local-pack competitors
+  scanned_at    timestamptz not null default now(),
+  scanned_by    text
+);
+create index if not exists seo_rankings_scan_idx on public.seo_rankings (scanned_at desc);
+create index if not exists seo_rankings_kw_idx on public.seo_rankings (keyword, location, scanned_at desc);
+
+alter table public.seo_rankings enable row level security;
