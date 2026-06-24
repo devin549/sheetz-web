@@ -2,7 +2,7 @@
 
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
-import { roleOf } from '@/lib/nav';
+import { loadProfile } from '@/lib/profile';
 import { buildProposal, selectTier } from '@/lib/pricebook';
 import { revalidatePath } from 'next/cache';
 
@@ -12,8 +12,9 @@ const PRESENT_ROLES = ['owner', 'admin', 'gm', 'om', 'accounting', 'fs', 'forema
 async function gate() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const role = roleOf(user);
-  if (!user || !PRESENT_ROLES.includes(String(role).toLowerCase())) throw new Error('Your role can’t build estimates.');
+  if (!user) throw new Error('Your role can’t build estimates.');
+  const profile = await loadProfile(user);
+  if (profile.active === false || !PRESENT_ROLES.includes(String(profile.role).toLowerCase())) throw new Error('Your role can’t build estimates.');
   return { email: user.email || '' };
 }
 

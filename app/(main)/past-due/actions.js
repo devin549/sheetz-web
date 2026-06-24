@@ -2,7 +2,7 @@
 
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
-import { roleOf } from '@/lib/nav';
+import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 import { isEmailConfigured, sendOne, appBaseUrl } from '@/lib/email';
@@ -57,8 +57,10 @@ export async function emailStatement(customerId) {
 async function assertCanMark() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  const role = roleOf(user);
-  if (!user || !can(role, 'seeFinancials') || role === 'viewer') throw new Error('Your role can’t mark invoices paid.');
+  if (!user) throw new Error('Your role can’t mark invoices paid.');
+  const profile = await loadProfile(user);
+  const role = profile.role;
+  if (profile.active === false || !can(role, 'seeFinancials') || role === 'viewer') throw new Error('Your role can’t mark invoices paid.');
   const sb = getSupabaseAdmin();
   if (!sb) throw new Error('Server not configured.');
   return { sb, email: user.email || '', role };
@@ -111,7 +113,8 @@ export async function markCustomerPaid(customerId) {
 export async function searchCustomers(q) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user || !can(roleOf(user), 'seeFinancials')) return { ok: false, msg: 'Not allowed.' };
+  const prof = user ? await loadProfile(user) : null;
+  if (!user || !prof || prof.active === false || !can(prof.role, 'seeFinancials')) return { ok: false, msg: 'Not allowed.' };
   const needle = String(q || '').trim();
   if (needle.length < 2) return { ok: true, results: [] };
   const sb = getSupabaseAdmin();
@@ -377,7 +380,8 @@ export async function attachDeliveryProof(formData) {
 export async function getCustomerContacts(customerId) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user || !can(roleOf(user), 'seeFinancials')) return { ok: false, msg: 'Not allowed.' };
+  const prof = user ? await loadProfile(user) : null;
+  if (!user || !prof || prof.active === false || !can(prof.role, 'seeFinancials')) return { ok: false, msg: 'Not allowed.' };
   if (!customerId) return { ok: false, msg: 'No customer.' };
   const sb = getSupabaseAdmin();
   const [logRes, callRes, mailRes] = await Promise.all([
@@ -457,8 +461,9 @@ export async function askAccounting(question) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, msg: 'Not signed in.' };
-  const role = roleOf(user);
-  if (!can(role, 'seeFinancials')) return { ok: false, msg: 'Your role can’t use the accounting bot.' };
+  const profile = await loadProfile(user);
+  const role = profile.role;
+  if (profile.active === false || !can(role, 'seeFinancials')) return { ok: false, msg: 'Your role can’t use the accounting bot.' };
   const q = String(question || '').trim();
   if (!q) return { ok: false, msg: 'Ask a question.' };
   if (!isAiConfigured(role)) return { ok: false, msg: 'No Claude key for your role yet — add ANTHROPIC_KEY_* in Vercel.' };

@@ -2,16 +2,18 @@
 
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
-import { roleOf } from '@/lib/nav';
 import { canCompose, canApprove, AUDIENCE_KEYS, audienceLabel } from '@/lib/campaigns';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 import { isEmailConfigured, sendOne, renderEmailHtml } from '@/lib/email';
+import { loadProfile } from '@/lib/profile';
 import { revalidatePath } from 'next/cache';
 
 async function me() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  return { user, role: roleOf(user), email: (user && user.email) || '' };
+  const profile = user ? await loadProfile(user) : null;
+  const inactive = profile && profile.active === false; // deactivated login → treat as signed-out
+  return { user: inactive ? null : user, role: (profile && !inactive) ? profile.role : 'viewer', email: (user && user.email) || '' };
 }
 
 // Resolve an audience preset → de-duped recipient list. do_not_mail + empty emails are skipped

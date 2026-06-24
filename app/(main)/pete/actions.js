@@ -2,15 +2,17 @@
 
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
-import { roleOf } from '@/lib/nav';
 import { canUsePete, canApprovePete, PURPOSE_KEYS, purposeLabel } from '@/lib/pete';
 import { isVapiConfigured, normalizeE164, isTestNumber, placeCall } from '@/lib/vapi';
+import { loadProfile } from '@/lib/profile';
 import { revalidatePath } from 'next/cache';
 
 async function me() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
-  return { user, role: roleOf(user), email: (user && user.email) || '' };
+  const profile = user ? await loadProfile(user) : null;
+  const inactive = profile && profile.active === false;
+  return { user: inactive ? null : user, role: (profile && !inactive) ? profile.role : 'viewer', email: (user && user.email) || '' };
 }
 
 // Collections context for the AI — current balance + days late on this customer's open invoices.

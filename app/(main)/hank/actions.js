@@ -1,7 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { roleOf } from '@/lib/nav';
+import { loadProfile } from '@/lib/profile';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
@@ -11,7 +11,9 @@ export async function askHank(question, history) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, msg: 'Not signed in.' };
-  const role = roleOf(user);
+  const profile = await loadProfile(user);
+  if (profile.active === false) return { ok: false, msg: 'Account deactivated.' };
+  const role = profile.role;
   const q = String(question || '').trim();
   if (!q) return { ok: false, msg: 'Ask Hank something.' };
   if (!isAiConfigured(role)) return { ok: false, msg: 'No Claude key for your role yet — add an ANTHROPIC_KEY_* in Vercel.' };
