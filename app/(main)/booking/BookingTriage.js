@@ -32,20 +32,25 @@ export default function BookingTriage({ config }) {
   const [decodeMsg, setDecodeMsg] = useState(null);
   const set = (k, v) => setA((p) => ({ ...p, [k]: v }));
 
+  function applyDecode(d, base) {
+    const next = { ...base };
+    const applied = [];
+    if (d.fuel) { next.fuel = d.fuel; applied.push('fuel'); }
+    if (d.capacity_gallons) { next.tank_size = String(d.capacity_gallons); applied.push('size'); }
+    if (d.tank_style) { next.tank_style = d.tank_style; applied.push('height'); }
+    return { next, applied };
+  }
   function runDecode() {
     setDecodeMsg(null); setDecoded(null);
     start(async () => {
       const r = await decodeWaterHeater(a.model || '', a.serial || '');
-      if (r.ok) setDecoded(r.data); else setDecodeMsg(r.msg);
+      if (r.ok) {
+        // auto-mark fuel + size + height from the decode (no extra click)
+        const { next, applied } = applyDecode(r.data, a);
+        setA(next);
+        setDecoded({ ...r.data, _applied: applied });
+      } else setDecodeMsg(r.msg);
     });
-  }
-  function applyDecode() {
-    if (!decoded) return;
-    const next = { ...a };
-    if (decoded.fuel) next.fuel = decoded.fuel;
-    if (decoded.capacity_gallons) next.tank_size = String(decoded.capacity_gallons);
-    if (decoded.tank_style) next.tank_style = decoded.tank_style;
-    setA(next);
   }
 
   const danger = config.questions.some((q) => (q.danger || []).includes(a[q.key])) || a.active_leak === 'Yes';
@@ -94,7 +99,9 @@ export default function BookingTriage({ config }) {
                     {decoded.vent_type && <span>💨 {decoded.vent_type}</span>}
                     {(decoded.year || decoded.age_years != null) && <span>📅 {decoded.year || ''}{decoded.age_years != null ? ` (${decoded.age_years} yr)` : ''}</span>}
                   </div>
-                  <button type="button" onClick={applyDecode} className="pill" style={{ marginTop: 8, cursor: 'pointer', color: 'var(--accent)', fontWeight: 700 }}>Apply to fuel / size →</button>
+                  {decoded._applied && decoded._applied.length
+                    ? <div style={{ marginTop: 8, fontSize: 12, color: 'var(--green)', fontWeight: 700 }}>✓ Auto-marked {decoded._applied.join(' + ')} below — adjust if needed</div>
+                    : <div style={{ marginTop: 8, fontSize: 12 }} className="muted">No size/fuel in this decode — set them by hand below.</div>}
                 </div>
               )}
             </>
