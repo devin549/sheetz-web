@@ -50,6 +50,10 @@ export async function POST(request) {
     });
     return NextResponse.json(result);
   } catch (error) {
-    return NextResponse.json({ ok: false, error: error.message || String(error) }, { status: 500 });
+    return NextResponse.json({
+      ok: false,
+      error: error.message || String(error),
+      hint: 'Agent hub route reached the server, but setup/data snapshot failed before the agents could run.',
+    });
   }
 }
