@@ -1,9 +1,13 @@
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { roleOf, canSee } from '@/lib/nav';
 import { can, roleMeta } from '@/lib/roles';
+import { loadProfile } from '@/lib/profile';
+import { ccGated, verifyUnlock, CC_COOKIE } from '@/lib/ccPin';
 import AskBoard from './ask/AskBoard';
+import CommandCenterPinGate from './CommandCenterPinGate';
 
 export const dynamic = 'force-dynamic';
 
@@ -162,6 +166,18 @@ export default async function Home() {
   const meta = roleMeta(role);
   const fullName = (user && user.user_metadata && user.user_metadata.name) || (user && user.email) || '';
   const first = String(fullName).split(/[\s@]/)[0] || 'there';
+
+  // 🔒 Command Center second-factor PIN — owner/supervisors must unlock the sensitive dashboard each
+  // session. Only activates once migration 76 is applied (ccPinReady); before that it fails open so no one
+  // is locked out. PIN set → ask for it; column live but no PIN yet → force first-time PIN creation.
+  const ccTitle = (role === 'owner' || role === 'admin') ? 'Owner Command Center' : `${meta.label} · Command Center`;
+  if (user && ccGated(role)) {
+    const profile = await loadProfile(user);
+    if (profile.ccPinReady) {
+      const unlocked = verifyUnlock(user.id, cookies().get(CC_COOKIE)?.value);
+      if (!unlocked) return <CommandCenterPinGate hasPin={profile.ccPinSet} title={ccTitle} />;
+    }
+  }
 
   // Show the KPI strip if the role can see anything on it; load once, gate each tile.
   const wantsKpis = can(role, 'seeFinancials') || can(role, 'seeAllJobs') || isField(role) || role === 'shop';

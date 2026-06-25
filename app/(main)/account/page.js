@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { loadProfile } from '@/lib/profile';
 import { roleMeta, can } from '@/lib/roles';
+import { ccGated } from '@/lib/ccPin';
 import AccountSettings from './AccountSettings';
 
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,8 @@ export default async function Account() {
         roastLevel: profile.roastLevel, roastLocked: profile.roastLocked, prefs: profile.prefs || {},
       }}
       isManager={can(profile.role, 'manageUsers')}
+      ccGated={ccGated(profile.role) && profile.ccPinReady}
+      ccPinSet={profile.ccPinSet}
       theme={theme}
     />
   );

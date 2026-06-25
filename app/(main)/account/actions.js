@@ -1,10 +1,12 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
+import { hashPin, validPin, signUnlock, CC_COOKIE, ccGated } from '@/lib/ccPin';
 
 const LEVELS = ['PG', 'PG-13', 'R'];
 
@@ -63,6 +65,46 @@ export async function reportLostDevice() {
   } catch (_) { /* audit_log optional — still revoke + confirm */ }
   try { await supabase.auth.signOut(); } catch (_) { /* clears this session's cookies */ }
   return { ok: true, loggedOut: true, msg: '🚨 Reported — office alerted. Signing this iPad out…' };
+}
+
+// ── Command Center PIN (per-user second factor for the sensitive dashboard) ──────────────────────────
+// Set or change your own Command Center PIN. Stored as a salted hash; setting it also unlocks now.
+export async function setCommandCenterPin(pin) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Sign in required.' };
+  const profile = await loadProfile(user);
+  if (!ccGated(profile.role)) return { ok: false, msg: 'No Command Center on your role.' };
+  if (!validPin(pin)) return { ok: false, msg: 'PIN must be 4–8 digits.' };
+  const sb = getSupabaseAdmin();
+  const { error } = await sb.from('profiles').update({ cc_pin_hash: hashPin(pin, user.id), cc_pin_set_at: new Date().toISOString() }).eq('user_id', user.id);
+  if (error) return { ok: false, msg: /column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/76_command_center_pin.sql first.' : error.message };
+  cookies().set(CC_COOKIE, signUnlock(user.id), { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 1800 });
+  revalidatePath('/'); revalidatePath('/account');
+  return { ok: true, msg: 'Command Center PIN set.' };
+}
+
+// Verify the PIN and open the Command Center for this session (sets the short-lived unlock cookie).
+export async function unlockCommandCenter(pin) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Sign in required.' };
+  const profile = await loadProfile(user);
+  if (!ccGated(profile.role)) return { ok: false, msg: 'No Command Center on your role.' };
+  const sb = getSupabaseAdmin();
+  const { data } = await sb.from('profiles').select('cc_pin_hash').eq('user_id', user.id).maybeSingle();
+  if (!data || !data.cc_pin_hash) return { ok: false, msg: 'No PIN set yet — create one.' };
+  if (hashPin(pin, user.id) !== data.cc_pin_hash) return { ok: false, msg: 'Wrong PIN.' };
+  cookies().set(CC_COOKIE, signUnlock(user.id), { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 1800 });
+  revalidatePath('/');
+  return { ok: true, msg: 'Unlocked.' };
+}
+
+// Re-lock the Command Center now (clear the unlock cookie).
+export async function lockCommandCenter() {
+  cookies().set(CC_COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 });
+  revalidatePath('/');
+  return { ok: true };
 }
 
 // Merge a small UI preference patch (notifications, reduce-motion, big-text) into profiles.prefs.

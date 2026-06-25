@@ -5,7 +5,7 @@
 // owner/GM override), Resources, Help, Danger Zone. iPad-first: cream/gold, compact rows, big tap targets.
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { setRoastLevel, unlockRoastLevel, savePrefs, reportLostDevice } from './actions';
+import { setRoastLevel, unlockRoastLevel, savePrefs, reportLostDevice, setCommandCenterPin } from './actions';
 import { ROAST_LEVELS } from '@/lib/roast';
 import { createClient } from '@/lib/supabase/client';
 import ChangePassword from './ChangePassword';
@@ -54,7 +54,7 @@ const RESOURCES = [
   ["Plumber's Brain", '/hank'],
 ];
 
-export default function AccountSettings({ user, profile, isManager, theme: initialTheme }) {
+export default function AccountSettings({ user, profile, isManager, ccGated, ccPinSet, theme: initialTheme }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
@@ -67,6 +67,15 @@ export default function AccountSettings({ user, profile, isManager, theme: initi
   const reportLost = () => {
     if (!window.confirm('Report this iPad lost or stolen? You will be signed out now and the office will be alerted to lock it.')) return;
     start(async () => { const r = await reportLostDevice(); flash(r); if (r.ok) { setTimeout(() => { window.location.href = '/login'; }, 900); } });
+  };
+
+  const [ccPin, setCcPin] = useState('');
+  const [ccPin2, setCcPin2] = useState('');
+  const onlyDigits = (v) => v.replace(/\D/g, '').slice(0, 8);
+  const saveCcPin = () => {
+    if (ccPin.length < 4) { flash({ ok: false, msg: 'PIN must be 4–8 digits.' }); return; }
+    if (ccPin !== ccPin2) { flash({ ok: false, msg: 'PINs don’t match.' }); return; }
+    start(async () => { const r = await setCommandCenterPin(ccPin); flash(r); if (r.ok) { setCcPin(''); setCcPin2(''); } });
   };
 
   // Send the real Supabase reset email (lands on /auth/reset to set a new password).
@@ -167,6 +176,21 @@ export default function AccountSettings({ user, profile, isManager, theme: initi
           </div>
         </div>
       </Section>
+
+      {/* 🔒 COMMAND CENTER PIN — owner/supervisors only */}
+      {ccGated && (
+        <Section title="🔒 Command Center PIN">
+          <div style={{ fontSize: 12, color: 'var(--fg-2)', lineHeight: 1.5, marginBottom: 10 }}>
+            A second lock on your Command Center (money / AR / crew board). {ccPinSet ? 'Set a new one below to change it.' : 'You haven’t set one yet — set it here or the first time you open the Command Center.'}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input type="password" inputMode="numeric" value={ccPin} onChange={(e) => setCcPin(onlyDigits(e.target.value))} placeholder={ccPinSet ? 'new PIN' : 'PIN'} style={{ flex: 1, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '11px', fontSize: 16, textAlign: 'center', letterSpacing: 6, fontFamily: "'JetBrains Mono',monospace" }} />
+            <input type="password" inputMode="numeric" value={ccPin2} onChange={(e) => setCcPin2(onlyDigits(e.target.value))} placeholder="confirm" style={{ flex: 1, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '11px', fontSize: 16, textAlign: 'center', letterSpacing: 6, fontFamily: "'JetBrains Mono',monospace" }} />
+            <button onClick={saveCcPin} disabled={pending} className="btn" style={{ opacity: pending ? 0.6 : 1, whiteSpace: 'nowrap' }}>{ccPinSet ? 'Change' : 'Set PIN'}</button>
+          </div>
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 8 }}>4–8 digits. Re-locks after 30 min idle or sign-out. Each person has their own.</div>
+        </Section>
+      )}
 
       {/* 📚 RESOURCES */}
       <Section title="📚 Resources">
