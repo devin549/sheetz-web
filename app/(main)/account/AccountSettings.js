@@ -27,9 +27,10 @@ function Row({ label, children }) {
     </div>
   );
 }
-function Toggle({ on, onClick }) {
+function Toggle({ on, onClick, disabled }) {
   return (
-    <button onClick={onClick} aria-pressed={on} style={{ width: 42, height: 24, borderRadius: 999, border: 'none', cursor: 'pointer', position: 'relative',
+    <button onClick={disabled ? undefined : onClick} disabled={disabled} aria-pressed={on} title={disabled ? 'Required — can’t be turned off' : undefined}
+      style={{ width: 42, height: 24, borderRadius: 999, border: 'none', cursor: disabled ? 'not-allowed' : 'pointer', position: 'relative', opacity: disabled ? 0.7 : 1,
       background: on ? 'var(--green)' : 'var(--surface-3)', transition: 'background .15s' }}>
       <span style={{ position: 'absolute', top: 2, left: on ? 20 : 2, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 3px rgba(0,0,0,.3)' }} />
     </button>
@@ -40,8 +41,8 @@ const dangerGrey = { background: 'var(--surface-3)', color: 'var(--fg-1)', borde
 const dangerRed = { background: 'var(--red)', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' };
 
 const NOTIFS = [
-  ['notif_newjob', 'New job assigned'],
-  ['notif_checkin', '10-min check-in prompt'],
+  ['notif_newjob', 'New job assigned', true, 'Required — you always get pinged when a job lands on you.'],
+  ['notif_checkin', '10-min check-in prompt', true, 'Required — asks how long the job will take; no answer re-pings every 10 min.'],
   ['notif_chat_urgent', 'Chat messages (urgent)'],
   ['notif_chat_normal', 'Chat messages (normal)'],
   ['notif_reviews', 'Customer reviews'],
@@ -146,7 +147,14 @@ export default function AccountSettings({ user, profile, isManager, ccGated, ccP
 
       {/* 🔔 NOTIFICATIONS + 🔥 ROAST LEVEL */}
       <Section title="🔔 Notifications">
-        {NOTIFS.map(([k, lbl]) => <Row key={k} label={lbl}><Toggle on={notifOn(k)} onClick={() => toggleNotif(k)} /></Row>)}
+        {NOTIFS.map(([k, lbl, required, note]) => (
+          <Row key={k} label={
+            <span>{lbl}{required && <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--amber)', marginLeft: 6, letterSpacing: '.5px' }}>REQUIRED</span>}
+              {note && <div className="muted" style={{ fontSize: 10.5, marginTop: 1, fontWeight: 400 }}>{note}</div>}</span>
+          }>
+            <Toggle on={required ? true : notifOn(k)} disabled={required} onClick={() => toggleNotif(k)} />
+          </Row>
+        ))}
 
         {/* 🔥 Daily roast level — pick once then locks (HR-safe). Owner/GM can override/unlock. */}
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 6 }}>
