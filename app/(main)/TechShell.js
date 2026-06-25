@@ -49,12 +49,32 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
   const path = usePathname();
   const [cust, setCust] = useState(false);
   const [peek, setPeek] = useState(false);
-  // Auto-quiet: when the tech is ON-SITE the customer can glance at the iPad, so hide the money/rank
-  // ribbon automatically (the tech can briefly "peek" it). Hand-to-Customer is the stronger manual lock.
+  const [atHouse, setAtHouse] = useState(false);
+  // Auto-quiet: when the customer can glance at the iPad, hide the money/rank ribbon automatically.
+  // Triggers two ways — job status = ON-SITE, OR the device GPS is within ~150m of the job address
+  // (geofence; no key needed — the job's lat/lng is geocoded at booking). Tech can briefly "peek".
+  // Hand-to-Customer is the stronger manual lock.
   const onSite = !!(activeJob && activeJob.onSite);
-  const quiet = onSite && !peek && !cust;
+  const quiet = (onSite || atHouse) && !peek && !cust;
   // Hide the global office "Sheetz" topbar — the cockpit owns its own chrome (no office clutter).
   useEffect(() => { document.documentElement.classList.add('cb-tech'); return () => document.documentElement.classList.remove('cb-tech'); }, []);
+  // Geofence: while on an active job with coords, watch device location and auto-quiet within ~150m.
+  useEffect(() => {
+    const lat = activeJob && activeJob.lat, lng = activeJob && activeJob.lng;
+    if (lat == null || lng == null || typeof navigator === 'undefined' || !navigator.geolocation) return;
+    const toRad = (d) => (d * Math.PI) / 180;
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        const dLat = toRad(pos.coords.latitude - lat), dLng = toRad(pos.coords.longitude - lng);
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat)) * Math.cos(toRad(pos.coords.latitude)) * Math.sin(dLng / 2) ** 2;
+        const meters = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        setAtHouse(meters <= 150);
+      },
+      () => setAtHouse(false), // permission denied / unavailable → fall back to status-based quiet
+      { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 }
+    );
+    return () => { try { navigator.geolocation.clearWatch(id); } catch (_) {} };
+  }, [activeJob && activeJob.id, activeJob && activeJob.lat, activeJob && activeJob.lng]);
   const active = (h) => h !== '/soon' && (path === h || path.startsWith(h + '/'));
   const canOffice = shells.includes('office');
   const initials = String(name || 'Tech').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
