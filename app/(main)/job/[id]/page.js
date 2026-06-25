@@ -8,6 +8,7 @@ import JobPhotos from './JobPhotos';
 import CloseoutV2 from './CloseoutV2';
 import JobParts from './JobParts';
 import JobForms from './JobForms';
+import JobFlow from './JobFlow';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
 
@@ -109,6 +110,20 @@ export default async function JobDetail({ params }) {
   const canReturnRentals = can(role, 'changeStatus') || can(role, 'manageInventory') || canUpload;
   const canAnswerForms = can(role, 'changeStatus') || can(role, 'qaReview') || canUpload;
 
+  // Cockpit workflow rail — which of the 7 steps the job has reached (heuristic from real signals).
+  const st = String(job.status || 'scheduled').toLowerCase();
+  const payDone = !!(dispo.row && dispo.row.payment_disposition);
+  const reached = {
+    rolling: !!job.enroute_at || !!job.started_at || isDone || /enroute|rolling|on_site|onsite/.test(st),
+    arrived: !!job.started_at || isDone || /on_site|onsite/.test(st),
+    diagnose: !!job.started_at || isDone || /on_site|onsite/.test(st),
+    present: payDone || isDone || !!(dispo.row && dispo.row.invoice_status && dispo.row.invoice_status !== 'none'),
+    pay: payDone || isDone,
+    photos: closeout.readyToClose,
+    done: isDone,
+  };
+  const canAct = can(role, 'changeStatus');
+
   return (
     <div className="wrap" style={{ maxWidth: 1040 }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -163,6 +178,8 @@ export default async function JobDetail({ params }) {
         </div>
       </div>
 
+      <JobFlow jobId={id} status={st} reached={reached} gateReady={gateReady} gateMissing={gateMissing} nextHint={gateMissing[0] || ''} canAct={canAct} />
+
       {photoError && (
         <div className="notice">
           <strong>Photo table is not ready.</strong> Run <code>supabase/23_job_photo_spine.sql</code> in Supabase.
@@ -172,7 +189,7 @@ export default async function JobDetail({ params }) {
 
       {/* CLOSEOUT GATE — required media must be present + pass QA before the job can close. */}
       {!photoError && (
-        <div className="card" style={{ marginTop: 10, borderLeft: `3px solid ${gateReady ? 'var(--green)' : 'var(--amber)'}`, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div id="closeout-gate" className="card" style={{ scrollMarginTop: 70, marginTop: 10, borderLeft: `3px solid ${gateReady ? 'var(--green)' : 'var(--amber)'}`, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 240px' }}>
             <span style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: gateReady ? 'color-mix(in oklab, var(--green) 18%, transparent)' : 'color-mix(in oklab, var(--amber) 18%, transparent)' }}>
               {gateReady ? <CircleCheck size={22} style={{ color: 'var(--green)' }} /> : <Lock size={20} style={{ color: 'var(--amber)' }} />}

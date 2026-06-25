@@ -8,6 +8,9 @@ import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { canArchivePhoto, canUploadPhotos, canViewJob, loadJob } from './jobAccess';
+import { closeoutReason } from '@/lib/qa';
+
+const STATUS_STEPS = ['scheduled', 'enroute', 'on_site', 'done'];
 
 const FAIL_CODES = new Set(['blurry', 'wrong_area', 'no_after_proof', 'unfinished', 'missing_equipment', 'customer_issue', 'other']);
 
@@ -208,6 +211,33 @@ export async function overrideCloseout(jobId, reason) {
   revalidatePath('/board');
   revalidatePath('/supervisor/jobs');
   return { ok: true, msg: 'Closeout overridden — job marked complete.' };
+}
+
+// Advance the job's status from the Cockpit (Rolling → On site → Done). Same scope + close-gate rules
+// as the My Day card: a field-only tech can only touch their own job, and 'done' is gated unless the
+// caller can override. Stamps the matching timestamp so the workflow rail lights up the right step.
+export async function setJobStatus(jobId, status) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!can(ctx.role, 'changeStatus')) return { ok: false, msg: 'Your role can’t update job status.' };
+  if (!STATUS_STEPS.includes(status)) return { ok: false, msg: 'Bad status.' };
+  // Field-only tech is already scoped by canViewJob inside getActionContext, but double-check own-job.
+  if (!can(ctx.role, 'seeAllJobs') && can(ctx.role, 'seeOwnOnly')) {
+    if (!ctx.profile?.tech_id || String(ctx.job.tech_id) !== String(ctx.profile.tech_id)) return { ok: false, msg: 'That job isn’t assigned to you.' };
+  }
+  if (status === 'done' && !can(ctx.role, 'qaOverride')) {
+    const reason = await closeoutReason(ctx.sb, ctx.job);
+    if (reason) return { ok: false, msg: reason, blocked: 'closeout' };
+  }
+  const patch = { status };
+  const now = new Date().toISOString();
+  if (status === 'enroute') patch.enroute_at = now;
+  if (status === 'on_site') patch.started_at = now;
+  if (status === 'done') patch.completed_at = now;
+  const { error } = await ctx.sb.from('jobs').update(patch).eq('id', ctx.job.id);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/my-day'); revalidatePath('/board');
+  return { ok: true, msg: status === 'done' ? '🎉 Job complete!' : 'Updated.' };
 }
 
 // Mark a rental issued to this job as RETURNED — clears it from the closeout gate. Allowed for anyone
