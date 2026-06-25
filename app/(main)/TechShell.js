@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import Watermark from './Watermark';
+import ThemeToggle from '@/components/ThemeToggle';
 
 const RAIL = [
   { group: 'Work', items: [
@@ -127,6 +128,7 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
         )}
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ThemeToggle />
           {canOffice && (
             <button onClick={() => switchShell('office')} title="Switch to the office app" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: 'var(--fg-2)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 14, padding: '5px 11px', cursor: 'pointer' }}>
               💼 Office
