@@ -51,7 +51,8 @@ export default async function MainLayout({ children }) {
   // Field shell = iPad cockpit chrome (no office sidebar/topbar). Office/Shop = the desktop sidebar.
   if (shell === 'tech') {
     const activeJob = await loadActiveJob(profile.tech_id);
-    return <TechShell name={name} shells={shells} activeJob={activeJob}>{children}</TechShell>;
+    const wmId = String(user.id || '').replace(/-/g, '').slice(0, 8); // short leak-trace id → maps to this user
+    return <TechShell name={name} shells={shells} activeJob={activeJob} wmId={wmId}>{children}</TechShell>;
   }
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', minHeight: 'calc(100vh - 58px)' }}>

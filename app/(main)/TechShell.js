@@ -9,6 +9,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
+import Watermark from './Watermark';
 
 const RAIL = [
   { group: 'Work', items: [
@@ -45,7 +46,7 @@ function switchShell(s) {
 
 const GAME = { rank: 2, rankDelta: 1, streak: 6, powerHour: 47, level: 7, levelPct: 84 };
 
-export default function TechShell({ name, shells = ['tech'], activeJob = null, game = GAME, children }) {
+export default function TechShell({ name, shells = ['tech'], activeJob = null, game = GAME, wmId = '', children }) {
   const path = usePathname();
   const [cust, setCust] = useState(false);
   const [peek, setPeek] = useState(false);
@@ -79,9 +80,12 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
   const canOffice = shells.includes('office');
   const initials = String(name || 'Tech').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
   const today = new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  // Leak-trace watermark label — who + a short trace id + date, tiled over internal screens.
+  const wmLabel = `${name || 'Tech'} · ${wmId} · ${today} · CB CONFIDENTIAL`;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%' }}>
+      <Watermark label={wmLabel} />
       {/* ── HEADER ───────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px', borderBottom: '1px solid var(--border)', background: 'var(--surface-1)', flexWrap: 'wrap' }}>
         <div style={{ fontWeight: 800, color: 'var(--amber)', fontSize: 15, whiteSpace: 'nowrap' }}>⚡ CB Dispatch</div>
