@@ -3,6 +3,7 @@
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { markIpadUnlocked } from '@/app/(main)/account/actions';
 
 function LoginForm() {
   const router = useRouter();
@@ -23,6 +24,8 @@ function LoginForm() {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     if (error) { setErr(error.message || 'Sign-in failed.'); setBusy(false); return; }
+    // A full password sign-in also satisfies the iPad PIN, so the tech isn't double-prompted.
+    try { await markIpadUnlocked(); } catch (_) {}
     router.push(next.startsWith('/') ? next : '/');
     router.refresh();
   }

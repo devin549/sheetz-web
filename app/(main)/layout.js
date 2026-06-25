@@ -7,9 +7,11 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { weeklyLeaderboard, onTimeStreak, techXp } from '@/lib/leaderboard';
 import { can } from '@/lib/roles';
 import { loadOnboarding, onboardingComplete } from '@/lib/onboarding';
+import { verifyUnlock, IPAD_COOKIE } from '@/lib/ccPin';
 import Sidebar from './Sidebar';
 import TechShell from './TechShell';
 import Onboarding from './Onboarding';
+import CommandCenterPinGate from './CommandCenterPinGate';
 
 // The tech's in-progress job (enroute/on-site) for the always-visible header pin — so they never lose
 // customer context. Guarded + best-effort: any failure just means no pin (the cockpit still renders).
@@ -45,6 +47,13 @@ export default async function MainLayout({ children }) {
   const profile = await loadProfile(user);
   const role = profile.role;
   const name = profile.name || user.email;
+
+  // 🚐 "PIN for this iPad" — app-wide quick lock for anyone who set one. Activates only after migration 78
+  // and only once a PIN exists, so it never blocks a tech who hasn't opted in. Shown before everything else.
+  if (profile.ipadPinReady && profile.ipadPinSet) {
+    const ipadUnlocked = verifyUnlock(user.id, cookies().get(IPAD_COOKIE)?.value);
+    if (!ipadUnlocked) return <CommandCenterPinGate kind="ipad" hasPin title="PIN for this iPad" lockUntil={profile.ipadLockUntil} />;
+  }
 
   // Shell = subdomain (when live) → else the cookie override → else the role default.
   const host = headers().get('host') || '';

@@ -5,7 +5,7 @@
 // owner/GM override), Resources, Help, Danger Zone. iPad-first: cream/gold, compact rows, big tap targets.
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { setRoastLevel, unlockRoastLevel, savePrefs, reportLostDevice, setCommandCenterPin } from './actions';
+import { setRoastLevel, unlockRoastLevel, savePrefs, reportLostDevice, setCommandCenterPin, setIpadPin, lockIpad } from './actions';
 import { ROAST_LEVELS } from '@/lib/roast';
 import { createClient } from '@/lib/supabase/client';
 import ChangePassword from './ChangePassword';
@@ -55,7 +55,7 @@ const RESOURCES = [
   ["Plumber's Brain", '/hank'],
 ];
 
-export default function AccountSettings({ user, profile, isManager, ccGated, ccPinSet, theme: initialTheme }) {
+export default function AccountSettings({ user, profile, isManager, ccGated, ccPinSet, ipadPinReady, ipadPinSet, theme: initialTheme }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
@@ -78,6 +78,15 @@ export default function AccountSettings({ user, profile, isManager, ccGated, ccP
     if (ccPin !== ccPin2) { flash({ ok: false, msg: 'PINs don’t match.' }); return; }
     start(async () => { const r = await setCommandCenterPin(ccPin); flash(r); if (r.ok) { setCcPin(''); setCcPin2(''); } });
   };
+
+  const [ipadPin, setIpadPinV] = useState('');
+  const [ipadPin2, setIpadPin2] = useState('');
+  const saveIpadPin = () => {
+    if (ipadPin.length < 4) { flash({ ok: false, msg: 'PIN must be 4–8 digits.' }); return; }
+    if (ipadPin !== ipadPin2) { flash({ ok: false, msg: 'PINs don’t match.' }); return; }
+    start(async () => { const r = await setIpadPin(ipadPin); flash(r); if (r.ok) { setIpadPinV(''); setIpadPin2(''); } });
+  };
+  const lockNow = () => start(async () => { await lockIpad(); window.location.href = '/'; });
 
   // Send the real Supabase reset email (lands on /auth/reset to set a new password).
   const requestReset = () => start(async () => {
@@ -184,6 +193,24 @@ export default function AccountSettings({ user, profile, isManager, ccGated, ccP
           </div>
         </div>
       </Section>
+
+      {/* 🔐 PIN FOR THIS IPAD — everyone (quick sign-in lock) */}
+      {ipadPinReady && (
+        <Section title="🔐 PIN for this iPad">
+          <div style={{ fontSize: 12, color: 'var(--fg-2)', lineHeight: 1.5, marginBottom: 10 }}>
+            A quick PIN to unlock this iPad — faster than typing your password. 3 wrong tries locks it 15 min and photos whoever’s holding it. {ipadPinSet ? 'Set a new one below to change it.' : 'You haven’t set one yet.'}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input type="password" inputMode="numeric" value={ipadPin} onChange={(e) => setIpadPinV(onlyDigits(e.target.value))} placeholder={ipadPinSet ? 'new PIN' : 'PIN'} style={{ flex: 1, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '11px', fontSize: 16, textAlign: 'center', letterSpacing: 6, fontFamily: "'JetBrains Mono',monospace" }} />
+            <input type="password" inputMode="numeric" value={ipadPin2} onChange={(e) => setIpadPin2(onlyDigits(e.target.value))} placeholder="confirm" style={{ flex: 1, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '11px', fontSize: 16, textAlign: 'center', letterSpacing: 6, fontFamily: "'JetBrains Mono',monospace" }} />
+            <button onClick={saveIpadPin} disabled={pending} className="btn" style={{ opacity: pending ? 0.6 : 1, whiteSpace: 'nowrap' }}>{ipadPinSet ? 'Change' : 'Set PIN'}</button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+            <div className="muted" style={{ fontSize: 10.5, flex: 1 }}>4–8 digits. Unlocks for the workday (8 hr) or until you lock / sign out.</div>
+            {ipadPinSet && <button onClick={lockNow} disabled={pending} style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', background: 'var(--surface-2)', border: '1px solid var(--amber-dim)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>🔒 Lock now</button>}
+          </div>
+        </Section>
+      )}
 
       {/* 🔒 COMMAND CENTER PIN — owner/supervisors only */}
       {ccGated && (

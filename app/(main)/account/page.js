@@ -27,6 +27,8 @@ export default async function Account() {
       isManager={can(profile.role, 'manageUsers')}
       ccGated={ccGated(profile.role) && profile.ccPinReady}
       ccPinSet={profile.ccPinSet}
+      ipadPinReady={profile.ipadPinReady}
+      ipadPinSet={profile.ipadPinSet}
       theme={theme}
     />
   );

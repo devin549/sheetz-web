@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
-import { hashPin, validPin, signUnlock, CC_COOKIE, ccGated } from '@/lib/ccPin';
+import { hashPin, validPin, signUnlock, CC_COOKIE, IPAD_COOKIE, IPAD_TTL_MS, ccGated } from '@/lib/ccPin';
 import { sendOne } from '@/lib/email';
 
 const LEVELS = ['PG', 'PG-13', 'R'];
@@ -121,6 +121,65 @@ export async function unlockCommandCenter(pin) {
   try { await sb.from('profiles').update({ cc_pin_attempts: attempts }).eq('user_id', user.id); } catch (_) {}
   const left = MAX_PIN_ATTEMPTS - attempts;
   return { ok: false, msg: `Wrong PIN. ${left} ${left === 1 ? 'try' : 'tries'} left.` };
+}
+
+// ── "PIN for this iPad" (everyone's quick app lock) — same hardening as the Command Center PIN ────────
+const cookieOpts = { httpOnly: true, sameSite: 'lax', path: '/', maxAge: Math.floor(IPAD_TTL_MS / 1000) };
+const ipadUnlock = (uid) => signUnlock(uid, IPAD_TTL_MS);
+export async function setIpadPin(pin) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Sign in required.' };
+  if (!validPin(pin)) return { ok: false, msg: 'PIN must be 4–8 digits.' };
+  const sb = getSupabaseAdmin();
+  const { error } = await sb.from('profiles').update({ ipad_pin_hash: hashPin(pin, user.id), ipad_pin_set_at: new Date().toISOString(), ipad_pin_attempts: 0, ipad_pin_lock_until: null }).eq('user_id', user.id);
+  if (error) return { ok: false, msg: /column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/78_ipad_pin.sql first.' : error.message };
+  cookies().set(IPAD_COOKIE, ipadUnlock(user.id), cookieOpts);
+  revalidatePath('/', 'layout');
+  return { ok: true, msg: 'iPad PIN set.' };
+}
+
+export async function unlockIpad(pin) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Sign in required.' };
+  const profile = await loadProfile(user);
+  const sb = getSupabaseAdmin();
+  const { data } = await sb.from('profiles').select('ipad_pin_hash, ipad_pin_attempts, ipad_pin_lock_until').eq('user_id', user.id).maybeSingle();
+  if (!data || !data.ipad_pin_hash) return { ok: false, msg: 'No PIN set yet — create one.' };
+  const lockUntil = data.ipad_pin_lock_until ? Date.parse(data.ipad_pin_lock_until) : 0;
+  if (lockUntil > Date.now()) return { ok: false, locked: true, lockUntil: data.ipad_pin_lock_until, msg: `🔒 Locked — try again in ${Math.ceil((lockUntil - Date.now()) / 60000)} min.` };
+  if (hashPin(pin, user.id) === data.ipad_pin_hash) {
+    try { await sb.from('profiles').update({ ipad_pin_attempts: 0, ipad_pin_lock_until: null }).eq('user_id', user.id); } catch (_) {}
+    cookies().set(IPAD_COOKIE, ipadUnlock(user.id), cookieOpts);
+    revalidatePath('/', 'layout');
+    return { ok: true, msg: 'Unlocked.' };
+  }
+  const attempts = (Number(data.ipad_pin_attempts) || 0) + 1;
+  if (attempts >= MAX_PIN_ATTEMPTS) {
+    const until = new Date(Date.now() + PIN_LOCK_MS).toISOString();
+    try { await sb.from('profiles').update({ ipad_pin_attempts: 0, ipad_pin_lock_until: until }).eq('user_id', user.id); } catch (_) {}
+    try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'ipad_pin.lockout', entity: 'security', entity_id: user.id, detail: { reason: '3 failed iPad PIN attempts' } }); } catch (_) {}
+    return { ok: false, locked: true, captureIntruder: true, lockUntil: until, msg: '🔒 Locked 15 min after 3 wrong PINs.' };
+  }
+  try { await sb.from('profiles').update({ ipad_pin_attempts: attempts }).eq('user_id', user.id); } catch (_) {}
+  const left = MAX_PIN_ATTEMPTS - attempts;
+  return { ok: false, msg: `Wrong PIN. ${left} ${left === 1 ? 'try' : 'tries'} left.` };
+}
+
+// Called right after a password sign-in so the tech isn't immediately re-prompted for their iPad PIN.
+export async function markIpadUnlocked() {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false };
+  cookies().set(IPAD_COOKIE, ipadUnlock(user.id), cookieOpts);
+  return { ok: true };
+}
+
+export async function lockIpad() {
+  cookies().set(IPAD_COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 });
+  revalidatePath('/', 'layout');
+  return { ok: true };
 }
 
 // On the 3rd failed PIN, the client snaps a front-camera photo and hands it here: store it in the private
