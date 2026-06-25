@@ -95,6 +95,8 @@ a:hover { color: var(--amber-bright); }
 .topbar .logo { font-size: 22px; }
 .topbar .title { font-weight: 800; font-size: 16px; }
 .topbar .sub { font-size: 11px; color: var(--fg-3); }
+/* Field cockpit (tech iPad) owns its own chrome — hide the global office topbar there. */
+html.cb-tech .topbar { display: none; }
 
 .card {
   background: var(--surface-1); border: 1px solid var(--border);

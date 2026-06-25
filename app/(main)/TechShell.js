@@ -1,18 +1,41 @@
 'use client';
 
-// The FIELD shell chrome — NO office sidebar. A mobile-first bottom rail (the iPad rail, trimmed to the
-// 5 thumb-reach tabs) + a header escape hatch for owner/GM to drop back to Office mode. "Job Cockpit, not
-// desktop My Day": the cockpit screens live under these tabs; this is just the field-app frame around them.
+// THE FIELD COCKPIT — iPad-only chrome, ported from the live SPA (CB_Dispatch_TechIpadHtml_v1.js).
+// Not the desktop app squeezed down: big touch targets, job-first, zero office/accounting/admin.
+// Three pieces: a top header (logo · who · active-job pin · Hand-to-Customer · clock), a gamified
+// engagement ribbon (tech-only — hidden when the iPad is handed to a customer or on-site), and a
+// grouped LEFT icon rail (Work / Comms / Me / Truck). Money surfaces are tagged so Customer Mode
+// hides them in one switch. Gamification figures are sample for now (seam = the `game` prop).
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Calendar, DollarSign, Sparkles, Truck, User, Briefcase } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
-const TABS = [
-  { href: '/my-day', label: 'Today', icon: Calendar },
-  { href: '/pay', label: 'Pay', icon: DollarSign },
-  { href: '/hank', label: 'Hank', icon: Sparkles },
-  { href: '/my-truck', label: 'Tools', icon: Truck },
-  { href: '/account', label: 'Me', icon: User },
+const RAIL = [
+  { group: 'Work', items: [
+    { icon: '🌅', label: 'Start', href: '/soon' },
+    { icon: '📋', label: 'My Day', href: '/my-day' },
+    { icon: '🧲', label: 'Bids', href: '/soon' },
+    { icon: '🌙', label: 'End', href: '/soon' },
+  ] },
+  { group: 'Comms', items: [
+    { icon: '💬', label: 'Chat', href: '/messages' },
+    { icon: '🪠', label: 'Hank', href: '/hank' },
+  ] },
+  { group: 'Me', money: true, items: [
+    { icon: '💵', label: 'Pay', href: '/pay', money: true },
+    { icon: '🏁', label: 'Races', href: '/soon', money: true, badge: '5' },
+    { icon: '🏆', label: 'Record', href: '/soon', money: true },
+    { icon: '🎰', label: 'Vegas', href: '/soon', money: true },
+    { icon: '📆', label: 'Cal', href: '/soon' },
+    { icon: '📅', label: 'PTO', href: '/soon' },
+    { icon: '⭐', label: 'Reviews', href: '/reviews' },
+  ] },
+  { group: 'Truck', items: [
+    { icon: '🚐', label: 'My Truck', href: '/my-truck' },
+    { icon: '🛒', label: 'Shop', href: '/shop' },
+    { icon: '📣', label: 'Mkt', href: '/soon' },
+    { icon: '⚙️', label: 'Set', href: '/account' },
+  ] },
 ];
 
 function switchShell(s) {
@@ -20,34 +43,110 @@ function switchShell(s) {
   window.location.href = s === 'office' ? '/' : s === 'shop' ? '/shop' : '/my-day';
 }
 
-export default function TechShell({ name, shells = ['tech'], children }) {
+const GAME = { rank: 2, rankDelta: 1, streak: 6, powerHour: 47, level: 7, levelPct: 84 };
+
+export default function TechShell({ name, shells = ['tech'], activeJob = null, game = GAME, children }) {
   const path = usePathname();
-  const active = (h) => path === h || path.startsWith(h + '/');
+  const [cust, setCust] = useState(false);
+  // Hide the global office "Sheetz" topbar — the cockpit owns its own chrome (no office clutter).
+  useEffect(() => { document.documentElement.classList.add('cb-tech'); return () => document.documentElement.classList.remove('cb-tech'); }, []);
+  const active = (h) => h !== '/soon' && (path === h || path.startsWith(h + '/'));
   const canOffice = shells.includes('office');
+  const initials = String(name || 'Tech').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  const today = new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 58px)', width: '100%' }}>
-      {canOffice && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', borderBottom: '1px solid var(--border)', background: 'var(--surface-1)' }}>
-          <span className="muted" style={{ fontSize: 11, fontWeight: 700 }}>🔧 Field mode</span>
-          <button onClick={() => switchShell('office')} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: 'var(--fg-2)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 7, padding: '4px 10px', cursor: 'pointer' }}>
-            <Briefcase size={13} /> Office mode
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%' }}>
+      {/* ── HEADER ───────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px', borderBottom: '1px solid var(--border)', background: 'var(--surface-1)', flexWrap: 'wrap' }}>
+        <div style={{ fontWeight: 800, color: 'var(--amber)', fontSize: 15, whiteSpace: 'nowrap' }}>⚡ CB Dispatch</div>
+        <div className="muted" style={{ fontSize: 12 }}>{name} · {today}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 14, padding: '4px 10px', fontSize: 11, fontWeight: 700 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 999, background: 'var(--green)', display: 'inline-block' }} /> On shift
+        </div>
+
+        {activeJob && (
+          <Link href={`/job/${activeJob.id}`} style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, background: 'linear-gradient(135deg, #1a3a2a 0%, #0f2a1a 100%)', border: '1px solid #4caf50', color: '#a5d6a7', padding: '6px 12px', borderRadius: 18, fontSize: 11, fontWeight: 700 }}>
+            📌 <span style={{ color: '#fff' }}>{activeJob.customer || 'Active job'}</span>
+            {activeJob.number ? <span style={{ color: '#a5d6a7', fontWeight: 400 }}>· {activeJob.number}</span> : null}
+            <span style={{ background: 'rgba(76,175,80,0.3)', color: '#a5d6a7', padding: '1px 6px', borderRadius: 8, fontSize: 9, fontWeight: 800 }}>{activeJob.statusLabel || 'ON-SITE'}</span>
+          </Link>
+        )}
+
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          {canOffice && (
+            <button onClick={() => switchShell('office')} title="Switch to the office app" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: 'var(--fg-2)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 14, padding: '5px 11px', cursor: 'pointer' }}>
+              💼 Office
+            </button>
+          )}
+          <button onClick={() => setCust((v) => !v)} title="Hand the iPad to the customer — hides pay/races/rank" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, color: '#fff', background: cust ? 'var(--surface-2)' : 'linear-gradient(135deg, #4caf50 0%, #1b5e20 100%)', border: cust ? '1px solid var(--green)' : 'none', borderRadius: 14, padding: '6px 12px', cursor: 'pointer' }}>
+            🔒 {cust ? 'Exit customer view' : 'Hand to Customer'}
           </button>
+          <div className="av" style={{ width: 30, height: 30, borderRadius: 999, background: 'var(--amber)', color: '#1a1206', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>{initials}</div>
+        </div>
+      </div>
+
+      {/* ── ENGAGEMENT RIBBON (tech-only) ────────────────────────── */}
+      {!cust && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '8px 16px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'var(--fg-2)', overflowX: 'auto',
+          background: 'linear-gradient(90deg, #3a1d00 0%, #0e3a5c 28%, #0c402e 52%, #3a124a 76%, #3a1d00 100%)', borderTop: '2px solid #ffc400', borderBottom: '2px solid #ff8f00' }}>
+          <Link href="/pay" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(105,240,174,0.12)', border: '1px solid #2ee6a0', borderRadius: 14, padding: '4px 11px' }}>
+            💰 <span style={{ color: '#69f0ae', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 800 }}>My Day $</span><span style={{ color: '#a5d6a7', fontWeight: 800 }}>›</span>
+          </Link>
+          <span style={{ color: 'rgba(255,196,60,0.5)' }}>│</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>🏆 <span style={{ color: 'var(--fg-3)', fontSize: 10, textTransform: 'uppercase' }}>Rank</span>
+            <span style={{ color: 'var(--amber)', fontWeight: 800, fontSize: 16 }}>#{game.rank}</span>
+            {game.rankDelta ? <span style={{ color: '#4caf50', fontWeight: 800, fontSize: 11, background: 'rgba(76,175,80,0.15)', border: '1px solid #4caf50', borderRadius: 10, padding: '2px 6px' }}>▲{game.rankDelta}</span> : null}
+          </span>
+          <span style={{ color: 'rgba(255,196,60,0.5)' }}>│</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>🔥 <span style={{ color: '#ff8a65', fontWeight: 800, fontSize: 14 }}>{game.streak}</span><span style={{ color: 'var(--fg-3)', fontSize: 10, textTransform: 'uppercase' }}>day on-time</span></span>
+          <span style={{ color: 'rgba(255,196,60,0.5)' }}>│</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,179,0,0.12)', padding: '4px 10px', borderRadius: 14, border: '1px solid var(--amber)' }}>
+            ⚡ <span style={{ color: 'var(--amber)', fontWeight: 800, fontSize: 11, textTransform: 'uppercase' }}>Power Plunger Hour</span><span style={{ color: '#ffeb3b', fontWeight: 800 }}>{game.powerHour}m</span>
+          </span>
+          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>👑
+            <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+              <span style={{ color: 'var(--amber)', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Crown Plunger Lvl {game.level}</span>
+              <span style={{ background: 'var(--surface-2)', width: 80, height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 2 }}><span style={{ display: 'block', width: `${game.levelPct}%`, height: '100%', background: 'var(--amber)' }} /></span>
+              <span style={{ color: 'var(--fg-3)', fontSize: 8 }}>{game.levelPct}% to Legend</span>
+            </span>
+          </span>
+        </div>
+      )}
+      {cust && (
+        <div style={{ padding: '9px 16px', textAlign: 'center', fontSize: 12, fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg, #4caf50 0%, #1b5e20 100%)' }}>
+          🔒 Customer view — pay, races &amp; rank are hidden. Tap “Exit customer view” to return.
         </div>
       )}
 
-      <main style={{ flex: 1, minWidth: 0, paddingBottom: 68 }}>{children}</main>
+      {/* ── BODY: left rail + content ────────────────────────────── */}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        <nav style={{ width: 84, flexShrink: 0, background: 'var(--surface-1)', borderRight: '1px solid var(--border)', padding: '8px 4px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
+          {RAIL.map((grp) => {
+            if (cust && grp.money) return null; // hide the whole "Me" money group in customer view
+            return (
+              <div key={grp.group}>
+                <div style={{ fontSize: 8, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '.06em', padding: '8px 4px 4px', textAlign: 'center', fontWeight: 700 }}>{grp.group}</div>
+                {grp.items.map((it) => {
+                  if (cust && it.money) return null;
+                  const A = active(it.href);
+                  return (
+                    <Link key={it.label} href={it.href} title={it.label}
+                      style={{ position: 'relative', width: 76, height: 60, borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, textDecoration: 'none',
+                        color: A ? 'var(--amber)' : 'var(--fg-3)', background: A ? 'var(--surface-2)' : 'transparent', fontSize: 10, fontWeight: A ? 800 : 600 }}>
+                      <span style={{ fontSize: 20 }}>{it.icon}</span>
+                      <span>{it.label}</span>
+                      {it.badge && <span style={{ position: 'absolute', top: 4, right: 8, background: 'var(--red, #d32f2f)', color: '#fff', borderRadius: 9, padding: '0 5px', fontSize: 9, fontWeight: 800 }}>{it.badge}</span>}
+                    </Link>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </nav>
 
-      <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', borderTop: '1px solid var(--border)', background: 'var(--surface-1)', zIndex: 30 }}>
-        {TABS.map((t) => {
-          const A = active(t.href); const I = t.icon;
-          return (
-            <Link key={t.href} href={t.href} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '9px 0', textDecoration: 'none', color: A ? 'var(--amber)' : 'var(--fg-3)', fontWeight: A ? 800 : 600, fontSize: 10.5 }}>
-              <I size={20} /><span>{t.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
+        <main style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>{children}</main>
+      </div>
     </div>
   );
 }
