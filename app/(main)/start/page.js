@@ -1,5 +1,6 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requirePerm } from '@/lib/guard';
+import { scopeToTech } from '@/lib/techJobScope';
 import StartOfDay from './StartOfDay';
 
 export const dynamic = 'force-dynamic';
@@ -23,13 +24,13 @@ export default async function Start() {
   const day = nyDayKey();
   const { startISO, endISO } = nyWindow(day);
 
-  // Today's jobs for this tech.
-  let jobs = [];
-  if (profile.tech_id) {
-    const jr = await sb.from('jobs').select('id, job_number, job_type, scheduled_at, customers(name)')
-      .eq('tech_id', profile.tech_id).gte('scheduled_at', startISO).lt('scheduled_at', endISO).order('scheduled_at', { ascending: true });
-    jobs = (jr.data || []).map((j) => ({ id: j.id, time: fmtTime(j.scheduled_at), customer: (j.customers && j.customers.name) || 'Customer', type: j.job_type || '' }));
-  }
+  // Today's jobs for this tech (tech_id link, or name/email fallback for unlinked techs).
+  const jr = await scopeToTech(
+    sb.from('jobs').select('id, job_number, job_type, scheduled_at, customers(name)')
+      .gte('scheduled_at', startISO).lt('scheduled_at', endISO).order('scheduled_at', { ascending: true }),
+    { profile, user }
+  );
+  const jobs = (jr.data || []).map((j) => ({ id: j.id, time: fmtTime(j.scheduled_at), customer: (j.customers && j.customers.name) || 'Customer', type: j.job_type || '' }));
 
   // On-call status (current week row; match the tech's name in any slot).
   let onCall = '';

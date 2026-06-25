@@ -1,6 +1,7 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requirePerm } from '@/lib/guard';
 import { loadCloseoutBatch } from '@/lib/qa';
+import { scopeToTech } from '@/lib/techJobScope';
 import EndOfDay from './EndOfDay';
 
 export const dynamic = 'force-dynamic';
@@ -26,8 +27,9 @@ export default async function End() {
 
   let summary = { unresolved: 0, failedQa: 0, missingMedia: 0, corrections: 0 };
   let tomorrowCount = 0;
-  if (profile.tech_id) {
-    const jr = await sb.from('jobs').select('id, status, job_type').eq('tech_id', profile.tech_id).gte('scheduled_at', startISO).lt('scheduled_at', endISO);
+  {
+    // tech_id link, or name/email fallback for techs not linked to a roster row (mirrors My Day).
+    const jr = await scopeToTech(sb.from('jobs').select('id, status, job_type').gte('scheduled_at', startISO).lt('scheduled_at', endISO), { profile, user });
     const todays = jr.data || [];
     summary.unresolved = todays.filter((j) => !/done|complete|closed|cancel/.test(String(j.status || '').toLowerCase())).length;
     const co = await loadCloseoutBatch(sb, todays.map((j) => ({ id: j.id, job_type: j.job_type })));
@@ -37,7 +39,7 @@ export default async function End() {
       const { data: corr } = await sb.from('job_corrections').select('id').eq('status', 'open').in('orig_job_id', todays.map((j) => String(j.id)));
       summary.corrections = (corr || []).length;
     }
-    const tr = await sb.from('jobs').select('id', { count: 'exact', head: true }).eq('tech_id', profile.tech_id).gte('scheduled_at', tw.startISO).lt('scheduled_at', tw.endISO);
+    const tr = await scopeToTech(sb.from('jobs').select('id', { count: 'exact', head: true }).gte('scheduled_at', tw.startISO).lt('scheduled_at', tw.endISO), { profile, user });
     tomorrowCount = tr.count || 0;
   }
 
