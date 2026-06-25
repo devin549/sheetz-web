@@ -15,6 +15,7 @@ const QA_COLOR = { pass: 'var(--green)', fail: 'var(--red)', partial: 'var(--amb
 const FILTERS = [
   { k: 'all', label: 'All', test: () => true },
   { k: 'blocked', label: 'Blocked', test: (co) => co.available !== false && !co.readyToClose },
+  { k: 'missing', label: 'Missing media', test: (co) => co.available !== false && ((co.photoCount || 0) < (co.minPhotos || 3) || (co.missingKinds || []).length > 0 || (co.requireVideo && !co.haveVideo)) },
   { k: 'pending', label: 'Not reviewed', test: (co) => co.qaState === 'pending' || co.qaState === 'partial' },
   { k: 'fail', label: 'Failed QA', test: (co) => co.qaState === 'fail' },
   { k: 'pass', label: 'Passed QA', test: (co) => co.qaState === 'pass' },
@@ -44,6 +45,7 @@ export default function SupervisorList({ jobs, dateStr, today }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div className="h1" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><ClipboardCheck size={22} style={{ color: 'var(--amber)' }} /> QA / Closeouts</div>
         <DateNav date={dateStr} today={today} />
+        <Link href="/corrections" className="pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--amber-dim)', color: 'var(--amber)', fontWeight: 700 }}>🚧 QA Holds</Link>
         <span className="muted" style={{ marginLeft: 'auto', fontSize: 12 }}>Supervisor verifies the work · {jobs.length} jobs</span>
       </div>
 
@@ -80,7 +82,7 @@ export default function SupervisorList({ jobs, dateStr, today }) {
           return (
             <Link key={j.id} href={`/job/${j.id}`} className="card" style={{ display: 'flex', alignItems: 'center', gap: 14, textDecoration: 'none', color: 'inherit', borderLeft: `3px solid ${co.available !== false && !co.readyToClose ? 'var(--amber)' : 'var(--green)'}` }}>
               <div style={{ minWidth: 0, flex: '1 1 220px' }}>
-                <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.customer}{j.job_number ? <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}> · #{j.job_number}</span> : null}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.prev && <span className="pill" style={{ fontSize: 9, fontWeight: 800, color: 'var(--amber)', marginRight: 6 }}>YESTERDAY</span>}{j.customer}{j.job_number ? <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}> · #{j.job_number}</span> : null}</div>
                 <div className="muted" style={{ fontSize: 11.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.job_type || 'Job'}{j.address ? ` · ${j.address}` : ''}</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--fg-2)', flex: '0 0 auto', minWidth: 90 }}>

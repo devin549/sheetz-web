@@ -16,6 +16,7 @@ function nyOffsetMinutes(d) {
   return h * 60 + (h < 0 ? -1 : 1) * parseInt(m[2] || '0', 10);
 }
 function nyTodayStr() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()); }
+function prevDayStr(dateStr) { const d = new Date(Date.parse(dateStr + 'T12:00:00Z')); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); }
 function nyDayWindow(dateStr) {
   const off = nyOffsetMinutes(new Date(Date.parse(dateStr + 'T12:00:00Z')));
   const startMs = Date.parse(dateStr + 'T00:00:00Z') - off * 60000;
@@ -40,11 +41,25 @@ export default async function SupervisorJobs({ searchParams }) {
   if (res.error && /column .* does not exist/i.test(res.error.message || '')) res = await run('');
   const raw = (res.data || []).filter((j) => !String(j.status || '').toLowerCase().includes('cancel'));
 
-  const closeout = await loadCloseoutBatch(sb, raw.map((j) => ({ id: j.id, job_type: j.job_type })));
-  const jobs = raw.map((j) => ({
+  // Carryover: when viewing TODAY, also pull yesterday's still-open jobs (not closed/cancelled) so
+  // failed / blocked work doesn't fall off the queue at midnight (CB Cam "failed yesterday" bucket).
+  let carried = [];
+  if (dateStr === nyTodayStr()) {
+    const y = nyDayWindow(prevDayStr(dateStr));
+    const yRun = (extra) => sb.from('jobs')
+      .select('id, status, scheduled_at, tech_id' + extra + ', customers(name, address, phone), techs(name)')
+      .gte('scheduled_at', y.startISO).lt('scheduled_at', y.endISO).order('scheduled_at', { ascending: true });
+    let yres = await yRun(', job_number, job_type, amount, tech_name');
+    if (yres.error && /column .* does not exist/i.test(yres.error.message || '')) yres = await yRun('');
+    carried = (yres.data || []).filter((j) => { const s = String(j.status || '').toLowerCase(); return !/cancel|done|complete|closed/.test(s); });
+  }
+
+  const all = [...raw, ...carried.map((j) => ({ ...j, _prev: true }))];
+  const closeout = await loadCloseoutBatch(sb, all.map((j) => ({ id: j.id, job_type: j.job_type })));
+  const jobs = all.map((j) => ({
     id: j.id, customer: (j.customers && j.customers.name) || 'Customer', address: (j.customers && j.customers.address) || '',
     phone: (j.customers && j.customers.phone) || '', job_number: j.job_number || '', job_type: j.job_type || '',
-    status: j.status, statusKey: statusKey(j.status), scheduledISO: j.scheduled_at,
+    status: j.status, statusKey: statusKey(j.status), scheduledISO: j.scheduled_at, prev: !!j._prev,
     tech: j.tech_name || (j.techs && j.techs.name) || 'Unassigned', co: closeout[j.id] || {},
   }));
 
