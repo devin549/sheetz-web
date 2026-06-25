@@ -1,0 +1,62 @@
+import Link from 'next/link';
+import { ArrowLeft, Phone, MessageSquare, Mic, Navigation } from 'lucide-react';
+
+const dial = (p) => String(p || '').replace(/[^0-9+]/g, '');
+function statusLabel(v) {
+  const s = String(v || 'scheduled').toLowerCase();
+  if (/done|complete|closed/.test(s)) return 'Complete';
+  if (/on_?site/.test(s)) return 'On site';
+  if (/enroute|rolling/.test(s)) return 'En route';
+  if (/cancel/.test(s)) return 'Cancelled';
+  return 'Scheduled';
+}
+
+// Shared Job Cockpit top section — back · customer · job# · address · call/text/CSR/directions · warnings.
+// `tab` highlights the current tab in a compact sub-nav (so it's reachable even off the iPad rail).
+const TABS = [
+  ['Overview', ''], ['Forms', '/forms'], ['Photos', '/photos'], ['Estimate', '/estimate'],
+  ['Invoice', '/invoice'], ['Parts/PO', '/parts'], ['Prices', '/prices'], ['Equipment', '/equipment'], ['History', '/history'],
+];
+
+export default function JobHeader({ job, customer = {}, tab = 'Overview' }) {
+  const tel = dial(customer.phone);
+  const addr = customer.address || '';
+  const mapHref = addr ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}` : null;
+
+  return (
+    <div className="card card-amber" style={{ position: 'sticky', top: 0, zIndex: 5 }}>
+      <Link href="/my-day" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--amber)', textDecoration: 'none' }}><ArrowLeft size={14} /> My Day</Link>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+        <div className="h1" style={{ margin: 0, fontSize: 20 }}>{customer.name || 'Customer'}</div>
+        <div className="muted" style={{ fontSize: 12 }}>{job.job_number ? `#${job.job_number} · ` : ''}{statusLabel(job.status)}{job.job_type ? ` · ${job.job_type}` : ''}</div>
+      </div>
+      {addr && <a href={mapHref} target="_blank" rel="noreferrer" style={{ display: 'block', fontSize: 12.5, color: 'var(--fg-2)', marginTop: 2 }}>📍 {addr}</a>}
+
+      {/* quick contact bar */}
+      <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+        {tel && <a href={`tel:${tel}`} className="pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}><Phone size={13} /> Call</a>}
+        {tel && <a href={`sms:${tel}`} className="pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><MessageSquare size={13} /> Text</a>}
+        <span className="pill" title="CSR call recording (links when call-intel is wired)" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, opacity: 0.6 }}><Mic size={13} /> CSR call</span>
+        {mapHref && <a href={mapHref} target="_blank" rel="noreferrer" className="pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Navigation size={13} /> Directions</a>}
+      </div>
+
+      {/* warnings / access notes */}
+      {(job.access_notes || job.priority && /high|urgent|emergency/i.test(String(job.priority))) && (
+        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>
+          {/high|urgent|emergency/i.test(String(job.priority || '')) && <span style={{ marginRight: 8 }}>⚠ {String(job.priority).toUpperCase()}</span>}
+          {job.access_notes && <span style={{ color: 'var(--fg-1)', fontWeight: 600 }}>🔑 {job.access_notes}</span>}
+        </div>
+      )}
+
+      {/* tab sub-nav (also works without the iPad rail) */}
+      <div style={{ display: 'flex', gap: 4, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>
+        {TABS.map(([label, sub]) => {
+          const on = label === tab;
+          return (
+            <Link key={label} href={`/job/${job.id}${sub}`} className="pill" style={{ whiteSpace: 'nowrap', fontSize: 11, fontWeight: on ? 800 : 600, color: on ? '#1a1206' : 'var(--fg-2)', background: on ? 'var(--amber)' : 'var(--surface-2)', border: '1px solid var(--border)' }}>{label}</Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

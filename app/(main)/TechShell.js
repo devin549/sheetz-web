@@ -91,12 +91,15 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
   const rail = inJob
     ? [{ group: 'This job', items: [
         { icon: '‹', label: 'My Day', href: '/my-day' },
-        { icon: '🧰', label: 'Job', href: `/job/${curId}` },
+        { icon: '📋', label: 'Overview', href: `/job/${curId}` },
+        { icon: '📝', label: 'Forms', href: `/job/${curId}/forms` },
         { icon: '📸', label: 'Photos', href: `/job/${curId}/photos` },
-        { icon: '🔧', label: 'Tools', href: `/job/${curId}/tools` },
-        { icon: '💵', label: 'Pay', href: '/pay' },
-        { icon: '🗒️', label: 'Notes', href: `/job/${curId}#customer` },
-        { icon: '🕑', label: 'History', href: `/job/${curId}#customer` },
+        { icon: '🧾', label: 'Estimate', href: `/job/${curId}/estimate` },
+        { icon: '💳', label: 'Invoice', href: `/job/${curId}/invoice` },
+        { icon: '📦', label: 'Parts/PO', href: `/job/${curId}/parts` },
+        { icon: '📖', label: 'Prices', href: `/job/${curId}/prices` },
+        { icon: '🔧', label: 'Equipment', href: `/job/${curId}/equipment` },
+        { icon: '🕑', label: 'History', href: `/job/${curId}/history` },
       ] }]
     : [{ group: 'Job', items: [
         { icon: '🧰', label: 'Job', href: activeJob ? `/job/${activeJob.id}` : '/my-day' },
