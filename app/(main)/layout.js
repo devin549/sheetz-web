@@ -5,8 +5,11 @@ import { loadProfile } from '@/lib/profile';
 import { resolveShell, switchableShells } from '@/lib/shells';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { weeklyLeaderboard, onTimeStreak, techXp } from '@/lib/leaderboard';
+import { can } from '@/lib/roles';
+import { loadOnboarding, onboardingComplete } from '@/lib/onboarding';
 import Sidebar from './Sidebar';
 import TechShell from './TechShell';
+import Onboarding from './Onboarding';
 
 // The tech's in-progress job (enroute/on-site) for the always-visible header pin — so they never lose
 // customer context. Guarded + best-effort: any failure just means no pin (the cockpit still renders).
@@ -48,6 +51,13 @@ export default async function MainLayout({ children }) {
   const cookieShell = cookies().get('cb_shell')?.value || '';
   const shell = resolveShell({ host, cookieShell, role, fieldMode: profile.fieldMode, shopMode: profile.shopMode });
   const shells = switchableShells({ role, fieldMode: profile.fieldMode, shopMode: profile.shopMode });
+
+  // Onboarding GATE — a field tech (tech shell, non-manager) sees NOTHING until they clear Monitoring +
+  // Handbook + NDA + roast rating. Owner/GM/admin are exempt (they manage the policy, not gated by it).
+  if (shell === 'tech' && !can(role, 'manageUsers')) {
+    const acks = await loadOnboarding(getSupabaseAdmin(), user.id, profile);
+    if (!onboardingComplete(profile, acks)) return <Onboarding name={name} />;
+  }
 
   // Field shell = iPad cockpit chrome (no office sidebar/topbar). Office/Shop = the desktop sidebar.
   if (shell === 'tech') {
