@@ -3,6 +3,7 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
 import JobCard from './JobCard';
+import { deriveTags } from '@/lib/jobTags';
 import ShareLocation from './ShareLocation';
 
 // Always read fresh (no static caching) — this is live job data.
@@ -88,12 +89,28 @@ export default async function MyDay({ searchParams }) {
       else if (useName) q = q.ilike('techs.name', '%' + scopeName + '%');
       return q;
     };
-    let res = await run(', job_number, job_type, amount');
+    let res = await run(', job_number, job_type, amount, customer_id, job_class, warranty_provider, notes, access_notes');
+    if (res.error) res = await run(', job_number, job_type, amount'); // pre-tag-fields fallback
     if (res.error && /column .* does not exist/i.test(res.error.message || '')) {
       res = await run('');   // 07_jobs_card_fields.sql not run yet — fall back to base columns
     }
     jobs = res.data; error = res.error;
   }
+
+  // High-signal tags need per-customer signals (active membership + open balance). Batch-load both.
+  const memberByCust = {}, pastDueByCust = {};
+  const custIds = [...new Set((jobs || []).map((j) => j.customer_id).filter(Boolean))];
+  if (custIds.length) {
+    try { const { data } = await supabase.from('memberships').select('customer_id, status').in('customer_id', custIds); (data || []).forEach((m) => { if (String(m.status || '').toLowerCase() === 'active') memberByCust[m.customer_id] = true; }); } catch (_) {}
+    try { const { data } = await supabase.from('invoices').select('customer_id, balance').in('customer_id', custIds); (data || []).forEach((v) => { const b = Math.max(0, Number(v.balance) || 0); if (b > 0) pastDueByCust[v.customer_id] = (pastDueByCust[v.customer_id] || 0) + b; }); } catch (_) {}
+  }
+  // The ONE active job = the in-progress one (else the next not-done) — it gets the expanded card.
+  const activeJobId = (() => {
+    const inProg = (jobs || []).find((j) => /on_?site|enroute|rolling/.test(String(j.status || '').toLowerCase()));
+    if (inProg) return inProg.id;
+    const next = (jobs || []).find((j) => !/done|complete|closed|cancel/.test(String(j.status || '').toLowerCase()));
+    return next ? next.id : null;
+  })();
 
   // Date-bar stats (mirrors cbTia_computeDayStats_): onsite / upcoming / $ still to earn.
   const list = jobs || [];
@@ -158,9 +175,12 @@ export default async function MyDay({ searchParams }) {
         <div className="card"><span className="muted">{seeAll ? 'No jobs yet. Run supabase/seed.sql to add samples.' : 'Nothing on your schedule today. 🎉'}</span></div>
       )}
 
-      {!note && !error && list.map((j) => (
-        <JobCard key={j.id} job={j} seeAll={seeAll} canAct={can(role, 'changeStatus')} />
-      ))}
+      {!note && !error && list.map((j) => {
+        const s = String(j.status || '').toLowerCase();
+        const variant = j.id === activeJobId ? 'active' : /done|complete|closed|cancel/.test(s) ? 'done' : 'upcoming';
+        const tags = deriveTags(j, { member: memberByCust[j.customer_id], pastDue: pastDueByCust[j.customer_id] });
+        return <JobCard key={j.id} job={j} seeAll={seeAll} canAct={can(role, 'changeStatus')} variant={variant} tags={tags} />;
+      })}
     </div>
   );
 }

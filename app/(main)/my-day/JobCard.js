@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { updateMyJobStatus, reportEta, createJobPayLink } from './actions';
 import PersonCard from '@/components/PersonCard';
+import { TAG_COLOR } from '@/lib/jobTags';
 
 const ETA_CHIPS = [15, 30, 45, 60];
 
@@ -33,7 +34,28 @@ const btn = (active, done) => ({
   opacity: done ? 0.5 : 1, whiteSpace: 'nowrap',
 });
 
-export default function JobCard({ job, seeAll, canAct }) {
+// Max 4 high-signal tags, then "+N more"; tap a tag to learn why it matters. Color-coded by type.
+function TagRow({ tags = [] }) {
+  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(null);
+  if (!tags.length) return null;
+  const show = expanded ? tags : tags.slice(0, 4);
+  const more = tags.length - 4;
+  return (
+    <div style={{ marginTop: 7 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+        {show.map((tag) => { const c = TAG_COLOR[tag.tone] || TAG_COLOR.gold; return (
+          <button key={tag.key} type="button" onClick={() => setOpen(open === tag.key ? null : tag.key)} title="Why it matters"
+            style={{ cursor: 'pointer', fontSize: 10.5, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: c.bg, color: c.fg, border: `1px solid ${c.bd}` }}>{tag.label}</button>
+        ); })}
+        {!expanded && more > 0 && <button type="button" onClick={() => setExpanded(true)} style={{ cursor: 'pointer', fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: 'var(--surface-2)', color: 'var(--fg-3)', border: '1px solid var(--border)' }}>+{more} more</button>}
+      </div>
+      {open && <div className="muted" style={{ fontSize: 11, marginTop: 5, lineHeight: 1.4 }}>💡 {tags.find((t) => t.key === open)?.why}</div>}
+    </div>
+  );
+}
+
+export default function JobCard({ job, seeAll, canAct, variant = 'active', tags = [] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [busyKey, setBusyKey] = useState(null);
@@ -76,8 +98,10 @@ export default function JobCard({ job, seeAll, canAct }) {
   };
   const newEtaLabel = fmtTime(new Date(Date.now() + etaMins * 60000).toISOString());
 
+  const compact = variant !== 'active'; // upcoming + done = scannable, no heavy controls
+
   return (
-    <div className="card card-amber" style={{ opacity: done || cancelled ? 0.72 : 1 }}>
+    <div className={variant === 'active' ? 'card card-amber' : 'card'} style={{ opacity: variant === 'done' || cancelled ? 0.6 : 1, padding: compact ? '12px 14px' : undefined }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 12, alignItems: 'start' }}>
         <div style={{ textAlign: 'center', minWidth: 52 }}>
           <div style={{ fontWeight: 800, color: 'var(--amber)', fontSize: 14 }}>{fmtTime(job.scheduled_at)}</div>
@@ -92,23 +116,24 @@ export default function JobCard({ job, seeAll, canAct }) {
           {cust.address && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {cust.address}</div>}
           {typeBits && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>🔧 {typeBits}</div>}
           {seeAll && t.name && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}><PersonCard name={t.name}><span style={{ cursor: 'pointer' }}>👷 {t.name}</span></PersonCard></div>}
+          <TagRow tags={tags} />
           <div style={{ marginTop: 8 }}>
-            <Link href={`/job/${job.id}`} className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>📷 Job file / photos</Link>
+            <Link href={`/job/${job.id}`} className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>{compact ? '➡ Open job' : '📷 Job file / photos'}</Link>
           </div>
         </div>
         <span className={pill.cls} style={pill.color ? { color: pill.color } : undefined}>{pill.label}</span>
       </div>
 
-      {/* quick links */}
-      {(mapHref || tel) && !cancelled && (
+      {/* quick links — active card only */}
+      {variant === 'active' && (mapHref || tel) && !cancelled && (
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           {mapHref && <a href={mapHref} target="_blank" rel="noopener" style={{ flex: 1, textAlign: 'center', padding: '10px', borderRadius: 10, border: '1px solid var(--border-strong)', background: 'var(--surface-2)', color: 'var(--fg-1)', fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>🧭 Navigate</a>}
           {tel && <a href={`tel:${tel}`} style={{ flex: 1, textAlign: 'center', padding: '10px', borderRadius: 10, border: '1px solid var(--border-strong)', background: 'var(--surface-2)', color: 'var(--fg-1)', fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>📞 Call</a>}
         </div>
       )}
 
-      {/* status workflow */}
-      {canAct && !cancelled && (
+      {/* status workflow — active card only */}
+      {variant === 'active' && canAct && !cancelled && (
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           {STEPS.map((st) => (
             <button key={st.key} onClick={() => setStatus(st.key)} disabled={pending} style={btn(cur === st.key, done && st.key !== 'done')}>
@@ -119,8 +144,8 @@ export default function JobCard({ job, seeAll, canAct }) {
       )}
       {err && <div style={{ color: 'var(--red)', fontSize: 11, marginTop: 6 }}>{err}</div>}
 
-      {/* Collect payment — tech fires a pay link to the customer right from the job (no hardware). */}
-      {canAct && !cancelled && (
+      {/* Collect payment — active card only */}
+      {variant === 'active' && canAct && !cancelled && (
         <div style={{ marginTop: 8 }}>
           {!payOpen ? (
             <button onClick={() => { setPayOpen(true); setPayLink(null); setPayErr(null); }}
@@ -157,8 +182,8 @@ export default function JobCard({ job, seeAll, canAct }) {
         </div>
       )}
 
-      {/* Running Late — tech reports a delay; the OFFICE handles the customer message. */}
-      {canAct && !cancelled && !done && (
+      {/* Running Late — active card only */}
+      {variant === 'active' && canAct && !cancelled && !done && (
         <div style={{ marginTop: 8 }}>
           {!lateOpen ? (
             <button onClick={() => { setLateOpen(true); setLateMsg(null); }}
