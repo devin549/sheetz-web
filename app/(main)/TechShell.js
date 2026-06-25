@@ -24,9 +24,9 @@ const RAIL = [
   ] },
   { group: 'Me', money: true, items: [
     { icon: '💵', label: 'Pay', href: '/pay', money: true },
-    { icon: '🏁', label: 'Races', href: '/soon', money: true, badge: '5' },
-    { icon: '🏆', label: 'Record', href: '/soon', money: true },
-    { icon: '🎰', label: 'Vegas', href: '/soon', money: true },
+    { icon: '🏁', label: 'Races', href: '/races', money: true, badge: '5' },
+    { icon: '🏆', label: 'Record', href: '/record', money: true },
+    { icon: '🎰', label: 'Vegas', href: '/vegas', money: true },
     { icon: '📆', label: 'Cal', href: '/cal' },
     { icon: '📅', label: 'PTO', href: '/pto' },
     { icon: '⭐', label: 'Reviews', href: '/reviews' },
