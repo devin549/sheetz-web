@@ -192,6 +192,47 @@ html.cb-tech .topbar { display: none; }
   .wrap { padding-left: 12px; padding-right: 12px; }
 }
 
+/* ── Rank celebration effects (Start of Day + Races) ─────────────────────────
+   "Exciting but not huge or distracting": short, play-once, reduced-motion safe.
+   Particles/medals are rendered by RankFx.js; these are the keyframes + tiers. */
+@keyframes cbBurst {
+  0%   { transform: translate(0,0) scale(.4); opacity: 1; }
+  70%  { opacity: 1; }
+  100% { transform: translate(var(--dx,0), var(--dy,0)) scale(.9); opacity: 0; }
+}
+@keyframes cbConfetti {
+  0%   { transform: translateY(-12px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(120px) rotate(420deg); opacity: 0; }
+}
+@keyframes cbPop {
+  0%   { transform: scale(.4); opacity: 0; }
+  55%  { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes cbShine {
+  0%   { background-position: -120% 0; }
+  100% { background-position: 220% 0; }
+}
+@keyframes cbBob   { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-3px) rotate(4deg); } }
+@keyframes cbWobble{ 0%,100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
+
+.cb-fx-layer { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 5; }
+.cb-spark { position: absolute; top: 18px; left: 50%; width: 8px; height: 8px; border-radius: 50%;
+  animation: cbBurst 1.15s ease-out forwards; }
+.cb-confetti { position: absolute; top: 0; width: 7px; height: 11px; border-radius: 2px;
+  animation: cbConfetti 1.5s ease-in forwards; }
+.cb-pop  { animation: cbPop .5s cubic-bezier(.2,1.3,.4,1) both; }
+.cb-bob  { display: inline-block; animation: cbBob 2.4s ease-in-out infinite; }
+.cb-wobble { display: inline-block; animation: cbWobble 2.6s ease-in-out infinite; }
+/* gold/silver/bronze "sheen" badge — animated light sweep across a metallic chip */
+.cb-medal { position: relative; overflow: hidden; background-size: 200% 100%; animation: cbShine 2.8s linear infinite; }
+.cb-king-card { position: relative; overflow: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cb-spark, .cb-confetti, .cb-pop, .cb-bob, .cb-wobble, .cb-medal { animation: none !important; }
+  .cb-spark, .cb-confetti { display: none !important; }
+}
+
 /* Print — clean legal documents (lawyer packet, statements): hide app chrome. */
 @media print {
   .topbar, aside, .no-print { display: none !important; }

@@ -1,6 +1,8 @@
 import { requirePerm } from '@/lib/guard';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { weeklyLeaderboard, weeklyEligibility } from '@/lib/leaderboard';
+import { rankEffect } from '@/lib/rankFx';
+import RankFx from '../RankFx';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,16 +31,24 @@ export default async function Races() {
   const name = profile.name || user.email;
 
   // Live leaderboard from this week's jobs (revenue + completions). Falls back to sample if unavailable.
-  let board = r.board, rank = r.rank, you$ = r.you$, toFirst = r.toFirst, live = false;
+  let board = r.board, rank = r.rank, you$ = r.you$, toFirst = r.toFirst, live = false, fieldTotal = r.board.length;
   if (isAdminConfigured) {
     const lb = await weeklyLeaderboard(getSupabaseAdmin(), name, Date.now());
     if (lb.available && !lb.empty) {
-      live = true;
+      live = true; fieldTotal = lb.rows.length;
       board = lb.rows.slice(0, 8).map((b) => ({ n: b.n, who: b.me ? 'You' : b.who, amt: usd0(b.revenue), me: b.me }));
       if (lb.you) { rank = lb.you.rank; you$ = usd0(lb.you.revenue); toFirst = usd0(lb.you.toFirst); }
       else { rank = '—'; you$ = '$0'; toFirst = usd0(lb.rows[0].revenue); }
     }
   }
+  // Rank celebration (crown/medal/poop/comeback) — same engine as Start of Day. prevRank comes from the
+  // tech's last Start-of-Day acknowledgement so "Comeback Run" can fire on the board too.
+  let prevRank = null;
+  if (isAdminConfigured) {
+    try { const { data } = await getSupabaseAdmin().from('tech_shift_log').select('flags, day_key').eq('user_id', user.id).eq('kind', 'sod').order('day_key', { ascending: false }).limit(1); const f = data && data[0] && data[0].flags; if (f && Number.isFinite(Number(f.rank))) prevRank = Number(f.rank); } catch (_) {}
+  }
+  const fx = rankEffect({ rank: Number(rank), total: fieldTotal, prevRank, seed: name });
+  const rowBadge = (n) => n === 1 ? '👑' : n === 2 ? '🥈' : n === 3 ? '🥉' : (fieldTotal > 1 && n === fieldTotal) ? '💩' : '';
   // Owner-managed live bounties/weekly awards (active rows from the awards catalog).
   let liveAwards = [];
   let elig = { available: false };
@@ -118,16 +128,29 @@ export default async function Races() {
         </div>
       </div>
 
-      {/* Leaderboard */}
-      <div className="card" style={{ marginTop: 10, textAlign: 'center', border: '1px solid var(--amber)', background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 14%, var(--surface-1)) 0%, var(--surface-1) 100%)' }}>
-        <div style={{ fontSize: 11, color: 'var(--amber-dim)', textTransform: 'uppercase', fontWeight: 700 }}>You are</div>
-        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 42, fontWeight: 800, color: 'var(--amber)' }}>#{rank}</div>
-        <div className="muted" style={{ fontSize: 13 }}>{you$} this week · {rank === 1 ? '🥇 leading the board' : `need ${toFirst} more to take #1`}</div>
+      {/* Leaderboard — your standing, with the same rank celebration as Start of Day */}
+      <div className="card cb-king-card" style={{ position: 'relative', overflow: 'hidden', marginTop: 10, textAlign: 'center',
+        border: `2px solid ${fx.tier === 'king' ? '#ffd24a' : fx.tier === 'basement' ? '#c98a2a' : 'var(--amber)'}`,
+        background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 14%, var(--surface-1)) 0%, var(--surface-1) 100%)' }}>
+        <RankFx fireworks={fx.fx === 'fireworks'} confetti={fx.fx === 'confetti' || fx.comebackExtra} />
+        <div style={{ position: 'relative', zIndex: 6 }}>
+          <div style={{ fontSize: 11, color: 'var(--amber-dim)', textTransform: 'uppercase', fontWeight: 700 }}>You are</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            <span className={fx.tier === 'king' ? 'cb-bob' : fx.tier === 'basement' ? 'cb-wobble' : ''} style={{ fontSize: 30 }}>{fx.badge}</span>
+            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 42, fontWeight: 800, color: fx.tier === 'king' ? '#ffd24a' : fx.tier === 'basement' ? '#c98a2a' : 'var(--amber)' }}>#{rank}</span>
+          </div>
+          <div className="muted" style={{ fontSize: 13 }}>{you$} this week · {Number(rank) === 1 ? '🥇 leading the board' : fx.tier === 'basement' ? fx.sub : `need ${toFirst} more to take #1`}</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: '#1a1206', background: fx.tier === 'king' ? '#ffd24a' : fx.tier === 'basement' ? '#c98a2a' : 'var(--amber)', padding: '3px 10px', borderRadius: 20 }}>{fx.label}</span>
+            {fx.comebackLabel && <span className="cb-pop" style={{ fontSize: 11, fontWeight: 800, color: 'var(--green-bright)', background: 'color-mix(in oklab, var(--green) 20%, var(--surface-1))', padding: '3px 10px', borderRadius: 20, border: '1px solid var(--green)' }}>{fx.comebackLabel}</span>}
+          </div>
+        </div>
       </div>
       <div style={{ marginTop: 8, display: 'grid', gap: 5 }}>
         {board.map((b) => (
           <div key={b.n} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 9, background: b.me ? 'color-mix(in oklab, var(--amber) 14%, var(--surface-2))' : 'var(--surface-2)', border: '1px solid ' + (b.n === 1 ? '#ffd24a' : b.me ? 'var(--amber)' : 'var(--border)') }}>
             <span style={{ fontWeight: 800, color: b.n === 1 ? '#ffd24a' : 'var(--fg-2)', minWidth: 28 }}>#{b.n}</span>
+            {rowBadge(b.n) && <span style={{ fontSize: 15 }}>{rowBadge(b.n)}</span>}
             <span style={{ flex: 1, fontWeight: b.me ? 800 : 600 }}>{b.who}{b.me ? ' (YOU)' : ''}</span>
             <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>{b.amt}</span>
           </div>
