@@ -133,6 +133,9 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
             🔒 {cust ? 'Exit customer view' : 'Hand to Customer'}
           </button>
           <div className="av" style={{ width: 30, height: 30, borderRadius: 999, background: 'var(--amber)', color: '#1a1206', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>{initials}</div>
+          <form action="/auth/signout" method="post" style={{ display: 'inline' }}>
+            <button type="submit" title="Sign out" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: 'var(--fg-3)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 14, padding: '5px 10px', cursor: 'pointer' }}>🚪 Out</button>
+          </form>
         </div>
       </div>
 

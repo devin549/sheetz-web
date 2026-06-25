@@ -20,6 +20,10 @@ export default async function Account() {
         {name} · <strong style={{ color: meta.color }}>{meta.label}</strong> · {user.email}
       </p>
       <ChangePassword />
+
+      <form action="/auth/signout" method="post" style={{ marginTop: 18 }}>
+        <button type="submit" className="btn" style={{ background: 'var(--surface-2)', color: 'var(--fg-1)', border: '1px solid var(--border-strong)' }}>🚪 Sign out</button>
+      </form>
     </div>
   );
 }
