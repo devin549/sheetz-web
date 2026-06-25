@@ -1,6 +1,17 @@
 import { requirePerm } from '@/lib/guard';
+import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 
 export const dynamic = 'force-dynamic';
+
+async function loadAwards() {
+  if (!isAdminConfigured) return [];
+  try {
+    const sb = getSupabaseAdmin();
+    const { data, error } = await sb.from('awards').select('id, title, icon, kind, amount_cents, points, description').eq('active', true).order('sort', { ascending: true });
+    return error ? [] : (data || []);
+  } catch { return []; }
+}
+const awMoney = (c) => (c == null ? '' : '$' + (Number(c) / 100).toLocaleString(undefined, { maximumFractionDigits: 0 }));
 
 // Vegas · Achievements — ported from pane-vegas. CB Player Card tier ladder (Rookie → Legend) + badges.
 // Figures sample (seam = V); live = XP from the week archive / awards engine.
@@ -18,6 +29,7 @@ const V = {
 
 export default async function Vegas() {
   await requirePerm('seeOwnPayOnly', 'seeOwnOnly', 'changeStatus');
+  const awards = await loadAwards();
   return (
     <div className="wrap" style={{ maxWidth: 640 }}>
       <div className="h1" style={{ marginBottom: 2 }}>🎰 Vegas · Achievements</div>
@@ -37,6 +49,22 @@ export default async function Vegas() {
           </div>
         </div>
       </div>
+
+      {/* Live awards from the office (owner-managed catalog) */}
+      {awards.length > 0 && (
+        <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--amber)' }}>
+          <div style={{ fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--amber-dim)', marginBottom: 8 }}>🏆 Live awards from the office</div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {awards.map((a) => (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 20 }}>{a.icon || '🏆'}</span>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 13 }}>{a.title}</div>{a.description && <div className="muted" style={{ fontSize: 11 }}>{a.description}</div>}</div>
+                {(a.amount_cents != null || a.points != null) && <span className="pill" style={{ color: 'var(--green)' }}>{[awMoney(a.amount_cents), a.points != null ? `${a.points} XP` : ''].filter(Boolean).join(' · ')}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tier ladder */}
       <div className="card" style={{ marginTop: 10 }}>

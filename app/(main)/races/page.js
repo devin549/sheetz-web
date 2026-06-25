@@ -39,6 +39,11 @@ export default async function Races() {
       else { rank = '—'; you$ = '$0'; toFirst = usd0(lb.rows[0].revenue); }
     }
   }
+  // Owner-managed live bounties/weekly awards (active rows from the awards catalog).
+  let liveAwards = [];
+  if (isAdminConfigured) {
+    try { const { data } = await getSupabaseAdmin().from('awards').select('id, title, icon, amount_cents, points, description').eq('active', true).in('kind', ['bounty', 'weekly']).order('sort', { ascending: true }); liveAwards = data || []; } catch (_) {}
+  }
   return (
     <div className="wrap" style={{ maxWidth: 640 }}>
       <div className="card" style={{ background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 18%, var(--surface-1)) 0%, #2a1a0a 100%)', border: '1px solid var(--amber)' }}>
@@ -72,6 +77,22 @@ export default async function Races() {
           </div>
         ))}
       </div>
+
+      {/* Live bounties from the office (owner-managed) */}
+      {liveAwards.length > 0 && (
+        <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--green)' }}>
+          <div style={{ fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--green)', marginBottom: 8 }}>🟢 Live bounties from the office</div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {liveAwards.map((a) => (
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 20 }}>{a.icon || '🎯'}</span>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 13 }}>{a.title}</div>{a.description && <div className="muted" style={{ fontSize: 11 }}>{a.description}</div>}</div>
+                {(a.amount_cents != null || a.points != null) && <span className="pill" style={{ color: 'var(--green)' }}>{[a.amount_cents != null ? '$' + (a.amount_cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '', a.points != null ? `${a.points} XP` : ''].filter(Boolean).join(' · ')}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Eligibility (DQ) */}
       <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--green)' }}>
