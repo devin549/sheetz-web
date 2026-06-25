@@ -1,6 +1,13 @@
 import { requirePerm } from '@/lib/guard';
+import OnCallBanners from './OnCallBanners';
 
 export const dynamic = 'force-dynamic';
+
+// On-call windows the tech must acknowledge (sample; seam = on_call_schedule, mig 65).
+const ONCALL = [
+  { id: 'wknd', title: "You're on-call this weekend", window: 'Fri Jun 13 6:00 PM → Mon Jun 16 7:00 AM · Primary · assigned by Tracey' },
+  { id: 'week', title: "You're on-call this week", window: 'Mon Jun 8 → Fri Jun 12 · nightly 5:00 PM → 7:00 AM (weekday after-hours) · Primary · assigned by Tracey' },
+];
 
 // My Calendar — ported from the live iPad SPA (CB_Dispatch_TechIpadHtml_v1.js, pane-cal). The live
 // screen pulls from Google Calendar via CB_Tech_CalendarBridge (cbCal_listUpcoming_, every 5 min):
@@ -36,6 +43,8 @@ export default async function Calendar() {
     <div className="wrap" style={{ maxWidth: 760 }}>
       <div className="h1" style={{ marginBottom: 2 }}>📆 My Calendar</div>
       <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Sample view — live sync from Google Calendar (CB Calendar Bridge) wires next: jobs · callbacks · inspections · training · PTO.</div>
+
+      <OnCallBanners windows={ONCALL} />
 
       {/* TODAY */}
       <div className="card" style={{ background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 16%, var(--surface-1)) 0%, var(--surface-1) 100%)', border: '1px solid var(--amber)' }}>

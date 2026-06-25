@@ -28,7 +28,7 @@ const RAIL = [
     { icon: '🏆', label: 'Record', href: '/soon', money: true },
     { icon: '🎰', label: 'Vegas', href: '/soon', money: true },
     { icon: '📆', label: 'Cal', href: '/cal' },
-    { icon: '📅', label: 'PTO', href: '/soon' },
+    { icon: '📅', label: 'PTO', href: '/pto' },
     { icon: '⭐', label: 'Reviews', href: '/reviews' },
   ] },
   { group: 'Truck', items: [
