@@ -7,6 +7,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { setRoastLevel, unlockRoastLevel, savePrefs, reportLostDevice } from './actions';
 import { ROAST_LEVELS } from '@/lib/roast';
+import { createClient } from '@/lib/supabase/client';
 import ChangePassword from './ChangePassword';
 
 function Section({ title, children }) {
@@ -63,9 +64,16 @@ export default function AccountSettings({ user, profile, isManager, theme: initi
   const [showReset, setShowReset] = useState(false);
 
   const reportLost = () => {
-    if (!window.confirm('Report this iPad lost or stolen? The office will be alerted to lock it.')) return;
-    start(async () => { const r = await reportLostDevice(); flash(r); });
+    if (!window.confirm('Report this iPad lost or stolen? You will be signed out now and the office will be alerted to lock it.')) return;
+    start(async () => { const r = await reportLostDevice(); flash(r); if (r.ok) { setTimeout(() => { window.location.href = '/login'; }, 900); } });
   };
+
+  // Send the real Supabase reset email (lands on /auth/reset to set a new password).
+  const requestReset = () => start(async () => {
+    const sb = createClient();
+    const { error } = await sb.auth.resetPasswordForEmail(user.email, { redirectTo: `${window.location.origin}/auth/reset` });
+    flash(error ? { ok: false, msg: error.message } : { ok: true, msg: `✓ Reset link sent to ${user.email}.` });
+  });
 
   const flash = (r) => { setMsg(r); if (r?.ok) setTimeout(() => setMsg(null), 1800); };
 
@@ -163,9 +171,12 @@ export default function AccountSettings({ user, profile, isManager, theme: initi
           <form action="/auth/signout" method="post"><button type="submit" style={dangerGrey}>Sign Out</button></form>
         </Row>
         <Row label="Reset password">
-          <button onClick={() => setShowReset((v) => !v)} style={dangerGrey}>{showReset ? 'Close' : 'Request Reset Code'}</button>
+          <button onClick={requestReset} disabled={pending} style={dangerGrey}>Request Reset Code</button>
         </Row>
-        {showReset && <div style={{ paddingTop: 8 }}><ChangePassword /></div>}
+        <div className="muted" style={{ fontSize: 10, padding: '2px 0 4px' }}>
+          Emails a reset link to <strong>{user.email}</strong> (open it on this device). Or <button onClick={() => setShowReset((v) => !v)} style={{ background: 'none', border: 'none', color: 'var(--amber)', cursor: 'pointer', fontWeight: 700, textDecoration: 'underline', fontSize: 10, padding: 0 }}>{showReset ? 'hide' : 'set a new password now'}</button>.
+        </div>
+        {showReset && <div style={{ paddingTop: 4, paddingBottom: 6 }}><ChangePassword /></div>}
         <Row label="Report lost / stolen iPad">
           <button onClick={reportLost} disabled={pending} style={dangerRed}>🚨 Report</button>
         </Row>

@@ -44,7 +44,9 @@ export async function unlockRoastLevel(targetUserId) {
   return { ok: true, msg: 'Unlocked.' };
 }
 
-// Report this iPad lost/stolen — logs to audit_log so the office can lock/track it. Best-effort.
+// Report this iPad lost/stolen: ALERT the office (audit_log) AND immediately sign this device out so
+// whoever has it loses access. Reactivation is an office action (we don't hard-disable the account on a
+// self-tap, so a mis-report can't permanently lock a tech out). The client redirects to /login after.
 export async function reportLostDevice() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -53,8 +55,9 @@ export async function reportLostDevice() {
   const sb = getSupabaseAdmin();
   try {
     await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'device.report_lost', entity: 'device', entity_id: user.id, detail: { email: user.email } });
-  } catch (_) { /* audit_log optional — still confirm to the tech */ }
-  return { ok: true, msg: '🚨 Reported. The office has been alerted to lock this device.' };
+  } catch (_) { /* audit_log optional — still revoke + confirm */ }
+  try { await supabase.auth.signOut(); } catch (_) { /* clears this session's cookies */ }
+  return { ok: true, loggedOut: true, msg: '🚨 Reported — office alerted. Signing this iPad out…' };
 }
 
 // Merge a small UI preference patch (notifications, reduce-motion, big-text) into profiles.prefs.

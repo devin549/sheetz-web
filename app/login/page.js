@@ -12,16 +12,28 @@ function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
+  const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e) {
     e.preventDefault();
-    setBusy(true); setErr('');
+    setBusy(true); setErr(''); setNote('');
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     if (error) { setErr(error.message || 'Sign-in failed.'); setBusy(false); return; }
     router.push(next.startsWith('/') ? next : '/');
     router.refresh();
+  }
+
+  async function onForgot() {
+    setErr(''); setNote('');
+    if (!email.trim()) { setErr('Enter your email above first, then tap reset.'); return; }
+    setBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/auth/reset` });
+    setBusy(false);
+    if (error) { setErr(error.message); return; }
+    setNote(`✓ If ${email.trim()} has an account, a reset link is on the way. Open it on this device.`);
   }
 
   const input = {
@@ -44,13 +56,17 @@ function LoginForm() {
         <label className="muted" style={{ display: 'block', marginBottom: 6, fontSize: 12 }}>Password</label>
         <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" style={input} />
         {err && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 10 }}>{err}</div>}
+        {note && <div style={{ color: 'var(--green-bright)', fontSize: 13, marginBottom: 10 }}>{note}</div>}
         <button className="btn" type="submit" disabled={busy} style={{ width: '100%', padding: 14, opacity: busy ? 0.6 : 1 }}>
           {busy ? 'Signing in…' : 'Sign in →'}
+        </button>
+        <button type="button" onClick={onForgot} disabled={busy} style={{ width: '100%', marginTop: 10, background: 'none', border: 'none', color: 'var(--amber)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+          Forgot password? Email me a reset link
         </button>
       </form>
 
       <div className="muted" style={{ textAlign: 'center', marginTop: 14, fontSize: 11 }}>
-        Trouble signing in? Ask Devin to reset your access.
+        Still stuck? Ask Devin to reset your access.
       </div>
     </div>
   );
