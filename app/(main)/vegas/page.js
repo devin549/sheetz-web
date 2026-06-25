@@ -1,5 +1,6 @@
 import { requirePerm } from '@/lib/guard';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
+import { techXp } from '@/lib/leaderboard';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,8 +29,17 @@ const V = {
 };
 
 export default async function Vegas() {
-  await requirePerm('seeOwnPayOnly', 'seeOwnOnly', 'changeStatus');
+  const { user, profile } = await requirePerm('seeOwnPayOnly', 'seeOwnOnly', 'changeStatus');
+  const dispName = profile.name || user.email;
   const awards = await loadAwards();
+  // Live XP/tier from real jobs + award grants; falls back to sample.
+  const xp = isAdminConfigured ? await techXp(getSupabaseAdmin(), { techId: profile.tech_id, name: dispName }) : { available: false };
+  const live = xp.available;
+  const level = live ? xp.level : V.level;
+  const pct = live ? xp.pct : V.pct;
+  const xpNow = live ? xp.xp : V.xp;
+  const xpMax = live ? xp.nextAt : V.xpMax;
+  const meTier = live ? xp.tier : V.meTier;
   return (
     <div className="wrap" style={{ maxWidth: 640 }}>
       <div className="h1" style={{ marginBottom: 2 }}>🎰 Vegas · Achievements</div>
@@ -40,12 +50,12 @@ export default async function Vegas() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
           <div style={{ fontSize: 54 }}>👑</div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700 }}>Crown Plunger · Level {V.level}</div>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 800, color: 'var(--amber)' }}>{V.name}</div>
+            <div style={{ fontSize: 11, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700 }}>{meTier} · Level {level}{live ? '' : ' (sample)'}</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 800, color: 'var(--amber)' }}>{dispName}</div>
             <div style={{ height: 8, background: 'rgba(0,0,0,0.3)', borderRadius: 4, marginTop: 8, overflow: 'hidden', border: '1px solid var(--amber-dim)' }}>
-              <div style={{ height: '100%', width: `${V.pct}%`, background: 'linear-gradient(90deg, var(--amber) 0%, #fff44f 50%, var(--amber) 100%)' }} />
+              <div style={{ height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg, var(--amber) 0%, #fff44f 50%, var(--amber) 100%)' }} />
             </div>
-            <div style={{ fontSize: 11, color: 'var(--fg-2)', marginTop: 4 }}>{V.pct}% to <strong style={{ color: '#ffeb3b' }}>🪅 LEGEND</strong> · {V.xp.toLocaleString()} / {V.xpMax.toLocaleString()} XP</div>
+            <div style={{ fontSize: 11, color: 'var(--fg-2)', marginTop: 4 }}>{pct}% to <strong style={{ color: '#ffeb3b' }}>🪅 next tier</strong> · {Number(xpNow).toLocaleString()} / {Number(xpMax).toLocaleString()} XP</div>
           </div>
         </div>
       </div>
@@ -71,7 +81,7 @@ export default async function Vegas() {
         <div style={{ fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--amber-dim)', marginBottom: 8 }}>Plumber Tier Ladder · CB-only</div>
         <div style={{ display: 'grid', gap: 5 }}>
           {V.tiers.map(([ic, t, lvl]) => {
-            const me = t === V.meTier;
+            const me = t === meTier;
             return (
               <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: me ? 'color-mix(in oklab, var(--amber) 16%, var(--surface-2))' : 'var(--surface-2)', border: '1px solid ' + (me ? 'var(--amber)' : 'var(--border)') }}>
                 <span style={{ fontSize: 20 }}>{ic}</span>

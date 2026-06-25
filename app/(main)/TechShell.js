@@ -161,9 +161,9 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
           </span>
           <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>👑
             <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
-              <span style={{ color: 'var(--amber)', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Crown Plunger Lvl {game.level}</span>
+              <span style={{ color: 'var(--amber)', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Plunger · Lvl {game.level}</span>
               <span style={{ background: 'var(--surface-2)', width: 80, height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 2 }}><span style={{ display: 'block', width: `${game.levelPct}%`, height: '100%', background: 'var(--amber)' }} /></span>
-              <span style={{ color: 'var(--fg-3)', fontSize: 8 }}>{game.levelPct}% to Legend</span>
+              <span style={{ color: 'var(--fg-3)', fontSize: 8 }}>{game.levelPct}% to next</span>
             </span>
           </span>
         </div>

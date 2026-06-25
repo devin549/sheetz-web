@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { resolveShell, switchableShells } from '@/lib/shells';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
-import { weeklyLeaderboard, onTimeStreak } from '@/lib/leaderboard';
+import { weeklyLeaderboard, onTimeStreak, techXp } from '@/lib/leaderboard';
 import Sidebar from './Sidebar';
 import TechShell from './TechShell';
 
@@ -57,13 +57,14 @@ export default async function MainLayout({ children }) {
     let game;
     try {
       const sbAdmin = getSupabaseAdmin();
-      const [lb, st] = await Promise.all([
+      const [lb, st, xp] = await Promise.all([
         weeklyLeaderboard(sbAdmin, name, Date.now()),
         onTimeStreak(sbAdmin, { techId: profile.tech_id, name }, Date.now()),
+        techXp(sbAdmin, { techId: profile.tech_id, name }),
       ]);
       const haveRank = lb.available && lb.you;
-      if (haveRank || st.available) {
-        game = { rank: haveRank ? lb.you.rank : 2, rankDelta: 0, streak: st.available ? st.streak : 6, powerHour: 47, level: 7, levelPct: 84 };
+      if (haveRank || st.available || xp.available) {
+        game = { rank: haveRank ? lb.you.rank : 2, rankDelta: 0, streak: st.available ? st.streak : 6, powerHour: 47, level: xp.available ? xp.level : 7, levelPct: xp.available ? xp.pct : 84 };
       }
     } catch (_) {}
     return <TechShell name={name} shells={shells} activeJob={activeJob} wmId={wmId} game={game}>{children}</TechShell>;
