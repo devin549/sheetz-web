@@ -47,7 +47,7 @@ export default function JobCosts({ jobId, materialCents, dispatchCents, canEdit,
               <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--fg-3)' }}>🔒 private · roast {roastLevel}</span>
             </div>
             <div style={{ fontSize: 13, color: 'var(--fg-1)', lineHeight: 1.5, marginTop: 4 }}>{verdict.body}</div>
-            <div style={{ fontSize: 12, fontWeight: 700, marginTop: 6, color: verdict.tier === 'corn' ? 'var(--green)' : 'var(--amber)' }}>{verdict.tier === 'corn' ? '👑 ' : '🎯 '}{verdict.action}</div>
+            {verdict.action && <div style={{ fontSize: 12, fontWeight: 700, marginTop: 6, color: '#ff8a80' }}>🎯 {verdict.action}</div>}
           </div>
         </div>
       )}
