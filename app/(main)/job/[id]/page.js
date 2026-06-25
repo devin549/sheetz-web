@@ -243,7 +243,7 @@ export default async function JobDetail({ params }) {
         </div>
       )}
 
-      <CustomerMemory mem={memory} customer={customer} job={job} />
+      <div id="customer" style={{ scrollMarginTop: 70 }}><CustomerMemory mem={memory} customer={customer} job={job} /></div>
 
       <JobFlow jobId={id} status={st} reached={reached} gateReady={gateReady} gateMissing={gateMissing} nextHint={gateMissing[0] || ''} canAct={canAct} />
 

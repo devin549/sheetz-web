@@ -82,15 +82,27 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
   const today = new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
   // Leak-trace watermark label — who + a short trace id + date, tiled over internal screens.
   const wmLabel = `${name || 'Tech'} · ${wmId} · ${today} · CB CONFIDENTIAL`;
-  // Job-first: the current job + its photos sit at the TOP of the rail (the iPad exists to finish jobs).
-  const jobHref = activeJob ? `/job/${activeJob.id}` : '/my-day';
-  const rail = [
-    { group: 'Job', items: [
-      { icon: '🧰', label: 'Job', href: jobHref },
-      { icon: '📸', label: 'Photos', href: activeJob ? `${jobHref}#photos` : '/my-day' },
-    ] },
-    ...RAIL,
-  ];
+  // In-job context: when viewing a job, the rail becomes job-contextual (Job·Photos·Tools·Pay·Notes·History).
+  const jobMatch = path.match(/^\/job\/([^/]+)/);
+  const inJob = !!jobMatch;
+  const curId = jobMatch ? jobMatch[1] : (activeJob ? activeJob.id : null);
+  // Global rail's Job/Photos/Tools → the active job's screens, or "pick a job first".
+  const pick = (sub) => (activeJob ? `/job/${activeJob.id}${sub}` : '/pick-a-job');
+  const rail = inJob
+    ? [{ group: 'This job', items: [
+        { icon: '‹', label: 'My Day', href: '/my-day' },
+        { icon: '🧰', label: 'Job', href: `/job/${curId}` },
+        { icon: '📸', label: 'Photos', href: `/job/${curId}/photos` },
+        { icon: '🔧', label: 'Tools', href: `/job/${curId}/tools` },
+        { icon: '💵', label: 'Pay', href: '/pay' },
+        { icon: '🗒️', label: 'Notes', href: `/job/${curId}#customer` },
+        { icon: '🕑', label: 'History', href: `/job/${curId}#customer` },
+      ] }]
+    : [{ group: 'Job', items: [
+        { icon: '🧰', label: 'Job', href: activeJob ? `/job/${activeJob.id}` : '/my-day' },
+        { icon: '📸', label: 'Photos', href: pick('/photos') },
+        { icon: '🔧', label: 'Tools', href: pick('/tools') },
+      ] }, ...RAIL];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%' }}>

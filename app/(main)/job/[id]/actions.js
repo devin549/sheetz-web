@@ -447,6 +447,17 @@ export async function setJobCosts(jobId, materialDollars, dispatchDollars) {
   return { ok: true, msg: 'Job costs saved — feeds pay.' };
 }
 
+// Reserve / request a tool for this job — logged so the holder + office see it (internal, no auto-text).
+export async function requestTool(toolId, jobId, toolName, holder) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'changeStatus') || can(ctx.role, 'seeOwnOnly') || can(ctx.role, 'seeCrew'))) return { ok: false, msg: 'Not allowed.' };
+  try {
+    await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'tool.request', entity: 'job', entity_id: String(ctx.job.id), detail: { tool_id: cleanText(toolId, 80), tool: cleanText(toolName, 80), holder: cleanText(holder, 80) } });
+  } catch (e) { return { ok: false, msg: 'Could not send.' }; }
+  return { ok: true, msg: `Requested ${toolName || 'tool'}${holder ? ' from ' + holder : ''} — they’re notified.` };
+}
+
 // ── Estimate / quote jobs ───────────────────────────────────────────────────────────────────────
 const ESTIMATE_OUTCOMES = new Set(['sold_now', 'not_sold', 'needs_follow_up', 'needs_parts', 'customer_not_ready']);
 
