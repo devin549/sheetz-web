@@ -1,6 +1,6 @@
 import { requirePerm } from '@/lib/guard';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { weeklyLeaderboard } from '@/lib/leaderboard';
+import { weeklyLeaderboard, weeklyEligibility } from '@/lib/leaderboard';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,9 +41,17 @@ export default async function Races() {
   }
   // Owner-managed live bounties/weekly awards (active rows from the awards catalog).
   let liveAwards = [];
+  let elig = { available: false };
   if (isAdminConfigured) {
     try { const { data } = await getSupabaseAdmin().from('awards').select('id, title, icon, amount_cents, points, description').eq('active', true).in('kind', ['bounty', 'weekly']).order('sort', { ascending: true }); liveAwards = data || []; } catch (_) {}
+    elig = await weeklyEligibility(getSupabaseAdmin(), { techId: profile.tech_id, name }, Date.now());
   }
+  // DQ rows — LATE + CALLBACK are real when eligibility loaded; review/margin stay sample until those feeds land.
+  const dq = elig.available
+    ? [['LATE', `${elig.late} / 0`, 'any late = DQ'], ['1-3★ REVIEW', '0 / 0', 'any low ★ = DQ'], ['<55% MARGIN', '0 / 0', 'any sub-55% = DQ'], ['📞 CALLBACK', `${elig.callbacks} / 0`, 'any = DQ']]
+    : r.dq;
+  const eligible = elig.available ? elig.eligible : true;
+  const strikes = elig.available ? (elig.late + elig.callbacks) : 0;
   return (
     <div className="wrap" style={{ maxWidth: 640 }}>
       <div className="card" style={{ background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 18%, var(--surface-1)) 0%, #2a1a0a 100%)', border: '1px solid var(--amber)' }}>
@@ -94,14 +102,16 @@ export default async function Races() {
         </div>
       )}
 
-      {/* Eligibility (DQ) */}
-      <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--green)' }}>
-        <div style={{ fontWeight: 800, marginBottom: 8, color: 'var(--green)' }}>🟢 All awards live · zero strikes — keep it clean</div>
+      {/* Eligibility (DQ) — being late this week loses your awards */}
+      <div className="card" style={{ marginTop: 10, borderLeft: `3px solid ${eligible ? 'var(--green)' : 'var(--red)'}` }}>
+        <div style={{ fontWeight: 800, marginBottom: 8, color: eligible ? 'var(--green)' : 'var(--red)' }}>
+          {eligible ? '🟢 All awards live · zero strikes — keep it clean' : `🔴 DQ’d this week — ${strikes} strike${strikes > 1 ? 's' : ''} (any late or callback = out). Clean it up to re-qualify.`}
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 8 }}>
-          {r.dq.map(([k, v, note]) => (
+          {dq.map(([k, v, note]) => (
             <div key={k} style={{ background: 'var(--surface-2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
               <div style={{ fontSize: 10, color: 'var(--fg-3)', textTransform: 'uppercase' }}>{k}</div>
-              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 16 }}>{v}</div>
+              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 16, color: /^0\s/.test(v) ? 'var(--fg-1)' : 'var(--red)' }}>{v}</div>
               <div style={{ fontSize: 9, color: 'var(--fg-3)' }}>{note}</div>
             </div>
           ))}
