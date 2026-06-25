@@ -8,11 +8,13 @@ function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get('next') || '/';
+  // A failed/expired reset link bounces back here — show a clear retry message instead of a raw error.
+  const linkErr = params.get('error');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
-  const [note, setNote] = useState('');
+  const [note, setNote] = useState(linkErr ? 'That reset link expired or was already used. Enter your email below and tap “Forgot password” for a fresh one — then click it right away.' : '');
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e) {
