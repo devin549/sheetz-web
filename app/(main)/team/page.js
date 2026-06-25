@@ -16,7 +16,7 @@ function ago(iso) {
 }
 
 export default async function Team() {
-  await requireHref('/team');
+  const { role: callerRole } = await requireHref('/team');
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">🧑‍✈️ Team</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel to manage logins.</div></div>;
@@ -40,7 +40,7 @@ export default async function Team() {
   const SUP_POS = new Set(['field_supervisor', 'foreman', 'general_manager', 'owner']);
   const supervisorNames = techs.filter((t) => SUP_POS.has(t.position)).map((t) => t.name);
   const profById = {};
-  try { const { data: pData } = await sb.from('profiles').select('user_id, role, tech_id, active'); (pData || []).forEach((p) => { profById[p.user_id] = p; }); } catch (_) {}
+  try { let pQ = await sb.from('profiles').select('user_id, role, tech_id, active, field_mode_enabled, shop_mode_enabled'); if (pQ.error) pQ = await sb.from('profiles').select('user_id, role, tech_id, active'); (pQ.data || []).forEach((p) => { profById[p.user_id] = p; }); } catch (_) {}
   const profilesReady = Object.keys(profById).length > 0;
 
   const users = (data?.users || []).map((u) => {
@@ -53,6 +53,8 @@ export default async function Team() {
       techId: prof.tech_id || '',
       lastSignIn: ago(u.last_sign_in_at),
       active: prof.active !== false && !u.banned_until,
+      fieldMode: prof.field_mode_enabled === true,
+      shopMode: prof.shop_mode_enabled === true,
     };
   }).sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
 
@@ -62,7 +64,7 @@ export default async function Team() {
       <p className="muted">Add each person as you hire them and pick their position. Change anyone’s role anytime — it takes effect next time they load a page. Link a tech to their roster row so they see only their own jobs.</p>
       {error && <div className="notice">Couldn’t load logins: {error.message}</div>}
       {!profilesReady && <div className="notice" style={{ fontSize: 12 }}>Roles save to login metadata for now. Run <code>supabase/24_profiles.sql</code> to turn on the profiles table (role + tech link + audit).</div>}
-      <TeamManager roleOptions={roleOptions} users={users} techs={techs} supervisorNames={supervisorNames} />
+      <TeamManager roleOptions={roleOptions} users={users} techs={techs} supervisorNames={supervisorNames} callerRole={callerRole} />
     </div>
   );
 }

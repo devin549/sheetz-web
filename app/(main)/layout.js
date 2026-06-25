@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { resolveShell, switchableShells } from '@/lib/shells';
 import Sidebar from './Sidebar';
+import TechShell from './TechShell';
 
 // Auth-gated group — always rendered per-request (never statically prerendered at build).
 export const dynamic = 'force-dynamic';
@@ -23,6 +24,10 @@ export default async function MainLayout({ children }) {
   const shell = resolveShell({ host, cookieShell, role, fieldMode: profile.fieldMode, shopMode: profile.shopMode });
   const shells = switchableShells({ role, fieldMode: profile.fieldMode, shopMode: profile.shopMode });
 
+  // Field shell = mobile cockpit chrome (no office sidebar). Office/Shop = the desktop sidebar.
+  if (shell === 'tech') {
+    return <TechShell name={name} shells={shells}>{children}</TechShell>;
+  }
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', minHeight: 'calc(100vh - 58px)' }}>
       <Sidebar role={role} name={name} shell={shell} shells={shells} />

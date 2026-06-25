@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { addUser, setRole, setTechLink, setTechPosition, setTechPhone, setTechSupervisor, setTechDiscord, setUserActive } from './actions';
+import { addUser, setRole, setTechLink, setTechPosition, setTechPhone, setTechSupervisor, setTechDiscord, setUserActive, setFieldMode, setShopMode } from './actions';
 import { roleMeta } from '@/lib/roles';
 import { POSITIONS as POSITION_OPTS } from '@/lib/positions';
 
@@ -19,7 +19,8 @@ const inputStyle = {
   borderRadius: 8, padding: '9px 11px', fontSize: 14, width: '100%',
 };
 
-export default function TeamManager({ roleOptions, users, techs = [], supervisorNames = [] }) {
+export default function TeamManager({ roleOptions, users, techs = [], supervisorNames = [], callerRole = '' }) {
+  const canGrantMode = ['owner', 'admin', 'gm'].includes(callerRole);
   const router = useRouter();
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -90,6 +91,16 @@ export default function TeamManager({ roleOptions, users, techs = [], supervisor
     router.refresh();
   }
 
+  // Field/Shop mode = let this person SWITCH into the Tech (field) or Shop shell. Presentation only —
+  // perms stay server-side by role. Owner/GM only (the action re-checks too).
+  async function onModeToggle(id, kind, on) {
+    const fd = new FormData();
+    fd.set('id', id); fd.set('on', on ? 'true' : 'false');
+    const res = await (kind === 'shop' ? setShopMode(fd) : setFieldMode(fd));
+    setMsg(res);
+    router.refresh();
+  }
+
   // Field-roster filtering (so it isn't an endless scroll)
   const [rosterQ, setRosterQ] = useState('');
   const [posFilter, setPosFilter] = useState('all');
@@ -149,6 +160,20 @@ export default function TeamManager({ roleOptions, users, techs = [], supervisor
                 style={{ ...inputStyle, width: 'auto', cursor: 'pointer', color: u.active === false ? 'var(--green)' : 'var(--red)', borderColor: u.active === false ? 'var(--green)' : 'var(--border)' }}>
                 {u.active === false ? 'Re-activate' : 'Deactivate'}
               </button>
+              {canGrantMode && (
+                <button type="button" onClick={() => onModeToggle(u.id, 'field', !u.fieldMode)}
+                  title={u.fieldMode ? 'Field mode ON — they can switch into the tech cockpit. Click to remove.' : 'Let this person switch into Field (tech) mode'}
+                  style={{ ...inputStyle, width: 'auto', cursor: 'pointer', fontSize: 12, padding: '7px 10px', color: u.fieldMode ? 'var(--amber)' : 'var(--fg-3)', borderColor: u.fieldMode ? 'var(--amber)' : 'var(--border)' }}>
+                  🔧 Field{u.fieldMode ? ' ✓' : ''}
+                </button>
+              )}
+              {canGrantMode && (
+                <button type="button" onClick={() => onModeToggle(u.id, 'shop', !u.shopMode)}
+                  title={u.shopMode ? 'Shop mode ON — they can switch into the shop shell. Click to remove.' : 'Let this person switch into Shop mode'}
+                  style={{ ...inputStyle, width: 'auto', cursor: 'pointer', fontSize: 12, padding: '7px 10px', color: u.shopMode ? 'var(--amber)' : 'var(--fg-3)', borderColor: u.shopMode ? 'var(--amber)' : 'var(--border)' }}>
+                  🛒 Shop{u.shopMode ? ' ✓' : ''}
+                </button>
+              )}
               {(u.role === 'tech' || u.role === 'helper') && (
                 <select value={u.techId || ''} onChange={(e) => onTechChange(u.id, e.target.value)} title="Link to a tech row → they see only their jobs"
                   style={{ ...inputStyle, width: 'auto', maxWidth: 170, borderColor: u.techId ? 'var(--green)' : 'var(--border)' }}>

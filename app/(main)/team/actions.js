@@ -104,6 +104,25 @@ export async function setUserActive(formData) {
   return { ok: true, msg: active ? 'Re-activated — they can sign in again.' : 'Deactivated — access revoked immediately.' };
 }
 
+// Grant/revoke shell access — Field mode (Tech shell) or Shop mode — for a login. Owner/GM only.
+// The shell is presentation; this flag just lets the person SWITCH into it (e.g. a salesman who runs an
+// occasional call). Owner/GM/FS can already switch to Field by role; this is for everyone else.
+async function setMode(formData, column, label) {
+  let sb, callerRole;
+  try { ({ sb, callerRole } = await assertManager()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!['owner', 'admin', 'gm'].includes(callerRole)) return { ok: false, msg: `Only an owner or GM can grant ${label}.` };
+  const id = String(formData.get('id') || '');
+  const on = String(formData.get('on') || '') === 'true';
+  if (!id) return { ok: false, msg: 'Bad request.' };
+  const { data } = await sb.auth.admin.getUserById(id);
+  const meta = (data && data.user && data.user.user_metadata) || {};
+  await upsertProfile(sb, id, { [column]: on, role: meta.role || 'viewer', name: meta.name || '', email: (data && data.user && data.user.email) || '' });
+  revalidatePath('/team');
+  return { ok: true, msg: on ? `${label} granted.` : `${label} removed.` };
+}
+export async function setFieldMode(formData) { return setMode(formData, 'field_mode_enabled', 'Field mode'); }
+export async function setShopMode(formData) { return setMode(formData, 'shop_mode_enabled', 'Shop mode'); }
+
 // Set a roster person's POSITION — controls who shows in the Job Booking picker + board rows.
 // (Separate from login role: this is the field roster, not access. Access = role under logins.)
 export async function setTechPosition(formData) {
