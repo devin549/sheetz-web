@@ -34,7 +34,7 @@ const RAIL = [
   { group: 'Truck', items: [
     { icon: '🚐', label: 'My Truck', href: '/my-truck' },
     { icon: '🛒', label: 'Shop', href: '/shop' },
-    { icon: '📣', label: 'Mkt', href: '/soon' },
+    { icon: '📣', label: 'Mkt', href: '/mkt' },
     { icon: '⚙️', label: 'Set', href: '/account' },
   ] },
 ];
