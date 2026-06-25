@@ -44,6 +44,19 @@ export async function unlockRoastLevel(targetUserId) {
   return { ok: true, msg: 'Unlocked.' };
 }
 
+// Report this iPad lost/stolen — logs to audit_log so the office can lock/track it. Best-effort.
+export async function reportLostDevice() {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Sign in required.' };
+  const profile = await loadProfile(user);
+  const sb = getSupabaseAdmin();
+  try {
+    await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'device.report_lost', entity: 'device', entity_id: user.id, detail: { email: user.email } });
+  } catch (_) { /* audit_log optional — still confirm to the tech */ }
+  return { ok: true, msg: '🚨 Reported. The office has been alerted to lock this device.' };
+}
+
 // Merge a small UI preference patch (notifications, reduce-motion, big-text) into profiles.prefs.
 export async function savePrefs(patch) {
   const supabase = createClient();

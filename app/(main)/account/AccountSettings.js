@@ -5,7 +5,7 @@
 // owner/GM override), Resources, Help, Danger Zone. iPad-first: cream/gold, compact rows, big tap targets.
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { setRoastLevel, unlockRoastLevel, savePrefs } from './actions';
+import { setRoastLevel, unlockRoastLevel, savePrefs, reportLostDevice } from './actions';
 import { ROAST_LEVELS } from '@/lib/roast';
 import ChangePassword from './ChangePassword';
 
@@ -34,6 +34,9 @@ function Toggle({ on, onClick }) {
   );
 }
 
+const dangerGrey = { background: 'var(--surface-3)', color: 'var(--fg-1)', border: '1px solid var(--border-strong)', padding: '8px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' };
+const dangerRed = { background: 'var(--red)', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' };
+
 const NOTIFS = [
   ['notif_newjob', 'New job assigned'],
   ['notif_checkin', '10-min check-in prompt'],
@@ -57,6 +60,12 @@ export default function AccountSettings({ user, profile, isManager, theme: initi
   const [locked, setLocked] = useState(!!profile.roastLocked);
   const [prefs, setPrefs] = useState(profile.prefs || {});
   const [theme, setThemeState] = useState(initialTheme);
+  const [showReset, setShowReset] = useState(false);
+
+  const reportLost = () => {
+    if (!window.confirm('Report this iPad lost or stolen? The office will be alerted to lock it.')) return;
+    start(async () => { const r = await reportLostDevice(); flash(r); });
+  };
 
   const flash = (r) => { setMsg(r); if (r?.ok) setTimeout(() => setMsg(null), 1800); };
 
@@ -148,14 +157,19 @@ export default function AccountSettings({ user, profile, isManager, theme: initi
         {RESOURCES.map(([lbl, href]) => <Row key={lbl} label={lbl}><a href={href} style={{ color: 'var(--blue)' }}>Open →</a></Row>)}
       </Section>
 
-      {/* 🔐 SECURITY / DANGER ZONE */}
-      <Section title="🔐 Security">
-        <div style={{ paddingTop: 4 }}><ChangePassword /></div>
+      {/* 🚨 DANGER ZONE — matches the HTML Settings pane */}
+      <Section title="🚨 Danger Zone">
+        <Row label="Sign out (preserves data)">
+          <form action="/auth/signout" method="post"><button type="submit" style={dangerGrey}>Sign Out</button></form>
+        </Row>
+        <Row label="Reset password">
+          <button onClick={() => setShowReset((v) => !v)} style={dangerGrey}>{showReset ? 'Close' : 'Request Reset Code'}</button>
+        </Row>
+        {showReset && <div style={{ paddingTop: 8 }}><ChangePassword /></div>}
+        <Row label="Report lost / stolen iPad">
+          <button onClick={reportLost} disabled={pending} style={dangerRed}>🚨 Report</button>
+        </Row>
       </Section>
-
-      <form action="/auth/signout" method="post">
-        <button type="submit" className="btn" style={{ width: '100%', background: 'var(--surface-2)', color: 'var(--fg-1)', border: '1px solid var(--border-strong)' }}>🚪 Sign out</button>
-      </form>
 
       {msg && <div style={{ position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)', zIndex: 100, padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700, background: msg.ok ? 'var(--green)' : 'var(--red)', color: '#fff', boxShadow: '0 4px 14px rgba(0,0,0,.3)' }}>{msg.msg}</div>}
     </div>
