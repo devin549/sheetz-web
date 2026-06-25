@@ -7,6 +7,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { hashPin, validPin, signUnlock, CC_COOKIE, ccGated } from '@/lib/ccPin';
+import { sendOne } from '@/lib/email';
 
 const LEVELS = ['PG', 'PG-13', 'R'];
 
@@ -84,7 +85,10 @@ export async function setCommandCenterPin(pin) {
   return { ok: true, msg: 'Command Center PIN set.' };
 }
 
-// Verify the PIN and open the Command Center for this session (sets the short-lived unlock cookie).
+// Verify the PIN and open the Command Center for this session. Ported guard from CB_Tech_PinSecurity:
+// 3 wrong attempts → 15-minute lockout, and on the 3rd fail we tell the client to snap an intruder photo.
+const MAX_PIN_ATTEMPTS = 3;
+const PIN_LOCK_MS = 15 * 60 * 1000;
 export async function unlockCommandCenter(pin) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -92,12 +96,63 @@ export async function unlockCommandCenter(pin) {
   const profile = await loadProfile(user);
   if (!ccGated(profile.role)) return { ok: false, msg: 'No Command Center on your role.' };
   const sb = getSupabaseAdmin();
-  const { data } = await sb.from('profiles').select('cc_pin_hash').eq('user_id', user.id).maybeSingle();
+  const { data } = await sb.from('profiles').select('cc_pin_hash, cc_pin_attempts, cc_pin_lock_until').eq('user_id', user.id).maybeSingle();
   if (!data || !data.cc_pin_hash) return { ok: false, msg: 'No PIN set yet — create one.' };
-  if (hashPin(pin, user.id) !== data.cc_pin_hash) return { ok: false, msg: 'Wrong PIN.' };
-  cookies().set(CC_COOKIE, signUnlock(user.id), { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 1800 });
-  revalidatePath('/');
-  return { ok: true, msg: 'Unlocked.' };
+
+  // Locked? (attempts columns may not exist yet → those reads are just undefined, so it degrades to no lock.)
+  const lockUntil = data.cc_pin_lock_until ? Date.parse(data.cc_pin_lock_until) : 0;
+  if (lockUntil > Date.now()) return { ok: false, locked: true, lockUntil: data.cc_pin_lock_until, msg: `🔒 Locked — try again in ${Math.ceil((lockUntil - Date.now()) / 60000)} min. Your login still works.` };
+
+  if (hashPin(pin, user.id) === data.cc_pin_hash) {
+    try { await sb.from('profiles').update({ cc_pin_attempts: 0, cc_pin_lock_until: null }).eq('user_id', user.id); } catch (_) {}
+    cookies().set(CC_COOKIE, signUnlock(user.id), { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 1800 });
+    revalidatePath('/');
+    return { ok: true, msg: 'Unlocked.' };
+  }
+
+  // Wrong PIN → count it.
+  const attempts = (Number(data.cc_pin_attempts) || 0) + 1;
+  if (attempts >= MAX_PIN_ATTEMPTS) {
+    const until = new Date(Date.now() + PIN_LOCK_MS).toISOString();
+    try { await sb.from('profiles').update({ cc_pin_attempts: 0, cc_pin_lock_until: until }).eq('user_id', user.id); } catch (_) {}
+    try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'cc_pin.lockout', entity: 'security', entity_id: user.id, detail: { reason: '3 failed Command Center PIN attempts' } }); } catch (_) {}
+    return { ok: false, locked: true, captureIntruder: true, lockUntil: until, msg: '🔒 Locked 15 min after 3 wrong PINs.' };
+  }
+  try { await sb.from('profiles').update({ cc_pin_attempts: attempts }).eq('user_id', user.id); } catch (_) {}
+  const left = MAX_PIN_ATTEMPTS - attempts;
+  return { ok: false, msg: `Wrong PIN. ${left} ${left === 1 ? 'try' : 'tries'} left.` };
+}
+
+// On the 3rd failed PIN, the client snaps a front-camera photo and hands it here: store it in the private
+// bucket, log it, and email the photo to owner/GM/admin. All best-effort — a denied camera still locks +
+// alerts (without a photo). Mirrors CB_Tech_PinSecurity's intruder capture.
+export async function reportIntruder(photoDataUrl) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false };
+  const profile = await loadProfile(user);
+  const sb = getSupabaseAdmin();
+  let stored = null;
+  try {
+    if (typeof photoDataUrl === 'string' && /^data:image\//.test(photoDataUrl)) {
+      const buf = Buffer.from(photoDataUrl.split(',')[1], 'base64');
+      const path = `${user.id}/${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`;
+      const up = await sb.storage.from('intruder-photos').upload(path, buf, { contentType: 'image/jpeg', upsert: false });
+      if (!up.error) stored = path;
+    }
+  } catch (_) {}
+  try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'cc_pin.intruder', entity: 'security', entity_id: user.id, detail: { photo: stored, account: user.email } }); } catch (_) {}
+  // Email owner/GM/admin with the photo attached.
+  try {
+    const { data: mgrs } = await sb.from('profiles').select('email, role').in('role', ['owner', 'admin', 'gm']);
+    const recips = [...new Set((mgrs || []).map((m) => m.email).filter(Boolean))];
+    const attachments = stored ? [{ filename: 'intruder.jpg', content: photoDataUrl.split(',')[1] }] : undefined;
+    const html = `<h2>🚨 Command Center — 3 failed PIN attempts</h2>
+      <p>Account <strong>${profile.name || user.email}</strong> (${user.email}, role: ${profile.role}) hit 3 wrong Command Center PINs and was locked for 15 minutes.</p>
+      <p>${stored ? 'A front-camera photo is attached — verify it’s really them.' : 'No photo (camera denied/unavailable).'}</p>`;
+    for (const to of recips) { await sendOne({ to, subject: '🚨 Command Center: 3 failed PIN attempts', html, attachments }); }
+  } catch (_) {}
+  return { ok: true };
 }
 
 // Re-lock the Command Center now (clear the unlock cookie).

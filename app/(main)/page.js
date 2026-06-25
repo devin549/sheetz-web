@@ -175,7 +175,7 @@ export default async function Home() {
     const profile = await loadProfile(user);
     if (profile.ccPinReady) {
       const unlocked = verifyUnlock(user.id, cookies().get(CC_COOKIE)?.value);
-      if (!unlocked) return <CommandCenterPinGate hasPin={profile.ccPinSet} title={ccTitle} />;
+      if (!unlocked) return <CommandCenterPinGate hasPin={profile.ccPinSet} title={ccTitle} lockUntil={profile.ccLockUntil} />;
     }
   }
 
