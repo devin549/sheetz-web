@@ -396,6 +396,20 @@ export async function messageOffice(jobId, text) {
   return { ok: true, msg: 'Sent to the office.' };
 }
 
+// Set the per-job financial inputs the pay formula needs: material cost + dispatch fee (dollars in).
+export async function setJobCosts(jobId, materialDollars, dispatchDollars) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'changeStatus') || can(ctx.role, 'collectPayment') || can(ctx.role, 'seeFinancials') || canUploadPhotos(ctx.role))) return { ok: false, msg: 'Your role can’t set job costs.' };
+  const mc = Math.max(0, Math.round(Number(materialDollars) * 100)) || 0;
+  const df = Math.max(0, Math.round(Number(dispatchDollars) * 100)) || 0;
+  const { error } = await ctx.sb.from('jobs').update({ material_cost_cents: mc, dispatch_fee_cents: df }).eq('id', ctx.job.id);
+  if (error) return { ok: false, msg: /material_cost|dispatch_fee|column|schema cache/i.test(error.message || '') ? 'Run supabase/73_pay_structure.sql first.' : error.message };
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'job.costs', entity: 'job', entity_id: String(ctx.job.id), detail: { material_cents: mc, dispatch_cents: df } }); } catch (_) {}
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/pay');
+  return { ok: true, msg: 'Job costs saved — feeds pay.' };
+}
+
 // ── Estimate / quote jobs ───────────────────────────────────────────────────────────────────────
 const ESTIMATE_OUTCOMES = new Set(['sold_now', 'not_sold', 'needs_follow_up', 'needs_parts', 'customer_not_ready']);
 

@@ -18,7 +18,7 @@ function sameName(a, b) {
 export async function loadJob(sb, jobId) {
   const base = 'id, status, priority, scheduled_at, tech_id, customer_id';
   const relations = ', customers(name, address, phone, email), techs(name)';
-  const withDispatchFields = `${base}, job_number, job_type, amount, tech_name, tech_email, enroute_at, started_at, completed_at, notes, access_notes, job_class, estimate_outcome, dispatchme_job_id, converted_to_job_id, converted_from_job_id${relations}`;
+  const withDispatchFields = `${base}, job_number, job_type, amount, tech_name, tech_email, enroute_at, started_at, completed_at, notes, access_notes, job_class, estimate_outcome, dispatchme_job_id, converted_to_job_id, converted_from_job_id, material_cost_cents, dispatch_fee_cents${relations}`;
   const fallback = `${base}${relations}`;
 
   let res = await sb.from('jobs').select(withDispatchFields).eq('id', jobId).maybeSingle();

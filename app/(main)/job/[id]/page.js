@@ -12,6 +12,7 @@ import JobFlow from './JobFlow';
 import MessageOffice from './MessageOffice';
 import EstimatePanel from './EstimatePanel';
 import DispatchMeRef from './DispatchMeRef';
+import JobCosts from './JobCosts';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
 
@@ -300,6 +301,8 @@ export default async function JobDetail({ params }) {
       {!isEstimate && <JobForms jobId={id} forms={forms} canAnswer={canAnswerForms} />}
 
       <JobParts jobId={id} parts={parts} canReturn={canReturnRentals} />
+
+      {!isEstimate && <JobCosts jobId={id} materialCents={job.material_cost_cents} dispatchCents={job.dispatch_fee_cents} canEdit={canAct || can(role, 'collectPayment') || can(role, 'seeFinancials')} />}
 
       {/* History — this customer's prior jobs, so the tech knows the relationship. */}
       {history.length > 0 && (
