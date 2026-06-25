@@ -140,6 +140,7 @@ export default async function JobDetail({ params }) {
     done: isDone,
   };
   const canAct = can(role, 'changeStatus');
+  const urgent = /high|urgent|emergency/i.test(String(job.priority || ''));
 
   return (
     <div className="wrap" style={{ maxWidth: 1040 }}>
@@ -194,6 +195,33 @@ export default async function JobDetail({ params }) {
           </div>
         </div>
       </div>
+
+      {/* Customer warnings — never lose context the tech needs before knocking. */}
+      {urgent && (
+        <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--red)', display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(239,83,80,.08)' }}>
+          <CircleAlert size={16} style={{ color: 'var(--red)' }} />
+          <span style={{ fontWeight: 800, color: 'var(--red)', fontSize: 13 }}>{String(job.priority).toUpperCase()} priority</span>
+          <span className="muted" style={{ fontSize: 12 }}>— handle first.</span>
+        </div>
+      )}
+
+      {/* Notes & Access — gate code, dog, parking, lockbox + job notes (jobs.access_notes / jobs.notes). */}
+      {(job.access_notes || job.notes) && (
+        <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--amber)' }}>
+          {job.access_notes && (
+            <div>
+              <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700 }}>🔑 Access &amp; warnings</div>
+              <div style={{ marginTop: 4, fontSize: 13.5, lineHeight: 1.45, fontWeight: 600 }}>{job.access_notes}</div>
+            </div>
+          )}
+          {job.notes && (
+            <div style={{ marginTop: job.access_notes ? 10 : 0 }}>
+              <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700 }}>🗂 Job notes</div>
+              <div style={{ marginTop: 4, fontSize: 13, lineHeight: 1.45 }}>{job.notes}</div>
+            </div>
+          )}
+        </div>
+      )}
 
       <JobFlow jobId={id} status={st} reached={reached} gateReady={gateReady} gateMissing={gateMissing} nextHint={gateMissing[0] || ''} canAct={canAct} />
 
