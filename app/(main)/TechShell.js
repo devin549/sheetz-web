@@ -82,6 +82,15 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
   const today = new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
   // Leak-trace watermark label — who + a short trace id + date, tiled over internal screens.
   const wmLabel = `${name || 'Tech'} · ${wmId} · ${today} · CB CONFIDENTIAL`;
+  // Job-first: the current job + its photos sit at the TOP of the rail (the iPad exists to finish jobs).
+  const jobHref = activeJob ? `/job/${activeJob.id}` : '/my-day';
+  const rail = [
+    { group: 'Job', items: [
+      { icon: '🧰', label: 'Job', href: jobHref },
+      { icon: '📸', label: 'Photos', href: activeJob ? `${jobHref}#photos` : '/my-day' },
+    ] },
+    ...RAIL,
+  ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%' }}>
@@ -168,7 +177,7 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
       {/* ── BODY: left rail + content ────────────────────────────── */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <nav style={{ width: 84, flexShrink: 0, background: 'var(--surface-1)', borderRight: '1px solid var(--border)', padding: '8px 4px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
-          {RAIL.map((grp) => {
+          {rail.map((grp) => {
             if (cust && grp.money) return null; // hide the whole "Me" money group in customer view
             return (
               <div key={grp.group}>

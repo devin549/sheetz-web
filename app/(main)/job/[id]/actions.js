@@ -161,7 +161,7 @@ export async function archiveJobPhoto(photoId, jobId) {
 
 // Supervisor QA: pass/fail a single photo with an optional reason + note. A failed photo blocks
 // closeout until it's corrected (re-shot) or a supervisor overrides. Latest review per photo wins.
-export async function reviewPhoto(photoId, jobId, result, failReason, note) {
+export async function reviewPhoto(photoId, jobId, result, failReason, note, annotation) {
   const ctx = await getActionContext(cleanText(jobId, 80));
   if (!ctx.ok) return ctx;
   if (!can(ctx.role, 'qaReview')) return { ok: false, msg: 'Your role can’t review QA.' };
@@ -173,12 +173,23 @@ export async function reviewPhoto(photoId, jobId, result, failReason, note) {
   const { data: photo } = await ctx.sb.from('job_photos').select('id').eq('id', cleanPhoto).eq('job_id', ctx.job.id).maybeSingle();
   if (!photo) return { ok: false, msg: 'Photo not found on this job.' };
 
-  const { error } = await ctx.sb.from('job_photo_reviews').insert({
+  const { data: reviewRow, error } = await ctx.sb.from('job_photo_reviews').insert({
     photo_id: cleanPhoto, job_id: String(ctx.job.id), result, fail_reason: reason,
     manager_note: cleanText(note, 500) || null, reviewed_by: ctx.user.id,
     reviewed_by_name: ctx.profile?.name || ctx.user.email,
-  });
+  }).select('id').single();
   if (error) return { ok: false, msg: error.message };
+  // Circle the problem on a FAIL so the tech sees WHERE — normalized 0..1 coords (job_photo_annotations).
+  if (result === 'fail' && reviewRow && annotation && Number.isFinite(annotation.x) && Number.isFinite(annotation.y)) {
+    const clamp = (n) => Math.max(0, Math.min(1, Number(n)));
+    try {
+      await ctx.sb.from('job_photo_annotations').insert({
+        review_id: reviewRow.id, photo_id: cleanPhoto, shape: 'circle',
+        x: clamp(annotation.x), y: clamp(annotation.y), w: clamp(annotation.r || 0.12),
+        note: cleanText(note, 300) || null,
+      });
+    } catch (_) { /* annotations table optional — fail soft */ }
+  }
   try {
     await ctx.sb.from('audit_log').insert({
       actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role,

@@ -24,6 +24,19 @@ async function loadReviews(sb, photoIds) {
   return error ? [] : (data || []); // table may not be migrated yet → no reviews
 }
 
+// Circle/box markers for the failing reviews → shown to the tech so they see WHERE the problem is.
+async function loadAnnotations(sb, reviewIds) {
+  if (!reviewIds.length) return {};
+  const { data, error } = await sb
+    .from('job_photo_annotations')
+    .select('id, review_id, photo_id, shape, x, y, w, h, note')
+    .in('review_id', reviewIds);
+  if (error) return {}; // table optional
+  const byPhoto = {};
+  (data || []).forEach((a) => { (byPhoto[a.photo_id] = byPhoto[a.photo_id] || []).push(a); });
+  return byPhoto;
+}
+
 function money(n) {
   return '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
@@ -88,6 +101,10 @@ export default async function JobDetail({ params }) {
   const reviews = await loadReviews(sb, photos.map((p) => p.id));
   const reviewByPhoto = {}; // latest review per photo (reviews are desc by created_at)
   reviews.forEach((r) => { if (!reviewByPhoto[r.photo_id]) reviewByPhoto[r.photo_id] = r; });
+  // Attach the circle(s) drawn on each failing review so the tech sees WHERE the problem is.
+  const failReviewIds = Object.values(reviewByPhoto).filter((r) => r.result === 'fail').map((r) => r.id);
+  const annoByPhoto = await loadAnnotations(sb, failReviewIds);
+  Object.values(reviewByPhoto).forEach((r) => { r.annotations = annoByPhoto[r.photo_id] || []; });
   const closeout = computeCloseout({ photos, reviews });
   const dispo = await getDispo(sb, id, job);
   const parts = await getParts(sb, id);
@@ -220,6 +237,8 @@ export default async function JobDetail({ params }) {
       <JobForms jobId={id} forms={forms} canAnswer={canAnswerForms} />
 
       <JobParts jobId={id} parts={parts} canReturn={canReturnRentals} />
+
+      <div id="photos" style={{ scrollMarginTop: 70 }} />
 
       {!photoError && <CloseoutV2 jobId={id} dispo={dispo} needWarranty={needWarranty} />}
 
