@@ -9,6 +9,7 @@ import { setRoastLevel, unlockRoastLevel, savePrefs, reportLostDevice } from './
 import { ROAST_LEVELS } from '@/lib/roast';
 import { createClient } from '@/lib/supabase/client';
 import ChangePassword from './ChangePassword';
+import RoastRConsent from '../RoastRConsent';
 
 function Section({ title, children }) {
   return (
@@ -77,9 +78,16 @@ export default function AccountSettings({ user, profile, isManager, theme: initi
 
   const flash = (r) => { setMsg(r); if (r?.ok) setTimeout(() => setMsg(null), 1800); };
 
+  const [rConsent, setRConsent] = useState(false);
+  const commitLevel = (lvl, rAccepted) => start(async () => {
+    const r = await setRoastLevel(lvl, { rAccepted });
+    if (r.needsRConsent) { setRConsent(true); return; }
+    flash(r); if (r.ok) { setLevel(lvl); setLocked(true); setRConsent(false); }
+  });
   const pickLevel = (lvl) => {
     if (locked && !isManager) return;
-    start(async () => { const r = await setRoastLevel(lvl); flash(r); if (r.ok) { setLevel(lvl); setLocked(true); } });
+    if (lvl === 'R') { setRConsent(true); return; } // R always needs the re-consent first
+    commitLevel(lvl, false);
   };
   const unlock = () => start(async () => { const r = await unlockRoastLevel(); flash(r); if (r.ok) setLocked(false); });
 
@@ -181,6 +189,8 @@ export default function AccountSettings({ user, profile, isManager, theme: initi
           <button onClick={reportLost} disabled={pending} style={dangerRed}>🚨 Report</button>
         </Row>
       </Section>
+
+      <RoastRConsent open={rConsent} busy={pending} onCancel={() => setRConsent(false)} onAgree={() => commitLevel('R', true)} />
 
       {msg && <div style={{ position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)', zIndex: 100, padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700, background: msg.ok ? 'var(--green)' : 'var(--red)', color: '#fff', boxShadow: '0 4px 14px rgba(0,0,0,.3)' }}>{msg.msg}</div>}
     </div>

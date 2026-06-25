@@ -10,7 +10,8 @@ const LEVELS = ['PG', 'PG-13', 'R'];
 
 // Set the daily roast level. Self = PICK-ONCE-THEN-LOCK (can't be re-gamed). Owner/GM/admin
 // (manageUsers) can set any tech's level and it stays an override. PG is the safe floor.
-export async function setRoastLevel(level, targetUserId) {
+export async function setRoastLevel(level, opts = {}) {
+  const { targetUserId, rAccepted } = (typeof opts === 'string') ? { targetUserId: opts } : opts; // back-compat
   if (!LEVELS.includes(level)) return { ok: false, msg: 'Pick PG, PG-13, or R.' };
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -24,8 +25,12 @@ export async function setRoastLevel(level, targetUserId) {
   if (!admin && targetId === user.id && profile.roastLocked) {
     return { ok: false, msg: '🔒 Your roast level is locked. A manager can change it.' };
   }
+  // R can never be set without the thick-skin re-consent — tell the client to show the modal.
+  if (level === 'R' && !rAccepted) return { ok: false, needsRConsent: true, msg: 'R requires the thick-skin acceptance.' };
+
   const { error } = await sb.from('profiles').update({ roast_level: level, roast_locked: true }).eq('user_id', targetId);
   if (error) return { ok: false, msg: /column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/74_roast_level_and_prefs.sql first.' : error.message };
+  if (level === 'R') { try { await sb.from('policy_acks').insert({ user_id: targetId, kind: 'roast_r', version: 'v1', detail: { agreed: true, by: user.id } }); } catch (_) {} }
   revalidatePath('/account'); revalidatePath('/start');
   return { ok: true, msg: `Roast level set to ${level}.`, locked: true, level };
 }
