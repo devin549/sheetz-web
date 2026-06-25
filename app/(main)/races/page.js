@@ -1,6 +1,10 @@
 import { requirePerm } from '@/lib/guard';
+import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
+import { weeklyLeaderboard } from '@/lib/leaderboard';
 
 export const dynamic = 'force-dynamic';
+
+const usd0 = (n) => '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 // THE RACES — ported from the live iPad SPA (pane-races + pane-board). Tech-only gamification. Figures
 // are sample (seam = `r`); live = Owner Sheet rank push / _DB_Challenges. CB amber, plumbing voice.
@@ -21,7 +25,20 @@ const r = {
 };
 
 export default async function Races() {
-  await requirePerm('seeOwnPayOnly', 'seeOwnOnly', 'changeStatus');
+  const { user, profile } = await requirePerm('seeOwnPayOnly', 'seeOwnOnly', 'changeStatus');
+  const name = profile.name || user.email;
+
+  // Live leaderboard from this week's jobs (revenue + completions). Falls back to sample if unavailable.
+  let board = r.board, rank = r.rank, you$ = r.you$, toFirst = r.toFirst, live = false;
+  if (isAdminConfigured) {
+    const lb = await weeklyLeaderboard(getSupabaseAdmin(), name, Date.now());
+    if (lb.available && !lb.empty) {
+      live = true;
+      board = lb.rows.slice(0, 8).map((b) => ({ n: b.n, who: b.me ? 'You' : b.who, amt: usd0(b.revenue), me: b.me }));
+      if (lb.you) { rank = lb.you.rank; you$ = usd0(lb.you.revenue); toFirst = usd0(lb.you.toFirst); }
+      else { rank = '—'; you$ = '$0'; toFirst = usd0(lb.rows[0].revenue); }
+    }
+  }
   return (
     <div className="wrap" style={{ maxWidth: 640 }}>
       <div className="card" style={{ background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 18%, var(--surface-1)) 0%, #2a1a0a 100%)', border: '1px solid var(--amber)' }}>
@@ -29,12 +46,12 @@ export default async function Races() {
           <span style={{ fontSize: 32 }}>🏁</span>
           <div>
             <div style={{ fontSize: 11, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700 }}>The Races · Week of {r.week}</div>
-            <div style={{ fontSize: 20, fontWeight: 800 }}>{r.name} · {r.payType}</div>
+            <div style={{ fontSize: 20, fontWeight: 800 }}>{name} · {r.payType}</div>
             <div style={{ fontSize: 11, color: 'var(--fg-3)' }}>🌽 Crown {r.crown} · 💩 Turd {r.turd} · roast {r.roast}</div>
           </div>
         </div>
       </div>
-      <div className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>Sample — live rank/challenge feed (Owner Sheet) wires next.</div>
+      <div className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>{live ? '🟢 Leaderboard is LIVE (this week’s revenue). Bounties + biggest-ticket are sample until those feeds wire.' : 'Sample — live rank feed wires when this week has completed jobs.'}</div>
 
       {/* Biggest ticket */}
       <div className="card" style={{ marginTop: 10, border: '2px solid var(--amber)', background: 'linear-gradient(135deg,rgba(255,179,0,0.14),rgba(255,179,0,0.04))' }}>
@@ -73,11 +90,11 @@ export default async function Races() {
       {/* Leaderboard */}
       <div className="card" style={{ marginTop: 10, textAlign: 'center', border: '1px solid var(--amber)', background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 14%, var(--surface-1)) 0%, var(--surface-1) 100%)' }}>
         <div style={{ fontSize: 11, color: 'var(--amber-dim)', textTransform: 'uppercase', fontWeight: 700 }}>You are</div>
-        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 42, fontWeight: 800, color: 'var(--amber)' }}>#{r.rank}</div>
-        <div className="muted" style={{ fontSize: 13 }}>{r.you$} this week · need {r.toFirst} more to take #1</div>
+        <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 42, fontWeight: 800, color: 'var(--amber)' }}>#{rank}</div>
+        <div className="muted" style={{ fontSize: 13 }}>{you$} this week · {rank === 1 ? '🥇 leading the board' : `need ${toFirst} more to take #1`}</div>
       </div>
       <div style={{ marginTop: 8, display: 'grid', gap: 5 }}>
-        {r.board.map((b) => (
+        {board.map((b) => (
           <div key={b.n} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 9, background: b.me ? 'color-mix(in oklab, var(--amber) 14%, var(--surface-2))' : 'var(--surface-2)', border: '1px solid ' + (b.n === 1 ? '#ffd24a' : b.me ? 'var(--amber)' : 'var(--border)') }}>
             <span style={{ fontWeight: 800, color: b.n === 1 ? '#ffd24a' : 'var(--fg-2)', minWidth: 28 }}>#{b.n}</span>
             <span style={{ flex: 1, fontWeight: b.me ? 800 : 600 }}>{b.who}{b.me ? ' (YOU)' : ''}</span>
