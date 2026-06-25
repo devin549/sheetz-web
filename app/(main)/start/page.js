@@ -94,6 +94,7 @@ export default async function Start() {
       win={winCondition(scorecard, rankings)}
       onCall={onCall}
       saved={saved}
+      roastLevel={profile.roastLevel || 'PG'}
     />
   );
 }

@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
-import { roleOf } from '@/lib/nav';
-import { roleMeta } from '@/lib/roles';
-import ChangePassword from './ChangePassword';
+import { cookies } from 'next/headers';
+import { loadProfile } from '@/lib/profile';
+import { roleMeta, can } from '@/lib/roles';
+import AccountSettings from './AccountSettings';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,20 +11,20 @@ export default async function Account() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
-  const meta = roleMeta(roleOf(user));
-  const name = (user.user_metadata && user.user_metadata.name) || user.email;
+  const profile = await loadProfile(user);
+  const meta = roleMeta(profile.role);
+  const theme = cookies().get('theme')?.value || 'dark';
 
   return (
-    <div className="wrap">
-      <div className="h1">🔐 Account</div>
-      <p className="muted">
-        {name} · <strong style={{ color: meta.color }}>{meta.label}</strong> · {user.email}
-      </p>
-      <ChangePassword />
-
-      <form action="/auth/signout" method="post" style={{ marginTop: 18 }}>
-        <button type="submit" className="btn" style={{ background: 'var(--surface-2)', color: 'var(--fg-1)', border: '1px solid var(--border-strong)' }}>🚪 Sign out</button>
-      </form>
-    </div>
+    <AccountSettings
+      user={{ email: user.email, id: user.id }}
+      profile={{
+        name: profile.name, email: profile.email, role: profile.role, roleLabel: meta.label, roleColor: meta.color,
+        tech_id: profile.tech_id, payType: profile.prefs?.pay_type || null,
+        roastLevel: profile.roastLevel, roastLocked: profile.roastLocked, prefs: profile.prefs || {},
+      }}
+      isManager={can(profile.role, 'manageUsers')}
+      theme={theme}
+    />
   );
 }

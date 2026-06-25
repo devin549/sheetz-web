@@ -232,6 +232,11 @@ html.cb-tech .topbar { display: none; }
   .cb-spark, .cb-confetti, .cb-pop, .cb-bob, .cb-wobble, .cb-medal { animation: none !important; }
   .cb-spark, .cb-confetti { display: none !important; }
 }
+/* User-set "Reduce motion" (Settings) — kills app animations even when the OS pref is off. */
+html.cb-reduce-motion *, html.cb-reduce-motion *::before, html.cb-reduce-motion *::after {
+  animation: none !important; transition: none !important;
+}
+html.cb-reduce-motion .cb-spark, html.cb-reduce-motion .cb-confetti { display: none !important; }
 
 /* Print — clean legal documents (lawyer packet, statements): hide app chrome. */
 @media print {

@@ -7,7 +7,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { saveShift } from './actions';
-import { coachMessage, TONES } from '@/lib/roast';
+import { coachMessage, TONES, tonesForLevel } from '@/lib/roast';
 import { rankChip } from '@/lib/rankFx';
 import RankFx from '../RankFx';
 import { CircleCheck, Circle } from 'lucide-react';
@@ -35,15 +35,17 @@ function RankRow({ label, chip }) {
   );
 }
 
-export default function StartOfDay({ name, lastWorked, scorecard, rankings, fieldSize, overallRank, fx, jobs = [], win, onCall, saved }) {
+export default function StartOfDay({ name, lastWorked, scorecard, rankings, fieldSize, overallRank, fx, jobs = [], win, onCall, saved, roastLevel = 'PG' }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [tone, setTone] = useState((saved?.flags?.tone) || 'coach');
+  const allowedTones = tonesForLevel(roastLevel);
+  const savedTone = saved?.flags?.tone;
+  const [tone, setTone] = useState(allowedTones.includes(savedTone) ? savedTone : (allowedTones.includes('coach') ? 'coach' : allowedTones[allowedTones.length - 1]));
   const [checks, setChecks] = useState(() => (saved && saved.checklist) || {});
   const [showCheck, setShowCheck] = useState(false);
   const first = String(name || 'Tech').trim().split(/\s+/)[0];
 
-  const coach = useMemo(() => coachMessage({ name, tone, scorecard }), [name, tone, scorecard]);
+  const coach = useMemo(() => coachMessage({ name, tone, scorecard, level: roastLevel }), [name, tone, scorecard, roastLevel]);
   const sc = scorecard || {};
   const welcomeBack = (lastWorked?.daysOff || 0) >= 1;
 
@@ -123,15 +125,20 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
           <span style={{ marginLeft: 'auto', fontSize: 9.5, fontWeight: 800, color: 'var(--fg-3)', background: 'var(--surface-2)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: 20 }}>🔒 PRIVATE TO YOU</span>
         </div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-          {TONES.map((t) => (
-            <button key={t.id} onClick={() => setTone(t.id)}
-              style={{ fontSize: 12, fontWeight: 700, padding: '6px 11px', borderRadius: 20, cursor: 'pointer',
-                border: '1px solid ' + (tone === t.id ? 'var(--amber)' : 'var(--border-strong)'),
-                background: tone === t.id ? 'var(--amber)' : 'var(--surface-2)', color: tone === t.id ? '#1a1206' : 'var(--fg-2)' }}>
-              {t.emoji} {t.label}
-            </button>
-          ))}
+          {TONES.map((t) => {
+            const locked = !allowedTones.includes(t.id);
+            return (
+              <button key={t.id} onClick={() => !locked && setTone(t.id)} disabled={locked}
+                title={locked ? `Raise your roast level in Settings to unlock ${t.label}` : t.blurb}
+                style={{ fontSize: 12, fontWeight: 700, padding: '6px 11px', borderRadius: 20, cursor: locked ? 'not-allowed' : 'pointer',
+                  border: '1px solid ' + (tone === t.id ? 'var(--amber)' : 'var(--border-strong)'),
+                  background: tone === t.id ? 'var(--amber)' : 'var(--surface-2)', color: tone === t.id ? '#1a1206' : 'var(--fg-2)', opacity: locked ? 0.45 : 1 }}>
+                {locked ? '🔒 ' : `${t.emoji} `}{t.label}
+              </button>
+            );
+          })}
         </div>
+        <div className="muted" style={{ fontSize: 10, marginTop: -2, marginBottom: 8 }}>Roast level <strong style={{ color: 'var(--amber)' }}>{roastLevel}</strong> — set it in <a href="/account">Settings</a> (locks after you pick).</div>
         <div className="card" style={{ borderLeft: `3px solid ${coach.clean ? 'var(--green)' : 'var(--amber)'}`, background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 7%, var(--surface-1)) 0%, var(--surface-1) 100%)' }}>
           <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 5 }}>{coach.emoji} {coach.headline}</div>
           <div style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--fg-1)' }}>{coach.body}</div>
