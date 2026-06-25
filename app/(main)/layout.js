@@ -15,13 +15,14 @@ async function loadActiveJob(techId) {
     const sb = getSupabaseAdmin();
     if (!sb) return null;
     const { data } = await sb.from('jobs')
-      .select('id, job_number, status, customers(name)')
+      .select('id, job_number, status, customers(name, address)')
       .eq('tech_id', techId).in('status', ['enroute', 'on_site', 'onsite', 'rolling'])
       .order('scheduled_at', { ascending: true }).limit(1);
     const j = data && data[0];
     if (!j) return null;
     const s = String(j.status || '').toLowerCase();
-    return { id: j.id, number: j.job_number || '', customer: (j.customers && j.customers.name) || 'Active job', statusLabel: /on_?site/.test(s) ? 'ON-SITE' : 'EN ROUTE' };
+    const onSite = /on_?site/.test(s);
+    return { id: j.id, number: j.job_number || '', customer: (j.customers && j.customers.name) || 'Active job', address: (j.customers && j.customers.address) || '', onSite, statusLabel: onSite ? 'ON-SITE' : 'EN ROUTE' };
   } catch { return null; }
 }
 
