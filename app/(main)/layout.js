@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { resolveShell, switchableShells } from '@/lib/shells';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { weeklyLeaderboard } from '@/lib/leaderboard';
 import Sidebar from './Sidebar';
 import TechShell from './TechShell';
 
@@ -52,7 +53,10 @@ export default async function MainLayout({ children }) {
   if (shell === 'tech') {
     const activeJob = await loadActiveJob(profile.tech_id);
     const wmId = String(user.id || '').replace(/-/g, '').slice(0, 8); // short leak-trace id → maps to this user
-    return <TechShell name={name} shells={shells} activeJob={activeJob} wmId={wmId}>{children}</TechShell>;
+    // Live rank in the ribbon (real this-week leaderboard); streak/level stay sample until those wire.
+    let game;
+    try { const lb = await weeklyLeaderboard(getSupabaseAdmin(), name, Date.now()); if (lb.available && lb.you) game = { rank: lb.you.rank, rankDelta: 0, streak: 6, powerHour: 47, level: 7, levelPct: 84 }; } catch (_) {}
+    return <TechShell name={name} shells={shells} activeJob={activeJob} wmId={wmId} game={game}>{children}</TechShell>;
   }
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', minHeight: 'calc(100vh - 58px)' }}>
