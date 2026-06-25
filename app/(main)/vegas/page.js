@@ -46,7 +46,7 @@ export default async function Vegas() {
       <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>Climb Rookie → Legend; each tier unlocks real $$$. <em>Sample; live XP next.</em></div>
 
       {/* Player card */}
-      <div className="card" style={{ border: '2px solid var(--amber)', background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 18%, var(--surface-1)) 0%, #2a1a0a 60%, var(--surface-1) 100%)' }}>
+      <div className="card" style={{ border: '2px solid var(--amber)', background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 18%, var(--surface-1)) 0%, var(--amber-deep) 60%, var(--surface-1) 100%)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
           <div style={{ fontSize: 54 }}>👑</div>
           <div style={{ flex: 1 }}>

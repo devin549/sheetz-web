@@ -68,7 +68,7 @@ export default async function Calendar() {
 
       {/* PENDING MANAGER REVIEW */}
       {cal.pendingReview && (
-        <div className="card" style={{ marginTop: 12, background: 'linear-gradient(135deg, #3a2a0a 0%, var(--surface-1) 100%)', border: '2px dashed var(--amber-dim)' }}>
+        <div className="card" style={{ marginTop: 12, background: 'linear-gradient(135deg, var(--amber-deep) 0%, var(--surface-1) 100%)', border: '2px dashed var(--amber-dim)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <span style={{ fontSize: 22 }}>⏳</span>
             <strong style={{ color: 'var(--amber)', fontSize: 13, textTransform: 'uppercase', letterSpacing: '.05em' }}>Pending manager review</strong>

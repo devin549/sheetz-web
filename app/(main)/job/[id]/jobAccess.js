@@ -15,15 +15,31 @@ function sameName(a, b) {
   return Boolean(aa && bb && (aa === bb || aa.includes(bb) || bb.includes(aa)));
 }
 
+// A missing column shows up two different ways depending on PG vs PostgREST's cache:
+//   "column jobs.x does not exist"  OR  "Could not find the 'x' column ... in the schema cache"
+// Either one must trigger a graceful fallback — never a hard 404 of the whole cockpit.
+function isMissingColumn(err) {
+  const m = String(err?.message || '');
+  return /column .* does not exist|could not find the .* column|schema cache/i.test(m);
+}
+
 export async function loadJob(sb, jobId) {
   const base = 'id, status, priority, scheduled_at, tech_id, customer_id';
   const relations = ', customers(name, address, phone, email), techs(name)';
-  const withDispatchFields = `${base}, job_number, job_type, amount, tech_name, tech_email, enroute_at, started_at, completed_at, notes, access_notes, job_class, estimate_outcome, dispatchme_job_id, converted_to_job_id, converted_from_job_id, material_cost_cents, dispatch_fee_cents, lat, lng${relations}`;
-  const fallback = `${base}${relations}`;
+  // Tier 1: everything. Tier 2: drop the newest cost columns (migration 73 may not be live yet)
+  // but keep all the rich dispatch fields. Tier 3: bare base — last resort so the page still renders.
+  const richFields = ', job_number, job_type, amount, tech_name, tech_email, enroute_at, started_at, completed_at, notes, access_notes, job_class, estimate_outcome, dispatchme_job_id, converted_to_job_id, converted_from_job_id, lat, lng';
+  const costFields = ', material_cost_cents, dispatch_fee_cents';
+  const tiers = [
+    `${base}${richFields}${costFields}${relations}`,
+    `${base}${richFields}${relations}`,
+    `${base}${relations}`,
+  ];
 
-  let res = await sb.from('jobs').select(withDispatchFields).eq('id', jobId).maybeSingle();
-  if (res.error && /column .* does not exist/i.test(res.error.message || '')) {
-    res = await sb.from('jobs').select(fallback).eq('id', jobId).maybeSingle();
+  let res;
+  for (const sel of tiers) {
+    res = await sb.from('jobs').select(sel).eq('id', jobId).maybeSingle();
+    if (!res.error || !isMissingColumn(res.error)) break; // real data, or a non-column error → stop
   }
   return res;
 }

@@ -54,7 +54,7 @@ export default async function Races() {
   const strikes = elig.available ? (elig.late + elig.callbacks) : 0;
   return (
     <div className="wrap" style={{ maxWidth: 640 }}>
-      <div className="card" style={{ background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 18%, var(--surface-1)) 0%, #2a1a0a 100%)', border: '1px solid var(--amber)' }}>
+      <div className="card" style={{ background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 18%, var(--surface-1)) 0%, var(--amber-deep) 100%)', border: '1px solid var(--amber)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <span style={{ fontSize: 32 }}>🏁</span>
           <div>

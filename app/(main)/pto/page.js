@@ -82,7 +82,7 @@ export default async function Pto() {
       </div>
 
       {/* UNEXCUSED ABSENCE COUNTER */}
-      <div className="card" style={{ marginTop: 14, background: 'linear-gradient(135deg, #1a3a1a 0%, var(--surface-1) 100%)', border: '2px solid #4caf50' }}>
+      <div className="card" style={{ marginTop: 14, background: 'linear-gradient(135deg, color-mix(in oklab, #4caf50 16%, var(--surface-1)) 0%, var(--surface-1) 100%)', border: '2px solid #4caf50' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
           <span style={{ fontSize: 24 }}>⚠</span>
           <div style={{ flex: 1 }}>
