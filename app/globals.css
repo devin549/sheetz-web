@@ -25,48 +25,60 @@
   --ok-text: oklch(76% 0.15 150);
   --bad-text: #ff6b74;
   --info-text: #64b5f6;
-  /* app aliases → board colors */
-  --amber: var(--accent);
-  --amber-bright: #ffa05a;
-  --amber-dim: #b86a2a;
+  /* CB brand tokens — ported from the Apps Script tech HTML (:root dark) */
+  --amber: #FFB300;
+  --amber-bright: #FFD54F;
+  --amber-dim: #D4A55A;
+  --amber-deep: #3A1A0A;
   --green: var(--ok-text);
-  --green-bright: oklch(80% 0.15 150);
+  --green-bright: #4caf50;
   --red: var(--bad-text);
+  --red-bright: #ff5560;
+  --yellow: #a08000;
+  --yellow-bright: #ffc107;
+  --blue: #4f9bff;
+  --purple: #9c64f4;
   --rail-bg: var(--surface-1);
   --rail-fg: var(--fg-1);
   --rail-border: var(--border);
 }
 
-/* Light mode — the board's exact warm-cream light theme. */
+/* Light mode — the tech HTML's exact "cream + crisp white cards" light theme (body.light-theme). */
 html[data-theme="light"] {
-  --bg: #f6f4ef;
-  --surface-0: #f3f1ec;
-  --surface-1: #fbfaf6;
-  --surface-2: #eceae3;
-  --surface-3: #e2dfd6;
-  --border: #e1ded5;
-  --border-soft: #ebe9e1;
-  --border-strong: #d3cfc4;
-  --fg-1: #1a1a1a;
-  --fg-2: #4a4845;
-  --fg-3: #888581;
-  --accent: #FF6B00;          /* light accent (HTML) */
+  --bg: #fbf6ea;
+  --surface-0: #ffffff;
+  --surface-1: #f7f1e3;
+  --surface-2: #efe7d4;
+  --surface-3: #e3d9c2;
+  --border: #c4c9d2;
+  --border-soft: #d8dce3;
+  --border-strong: #a6acb8;
+  --fg-1: #111418;
+  --fg-2: #33383f;
+  --fg-3: #565b64;
+  --accent: #B8860B;          /* light amber (HTML) */
   --accent-2: oklch(72% 0.12 70);
   --accent-3: oklch(60% 0.08 200);
   --danger: oklch(58% 0.20 25);
   --map-bg: #efece4;
-  --ok-text: #1f7a28;
+  --ok-text: #2E7D32;
   --bad-text: #c62828;
-  --info-text: #1565c0;
-  --amber: var(--accent);
-  --amber-bright: #e65a00;
-  --amber-dim: #b86a2a;
-  --green: var(--ok-text);
-  --green-bright: #1f7a28;
-  --red: var(--bad-text);
-  --rail-bg: #13243f;
-  --rail-fg: #e7ecf3;
-  --rail-border: #1d2f4d;
+  --info-text: #1976d2;
+  --amber: #B8860B;
+  --amber-bright: #FFB300;
+  --amber-dim: #6b5208;
+  --amber-deep: #FFE0A0;
+  --green: #2E7D32;
+  --green-bright: #1B5E20;
+  --red: #c62828;
+  --red-bright: #b71c1c;
+  --yellow: #c79100;
+  --yellow-bright: #f57c00;
+  --blue: #1976d2;
+  --purple: #6a1b9a;
+  --rail-bg: var(--surface-1);
+  --rail-fg: var(--fg-1);
+  --rail-border: var(--border);
 }
 
 * { box-sizing: border-box; }
