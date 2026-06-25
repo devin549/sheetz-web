@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { updateMyJobStatus, reportEta, createJobPayLink } from './actions';
@@ -55,7 +55,7 @@ function TagRow({ tags = [] }) {
   );
 }
 
-export default function JobCard({ job, seeAll, canAct, variant = 'active', tags = [] }) {
+export default function JobCard({ job, seeAll, canAct, variant = 'active', tags = [], pastDue = 0 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [busyKey, setBusyKey] = useState(null);
@@ -99,6 +99,19 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
   const newEtaLabel = fmtTime(new Date(Date.now() + etaMins * 60000).toISOString());
 
   const compact = variant !== 'active'; // upcoming + done = scannable, no heavy controls
+  // Next required action — one line, status-derived.
+  const nextAction = done ? '✓ Job complete'
+    : cur === 'on_site' ? '📸 Required photos + closeout → then Complete'
+    : cur === 'enroute' ? '📍 Mark On-site when you arrive'
+    : '🚚 Tap En route to head out';
+
+  // Live on-site timer (active + started).
+  const [elapsed, setElapsed] = useState('');
+  useEffect(() => {
+    if (variant !== 'active' || !job.started_at) return;
+    const tick = () => { const ms = Date.now() - Date.parse(job.started_at); if (ms < 0) return; const m = Math.floor(ms / 60000); setElapsed(m < 60 ? `${m}m on-site` : `${Math.floor(m / 60)}h ${m % 60}m on-site`); };
+    tick(); const i = setInterval(tick, 30000); return () => clearInterval(i);
+  }, [variant, job.started_at]);
 
   return (
     <div className={variant === 'active' ? 'card card-amber' : 'card'} style={{ opacity: variant === 'done' || cancelled ? 0.6 : 1, padding: compact ? '12px 14px' : undefined }}>
@@ -123,6 +136,20 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
         </div>
         <span className={pill.cls} style={pill.color ? { color: pill.color } : undefined}>{pill.label}</span>
       </div>
+
+      {/* next required action — every non-cancelled card (scannable in the driveway) */}
+      {!cancelled && (
+        <div style={{ marginTop: 8, fontSize: 12.5, fontWeight: 700, color: done ? 'var(--green)' : 'var(--amber)' }}>{nextAction}</div>
+      )}
+
+      {/* active status strip — timer · payment · photo proof */}
+      {variant === 'active' && !cancelled && !done && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          {elapsed && <span className="pill" style={{ fontSize: 11, color: 'var(--amber)' }}>⏱ {elapsed}</span>}
+          <span className="pill" style={{ fontSize: 11, color: pastDue > 0 ? 'var(--red)' : 'var(--green)' }}>{pastDue > 0 ? `💸 ${money(pastDue)} due` : '💳 no balance'}</span>
+          <Link href={`/job/${job.id}/photos`} className="pill" style={{ fontSize: 11, color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>📸 Proof</Link>
+        </div>
+      )}
 
       {/* quick links — active card only */}
       {variant === 'active' && (mapHref || tel) && !cancelled && (
