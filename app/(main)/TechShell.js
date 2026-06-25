@@ -5,13 +5,13 @@
 // desktop My Day": the cockpit screens live under these tabs; this is just the field-app frame around them.
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Calendar, Sparkles, Truck, ShoppingCart, User, Briefcase } from 'lucide-react';
+import { Calendar, DollarSign, Sparkles, Truck, User, Briefcase } from 'lucide-react';
 
 const TABS = [
   { href: '/my-day', label: 'Today', icon: Calendar },
+  { href: '/pay', label: 'Pay', icon: DollarSign },
   { href: '/hank', label: 'Hank', icon: Sparkles },
   { href: '/my-truck', label: 'Tools', icon: Truck },
-  { href: '/shop', label: 'Shop', icon: ShoppingCart },
   { href: '/account', label: 'Me', icon: User },
 ];
 
