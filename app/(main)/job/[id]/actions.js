@@ -210,6 +210,33 @@ export async function overrideCloseout(jobId, reason) {
   return { ok: true, msg: 'Closeout overridden — job marked complete.' };
 }
 
+// Mark a rental issued to this job as RETURNED — clears it from the closeout gate. Allowed for anyone
+// who can work the job (tech on the job, dispatch/office) or shop. Writes returned_at/by for the audit.
+export async function markRentalReturned(issueId, jobId) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'changeStatus') || can(ctx.role, 'manageInventory') || canUploadPhotos(ctx.role))) return { ok: false, msg: 'Your role can’t return rentals.' };
+  const id = cleanText(issueId, 80);
+  const { data: row, error: readErr } = await ctx.sb.from('shop_issues').select('id, job_id, kind, status').eq('id', id).maybeSingle();
+  if (readErr) return { ok: false, msg: readErr.message };
+  if (!row || String(row.job_id) !== String(ctx.job.id)) return { ok: false, msg: 'Rental not found on this job.' };
+  if (row.kind !== 'rental') return { ok: false, msg: 'That item isn’t a rental.' };
+  if (row.status === 'returned') return { ok: true, msg: 'Already returned.' };
+  const { error } = await ctx.sb.from('shop_issues')
+    .update({ status: 'returned', returned_at: new Date().toISOString(), returned_by: ctx.profile?.name || ctx.user.email })
+    .eq('id', id);
+  if (error) return { ok: false, msg: error.message };
+  try {
+    await ctx.sb.from('audit_log').insert({
+      actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role,
+      action: 'rental.returned', entity: 'shop_issue', entity_id: id, detail: { job_id: String(ctx.job.id) },
+    });
+  } catch (_) {}
+  revalidatePath(`/job/${ctx.job.id}`);
+  revalidatePath('/shop');
+  return { ok: true, msg: 'Rental marked returned.' };
+}
+
 // Closeout v2 — save the disposition checklist (payment, signature, invoice, review, cash, warranty).
 export async function saveCloseout(formData) {
   const supabase = createClient();

@@ -3,9 +3,10 @@ import { notFound } from 'next/navigation';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requirePerm } from '@/lib/guard';
 import { can } from '@/lib/roles';
-import { computeCloseout, getDispo } from '@/lib/qa';
+import { computeCloseout, getDispo, getParts } from '@/lib/qa';
 import JobPhotos from './JobPhotos';
 import CloseoutV2 from './CloseoutV2';
+import JobParts from './JobParts';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
 
@@ -87,6 +88,7 @@ export default async function JobDetail({ params }) {
   reviews.forEach((r) => { if (!reviewByPhoto[r.photo_id]) reviewByPhoto[r.photo_id] = r; });
   const closeout = computeCloseout({ photos, reviews });
   const dispo = await getDispo(sb, id, job);
+  const parts = await getParts(sb, id);
   const needWarranty = ['warranty', 'insurance'].includes(String(job.job_class || '').toLowerCase()) || !!job.warranty_provider;
 
   const customer = job.customers || {};
@@ -97,6 +99,11 @@ export default async function JobDetail({ params }) {
   const canReview = can(role, 'qaReview');
   const canOverride = can(role, 'qaOverride');
   const isDone = /done|complete|closed/.test(String(job.status || '').toLowerCase());
+  // Gate badge reflects media/QA + outstanding rentals (the disposition checklist shows its own state below).
+  const partsBlocked = (parts.outRentals || []).length > 0;
+  const gateReady = closeout.readyToClose && !partsBlocked;
+  const gateMissing = [...(closeout.readyToClose ? [] : closeout.missing), ...parts.missing];
+  const canReturnRentals = can(role, 'changeStatus') || can(role, 'manageInventory') || canUpload;
 
   return (
     <div className="wrap" style={{ maxWidth: 1040 }}>
@@ -161,10 +168,10 @@ export default async function JobDetail({ params }) {
 
       {/* CLOSEOUT GATE — required media must be present + pass QA before the job can close. */}
       {!photoError && (
-        <div className="card" style={{ marginTop: 10, borderLeft: `3px solid ${closeout.readyToClose ? 'var(--green)' : 'var(--amber)'}`, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="card" style={{ marginTop: 10, borderLeft: `3px solid ${gateReady ? 'var(--green)' : 'var(--amber)'}`, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 240px' }}>
-            <span style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: closeout.readyToClose ? 'color-mix(in oklab, var(--green) 18%, transparent)' : 'color-mix(in oklab, var(--amber) 18%, transparent)' }}>
-              {closeout.readyToClose ? <CircleCheck size={22} style={{ color: 'var(--green)' }} /> : <Lock size={20} style={{ color: 'var(--amber)' }} />}
+            <span style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: gateReady ? 'color-mix(in oklab, var(--green) 18%, transparent)' : 'color-mix(in oklab, var(--amber) 18%, transparent)' }}>
+              {gateReady ? <CircleCheck size={22} style={{ color: 'var(--green)' }} /> : <Lock size={20} style={{ color: 'var(--amber)' }} />}
             </span>
             <div>
               <div style={{ fontWeight: 800 }}>Closeout Gate</div>
@@ -175,17 +182,20 @@ export default async function JobDetail({ params }) {
             <span className="pill" style={{ color: closeout.photoCount >= closeout.minPhotos ? 'var(--green)' : 'var(--fg-2)' }}>{closeout.photoCount}/{closeout.minPhotos} photos</span>
             {closeout.requireVideo && <span className="pill" style={{ color: closeout.haveVideo ? 'var(--green)' : 'var(--fg-2)' }}>{closeout.haveVideo ? '1' : '0'}/1 video</span>}
             {closeout.openFails > 0 && <span className="pill pill-red">{closeout.openFails} failed</span>}
-            <span className="pill" style={{ fontWeight: 800, background: closeout.readyToClose ? 'rgba(70,193,120,.16)' : 'rgba(255,179,0,.14)', color: closeout.readyToClose ? 'var(--green)' : 'var(--amber)' }}>
-              {isDone ? 'Closed' : closeout.readyToClose ? 'Ready to close' : 'Blocked'}
+            {parts.outRentals && parts.outRentals.length > 0 && <span className="pill pill-red">{parts.outRentals.length} rental{parts.outRentals.length > 1 ? 's' : ''} out</span>}
+            <span className="pill" style={{ fontWeight: 800, background: gateReady ? 'rgba(70,193,120,.16)' : 'rgba(255,179,0,.14)', color: gateReady ? 'var(--green)' : 'var(--amber)' }}>
+              {isDone ? 'Closed' : gateReady ? 'Ready to close' : 'Blocked'}
             </span>
           </div>
-          {!closeout.readyToClose && closeout.missing.length > 0 && (
+          {!gateReady && gateMissing.length > 0 && (
             <div className="muted" style={{ fontSize: 11.5, flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 5 }}>
-              <CircleAlert size={13} style={{ color: 'var(--amber)' }} /> Still needed: {closeout.missing.join(', ')}.
+              <CircleAlert size={13} style={{ color: 'var(--amber)' }} /> Still needed: {gateMissing.join(', ')}.
             </div>
           )}
         </div>
       )}
+
+      <JobParts jobId={id} parts={parts} canReturn={canReturnRentals} />
 
       {!photoError && <CloseoutV2 jobId={id} dispo={dispo} needWarranty={needWarranty} />}
 
