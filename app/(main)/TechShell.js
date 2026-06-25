@@ -15,7 +15,7 @@ const RAIL = [
   { group: 'Work', items: [
     { icon: '🌅', label: 'Start', href: '/start' },
     { icon: '📋', label: 'My Day', href: '/my-day' },
-    { icon: '🧲', label: 'Bids', href: '/soon' },
+    { icon: '🧲', label: 'Bids', href: '/bids' },
     { icon: '🌙', label: 'End', href: '/end' },
   ] },
   { group: 'Comms', items: [
