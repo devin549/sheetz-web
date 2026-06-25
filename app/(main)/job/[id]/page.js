@@ -303,6 +303,40 @@ export default async function JobDetail({ params }) {
 
       <div id="photos" style={{ scrollMarginTop: 70 }} />
 
+      {/* Guided shots — required photo kinds + walkthrough video from the job_media_rules, so the tech
+          knows shot-by-shot what gates closeout (HTML "Guided photos · X/Y" + "Video evidence REQUIRED"). */}
+      {!photoError && closeout.available !== false && (closeout.requiredKinds?.length > 0 || closeout.requireVideo || closeout.minPhotos > 0) && (() => {
+        const missing = new Set(closeout.missingKinds || []);
+        const kinds = closeout.requiredKinds || [];
+        return (
+          <div className="card" style={{ marginTop: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 16 }}>📸</span>
+              <div style={{ fontWeight: 800 }}>Required shots</div>
+              <span className="pill" style={{ marginLeft: 'auto', color: closeout.readyToClose ? 'var(--green)' : 'var(--amber)' }}>{closeout.photoCount}/{closeout.minPhotos} photos</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {kinds.map((k) => {
+                const ok = !missing.has(k);
+                return (
+                  <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
+                    {ok ? <CircleCheck size={15} style={{ color: 'var(--green)' }} /> : <CircleAlert size={15} style={{ color: 'var(--amber)' }} />}
+                    <span style={{ textTransform: 'capitalize', fontWeight: ok ? 600 : 800, color: ok ? 'var(--fg-2)' : 'var(--fg-1)' }}>{k} photo</span>
+                  </div>
+                );
+              })}
+              {closeout.requireVideo && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
+                  {closeout.haveVideo ? <CircleCheck size={15} style={{ color: 'var(--green)' }} /> : <CircleAlert size={15} style={{ color: 'var(--amber)' }} />}
+                  <span style={{ fontWeight: closeout.haveVideo ? 600 : 800, color: closeout.haveVideo ? 'var(--fg-2)' : 'var(--fg-1)' }}>🎬 Walkthrough video <span style={{ color: 'var(--red)', fontSize: 10, fontWeight: 800 }}>REQUIRED</span></span>
+                </div>
+              )}
+            </div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>Required shots gate closeout — capture them below; the office checks each one pass/fail.</div>
+          </div>
+        );
+      })()}
+
       {!photoError && <CloseoutV2 jobId={id} dispo={dispo} needWarranty={needWarranty} />}
 
       <JobPhotos
