@@ -24,7 +24,7 @@ function Section({ n, title }) {
 
 const JOB_PRESETS = ['Drain unclog', 'Water heater', 'Toilet', 'Leak repair', 'Sewer / camera', 'Garbage disposal', 'Faucet / fixture', 'Sump pump', 'Repipe', 'Gas line'];
 const PRIORITIES = [{ v: 'normal', label: 'Normal', color: 'var(--fg-2)' }, { v: 'urgent', label: 'Urgent', color: 'var(--amber)' }, { v: 'emergency', label: 'Emergency', color: 'var(--red)' }];
-const JOB_CLASSES = [{ v: 'residential', l: 'General (residential)' }, { v: 'commercial', l: 'Commercial' }, { v: 'warranty', l: 'Warranty' }, { v: 'insurance', l: 'Insurance' }];
+const JOB_CLASSES = [{ v: 'residential', l: 'General (residential)' }, { v: 'commercial', l: 'Commercial' }, { v: 'estimate', l: 'Estimate / quote' }, { v: 'warranty', l: 'Warranty' }, { v: 'insurance', l: 'Insurance' }];
 const BUSINESS_UNITS = ['Plumbing', 'Drain Cleaning', 'FloodBusterz', 'HVAC'];
 const WARRANTY_PROVIDERS = ['OnCourse', 'AWR', 'Pivotal', 'HomeServe', 'Other'];
 // These providers (or an insurance/warranty job class) REQUIRE a claim # before booking.

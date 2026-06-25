@@ -68,7 +68,8 @@ export async function updateMyJobStatus(jobId, status) {
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Server not configured.' };
   // Load the job once for the scope + close-gate checks.
-  const { data: job } = await sb.from('jobs').select('id, tech_id, job_type').eq('id', jobId).maybeSingle();
+  let { data: job } = await sb.from('jobs').select('id, tech_id, job_type, job_class, estimate_outcome').eq('id', jobId).maybeSingle();
+  if (!job) { const r = await sb.from('jobs').select('id, tech_id, job_type').eq('id', jobId).maybeSingle(); job = r.data; } // pre-69 fallback
   if (!job) return { ok: false, msg: 'Job not found.' };
   // Scope: a field-only tech can only touch their OWN job — office/dispatch can touch any.
   if (!can(profile.role, 'seeAllJobs') && can(profile.role, 'seeOwnOnly')) {

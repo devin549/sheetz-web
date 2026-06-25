@@ -396,6 +396,51 @@ export async function messageOffice(jobId, text) {
   return { ok: true, msg: 'Sent to the office.' };
 }
 
+// ── Estimate / quote jobs ───────────────────────────────────────────────────────────────────────
+const ESTIMATE_OUTCOMES = new Set(['sold_now', 'not_sold', 'needs_follow_up', 'needs_parts', 'customer_not_ready']);
+
+// Tech/office set the estimate outcome (required before an estimate can close).
+export async function setEstimateOutcome(jobId, outcome) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!can(ctx.role, 'changeStatus')) return { ok: false, msg: 'Your role can’t set the outcome.' };
+  if (!ESTIMATE_OUTCOMES.has(outcome)) return { ok: false, msg: 'Pick an outcome.' };
+  const { error } = await ctx.sb.from('jobs').update({ estimate_outcome: outcome }).eq('id', ctx.job.id);
+  if (error) return { ok: false, msg: /estimate_outcome|column|schema cache/i.test(error.message || '') ? 'Run supabase/69_estimate_jobs.sql first.' : error.message };
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'estimate.outcome', entity: 'job', entity_id: String(ctx.job.id), detail: { outcome } }); } catch (_) {}
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/my-day');
+  return { ok: true, msg: 'Outcome saved.' };
+}
+
+// Sold → create a WORK job from the estimate (normal closeout rules apply to the new job). Links both ways.
+export async function convertEstimateToWork(jobId) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'createJobs') || can(ctx.role, 'assignJobs') || can(ctx.role, 'qaReview'))) return { ok: false, msg: 'Not allowed to convert.' };
+  if (ctx.job.converted_to_job_id) return { ok: false, msg: 'Already converted to a work job.' };
+  const baseType = String(ctx.job.job_type || 'Service').replace(/\b(estimate|quote|bid)\b/ig, '').replace(/[-·\s]+$/, '').trim() || 'Service';
+  const base = { customer_id: ctx.job.customer_id, tech_id: ctx.job.tech_id, job_type: baseType, job_class: 'residential', status: 'scheduled', priority: ctx.job.priority || null, converted_from_job_id: String(ctx.job.id) };
+  let ins = await ctx.sb.from('jobs').insert(base).select('id').single();
+  if (ins.error) { const { converted_from_job_id, job_class, priority, ...core } = base; ins = await ctx.sb.from('jobs').insert(core).select('id').single(); }
+  if (ins.error) return { ok: false, msg: ins.error.message };
+  await ctx.sb.from('jobs').update({ converted_to_job_id: String(ins.data.id) }).eq('id', ctx.job.id);
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'estimate.convert', entity: 'job', entity_id: String(ctx.job.id), detail: { work_job_id: String(ins.data.id) } }); } catch (_) {}
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/board');
+  return { ok: true, msg: 'Work job created.', jobId: String(ins.data.id) };
+}
+
+// Store the DispatchMe job id on this Sheetz job for REFERENCE (no photo sync). Office only.
+export async function setDispatchmeId(jobId, value) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'assignJobs') || can(ctx.role, 'manageUsers') || can(ctx.role, 'createJobs'))) return { ok: false, msg: 'Not allowed.' };
+  const v = cleanText(value, 60) || null;
+  const { error } = await ctx.sb.from('jobs').update({ dispatchme_job_id: v }).eq('id', ctx.job.id);
+  if (error) return { ok: false, msg: /dispatchme|column|schema cache/i.test(error.message || '') ? 'Run supabase/69_estimate_jobs.sql first.' : error.message };
+  revalidatePath(`/job/${ctx.job.id}`);
+  return { ok: true, msg: v ? 'DispatchMe id saved.' : 'DispatchMe id cleared.' };
+}
+
 // Closeout v2 — save the disposition checklist (payment, signature, invoice, review, cash, warranty).
 export async function saveCloseout(formData) {
   const supabase = createClient();

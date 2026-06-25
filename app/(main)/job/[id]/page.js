@@ -3,13 +3,15 @@ import { notFound } from 'next/navigation';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requirePerm } from '@/lib/guard';
 import { can } from '@/lib/roles';
-import { computeCloseout, getDispo, getParts, getForms } from '@/lib/qa';
+import { computeCloseout, getDispo, getParts, getForms, isEstimateJob, ruleForJob } from '@/lib/qa';
 import JobPhotos from './JobPhotos';
 import CloseoutV2 from './CloseoutV2';
 import JobParts from './JobParts';
 import JobForms from './JobForms';
 import JobFlow from './JobFlow';
 import MessageOffice from './MessageOffice';
+import EstimatePanel from './EstimatePanel';
+import DispatchMeRef from './DispatchMeRef';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
 
@@ -119,7 +121,8 @@ export default async function JobDetail({ params }) {
   const failReviewIds = Object.values(reviewByPhoto).filter((r) => r.result === 'fail').map((r) => r.id);
   const annoByPhoto = await loadAnnotations(sb, failReviewIds);
   Object.values(reviewByPhoto).forEach((r) => { r.annotations = annoByPhoto[r.photo_id] || []; });
-  const closeout = computeCloseout({ photos, reviews });
+  const isEstimate = isEstimateJob(job);
+  const closeout = computeCloseout({ photos, reviews, rule: ruleForJob(job) });
   const dispo = await getDispo(sb, id, job);
   const parts = await getParts(sb, id);
   const forms = await getForms(sb, id, job.job_type);
@@ -136,9 +139,10 @@ export default async function JobDetail({ params }) {
   const isDone = /done|complete|closed/.test(String(job.status || '').toLowerCase());
   // Gate badge reflects media/QA + outstanding rentals (the disposition checklist shows its own state below).
   const partsBlocked = (parts.outRentals || []).length > 0;
-  const formsBlocked = forms.available !== false && !forms.ready;
-  const gateReady = closeout.readyToClose && !partsBlocked && !formsBlocked;
-  const gateMissing = [...(closeout.readyToClose ? [] : closeout.missing), ...parts.missing, ...(forms.missing || [])];
+  const formsBlocked = !isEstimate && forms.available !== false && !forms.ready; // estimates skip closeout questions
+  const outcomeBlocked = isEstimate && !job.estimate_outcome;
+  const gateReady = closeout.readyToClose && !partsBlocked && !formsBlocked && !outcomeBlocked;
+  const gateMissing = [...(closeout.readyToClose ? [] : closeout.missing), ...parts.missing, ...(isEstimate ? [] : (forms.missing || [])), ...(outcomeBlocked ? ['estimate outcome'] : [])];
   const canReturnRentals = can(role, 'changeStatus') || can(role, 'manageInventory') || canUpload;
   const canAnswerForms = can(role, 'changeStatus') || can(role, 'qaReview') || canUpload;
 
@@ -174,9 +178,11 @@ export default async function JobDetail({ params }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {isEstimate && <span className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)', fontWeight: 800 }}>🧲 ESTIMATE</span>}
             <span className="pill">{techName}</span>
             {job.amount ? <span className="pill" style={{ color: 'var(--green)' }}>{money(job.amount)}</span> : null}
             <span className="pill" style={{ color: photos.length ? 'var(--amber)' : 'var(--fg-3)' }}>{photos.length} photos</span>
+            <DispatchMeRef jobId={id} value={job.dispatchme_job_id} canEdit={can(role, 'assignJobs') || can(role, 'manageUsers') || can(role, 'createJobs')} />
           </div>
         </div>
 
@@ -252,6 +258,8 @@ export default async function JobDetail({ params }) {
 
       {canAct && <div style={{ marginTop: 8 }}><MessageOffice jobId={id} /></div>}
 
+      {isEstimate && <EstimatePanel jobId={id} outcome={job.estimate_outcome} convertedToJobId={job.converted_to_job_id} canAct={canAct} />}
+
       {photoError && (
         <div className="notice">
           <strong>Photo table is not ready.</strong> Run <code>supabase/23_job_photo_spine.sql</code> in Supabase.
@@ -289,7 +297,7 @@ export default async function JobDetail({ params }) {
         </div>
       )}
 
-      <JobForms jobId={id} forms={forms} canAnswer={canAnswerForms} />
+      {!isEstimate && <JobForms jobId={id} forms={forms} canAnswer={canAnswerForms} />}
 
       <JobParts jobId={id} parts={parts} canReturn={canReturnRentals} />
 
@@ -350,7 +358,7 @@ export default async function JobDetail({ params }) {
         );
       })()}
 
-      {!photoError && <CloseoutV2 jobId={id} dispo={dispo} needWarranty={needWarranty} />}
+      {!photoError && !isEstimate && <CloseoutV2 jobId={id} dispo={dispo} needWarranty={needWarranty} />}
 
       <JobPhotos
         jobId={id}
