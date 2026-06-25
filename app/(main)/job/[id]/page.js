@@ -24,6 +24,19 @@ async function loadReviews(sb, photoIds) {
   return error ? [] : (data || []); // table may not be migrated yet → no reviews
 }
 
+// Prior jobs for this customer — the cockpit "History" tab so the tech knows the relationship
+// (repeat customer, prior callbacks). Guarded by the same job access; best-effort.
+async function loadHistory(sb, customerId, currentId) {
+  if (!customerId) return [];
+  try {
+    const { data, error } = await sb.from('jobs')
+      .select('id, job_number, job_type, amount, status, scheduled_at, completed_at')
+      .eq('customer_id', customerId).neq('id', currentId)
+      .order('scheduled_at', { ascending: false }).limit(8);
+    return error ? [] : (data || []);
+  } catch { return []; }
+}
+
 // Circle/box markers for the failing reviews → shown to the tech so they see WHERE the problem is.
 async function loadAnnotations(sb, reviewIds) {
   if (!reviewIds.length) return {};
@@ -109,6 +122,7 @@ export default async function JobDetail({ params }) {
   const dispo = await getDispo(sb, id, job);
   const parts = await getParts(sb, id);
   const forms = await getForms(sb, id, job.job_type);
+  const history = await loadHistory(sb, job.customer_id, id);
   const needWarranty = ['warranty', 'insurance'].includes(String(job.job_class || '').toLowerCase()) || !!job.warranty_provider;
 
   const customer = job.customers || {};
@@ -265,6 +279,27 @@ export default async function JobDetail({ params }) {
       <JobForms jobId={id} forms={forms} canAnswer={canAnswerForms} />
 
       <JobParts jobId={id} parts={parts} canReturn={canReturnRentals} />
+
+      {/* History — this customer's prior jobs, so the tech knows the relationship. */}
+      {history.length > 0 && (
+        <div className="card" style={{ marginTop: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 16 }}>📜</span>
+            <div style={{ fontWeight: 800 }}>History · this customer</div>
+            <span className="pill" style={{ marginLeft: 'auto' }}>{history.length} prior</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {history.map((h) => (
+              <Link key={h.id} href={`/job/${h.id}`} style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                <span className="muted" style={{ fontSize: 11, minWidth: 96 }}>{fmtDate(h.completed_at || h.scheduled_at)}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--fg-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.job_type || 'Job'}{h.job_number ? ` · #${h.job_number}` : ''}</span>
+                {h.amount ? <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 700 }}>{money(h.amount)}</span> : null}
+                <span className="pill" style={{ fontSize: 10 }}>{statusLabel(h.status)}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div id="photos" style={{ scrollMarginTop: 70 }} />
 
