@@ -13,10 +13,10 @@ import Watermark from './Watermark';
 
 const RAIL = [
   { group: 'Work', items: [
-    { icon: '🌅', label: 'Start', href: '/soon' },
+    { icon: '🌅', label: 'Start', href: '/start' },
     { icon: '📋', label: 'My Day', href: '/my-day' },
     { icon: '🧲', label: 'Bids', href: '/soon' },
-    { icon: '🌙', label: 'End', href: '/soon' },
+    { icon: '🌙', label: 'End', href: '/end' },
   ] },
   { group: 'Comms', items: [
     { icon: '💬', label: 'Chat', href: '/messages' },
