@@ -14,6 +14,8 @@ import EstimatePanel from './EstimatePanel';
 import DispatchMeRef from './DispatchMeRef';
 import JobCosts from './JobCosts';
 import JobVideo from './JobVideo';
+import CustomerMemory from './CustomerMemory';
+import { loadCustomerMemory } from '@/lib/customerMemory';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
 
@@ -131,7 +133,7 @@ export default async function JobDetail({ params }) {
   const dispo = await getDispo(sb, id, job);
   const parts = await getParts(sb, id);
   const forms = await getForms(sb, id, job.job_type);
-  const history = await loadHistory(sb, job.customer_id, id);
+  const memory = await loadCustomerMemory(sb, job);
   const needWarranty = ['warranty', 'insurance'].includes(String(job.job_class || '').toLowerCase()) || !!job.warranty_provider;
 
   const customer = job.customers || {};
@@ -241,23 +243,7 @@ export default async function JobDetail({ params }) {
         </div>
       )}
 
-      {/* Notes & Access — gate code, dog, parking, lockbox + job notes (jobs.access_notes / jobs.notes). */}
-      {(job.access_notes || job.notes) && (
-        <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--amber)' }}>
-          {job.access_notes && (
-            <div>
-              <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700 }}>🔑 Access &amp; warnings</div>
-              <div style={{ marginTop: 4, fontSize: 13.5, lineHeight: 1.45, fontWeight: 600 }}>{job.access_notes}</div>
-            </div>
-          )}
-          {job.notes && (
-            <div style={{ marginTop: job.access_notes ? 10 : 0 }}>
-              <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700 }}>🗂 Job notes</div>
-              <div style={{ marginTop: 4, fontSize: 13, lineHeight: 1.45 }}>{job.notes}</div>
-            </div>
-          )}
-        </div>
-      )}
+      <CustomerMemory mem={memory} customer={customer} job={job} />
 
       <JobFlow jobId={id} status={st} reached={reached} gateReady={gateReady} gateMissing={gateMissing} nextHint={gateMissing[0] || ''} canAct={canAct} />
 
@@ -307,27 +293,6 @@ export default async function JobDetail({ params }) {
       <JobParts jobId={id} parts={parts} canReturn={canReturnRentals} />
 
       {!isEstimate && <JobCosts jobId={id} materialCents={job.material_cost_cents} dispatchCents={job.dispatch_fee_cents} canEdit={canAct || can(role, 'collectPayment') || can(role, 'seeFinancials')} />}
-
-      {/* History — this customer's prior jobs, so the tech knows the relationship. */}
-      {history.length > 0 && (
-        <div className="card" style={{ marginTop: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <span style={{ fontSize: 16 }}>📜</span>
-            <div style={{ fontWeight: 800 }}>History · this customer</div>
-            <span className="pill" style={{ marginLeft: 'auto' }}>{history.length} prior</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {history.map((h) => (
-              <Link key={h.id} href={`/job/${h.id}`} style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                <span className="muted" style={{ fontSize: 11, minWidth: 96 }}>{fmtDate(h.completed_at || h.scheduled_at)}</span>
-                <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--fg-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.job_type || 'Job'}{h.job_number ? ` · #${h.job_number}` : ''}</span>
-                {h.amount ? <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 700 }}>{money(h.amount)}</span> : null}
-                <span className="pill" style={{ fontSize: 10 }}>{statusLabel(h.status)}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div id="photos" style={{ scrollMarginTop: 70 }} />
 
