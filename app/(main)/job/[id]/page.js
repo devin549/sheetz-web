@@ -3,10 +3,11 @@ import { notFound } from 'next/navigation';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requirePerm } from '@/lib/guard';
 import { can } from '@/lib/roles';
-import { computeCloseout, getDispo, getParts } from '@/lib/qa';
+import { computeCloseout, getDispo, getParts, getForms } from '@/lib/qa';
 import JobPhotos from './JobPhotos';
 import CloseoutV2 from './CloseoutV2';
 import JobParts from './JobParts';
+import JobForms from './JobForms';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
 
@@ -89,6 +90,7 @@ export default async function JobDetail({ params }) {
   const closeout = computeCloseout({ photos, reviews });
   const dispo = await getDispo(sb, id, job);
   const parts = await getParts(sb, id);
+  const forms = await getForms(sb, id, job.job_type);
   const needWarranty = ['warranty', 'insurance'].includes(String(job.job_class || '').toLowerCase()) || !!job.warranty_provider;
 
   const customer = job.customers || {};
@@ -101,9 +103,11 @@ export default async function JobDetail({ params }) {
   const isDone = /done|complete|closed/.test(String(job.status || '').toLowerCase());
   // Gate badge reflects media/QA + outstanding rentals (the disposition checklist shows its own state below).
   const partsBlocked = (parts.outRentals || []).length > 0;
-  const gateReady = closeout.readyToClose && !partsBlocked;
-  const gateMissing = [...(closeout.readyToClose ? [] : closeout.missing), ...parts.missing];
+  const formsBlocked = forms.available !== false && !forms.ready;
+  const gateReady = closeout.readyToClose && !partsBlocked && !formsBlocked;
+  const gateMissing = [...(closeout.readyToClose ? [] : closeout.missing), ...parts.missing, ...(forms.missing || [])];
   const canReturnRentals = can(role, 'changeStatus') || can(role, 'manageInventory') || canUpload;
+  const canAnswerForms = can(role, 'changeStatus') || can(role, 'qaReview') || canUpload;
 
   return (
     <div className="wrap" style={{ maxWidth: 1040 }}>
@@ -183,6 +187,7 @@ export default async function JobDetail({ params }) {
             {closeout.requireVideo && <span className="pill" style={{ color: closeout.haveVideo ? 'var(--green)' : 'var(--fg-2)' }}>{closeout.haveVideo ? '1' : '0'}/1 video</span>}
             {closeout.openFails > 0 && <span className="pill pill-red">{closeout.openFails} failed</span>}
             {parts.outRentals && parts.outRentals.length > 0 && <span className="pill pill-red">{parts.outRentals.length} rental{parts.outRentals.length > 1 ? 's' : ''} out</span>}
+            {formsBlocked && <span className="pill pill-red">{forms.missing.length} question{forms.missing.length > 1 ? 's' : ''}</span>}
             <span className="pill" style={{ fontWeight: 800, background: gateReady ? 'rgba(70,193,120,.16)' : 'rgba(255,179,0,.14)', color: gateReady ? 'var(--green)' : 'var(--amber)' }}>
               {isDone ? 'Closed' : gateReady ? 'Ready to close' : 'Blocked'}
             </span>
@@ -194,6 +199,8 @@ export default async function JobDetail({ params }) {
           )}
         </div>
       )}
+
+      <JobForms jobId={id} forms={forms} canAnswer={canAnswerForms} />
 
       <JobParts jobId={id} parts={parts} canReturn={canReturnRentals} />
 

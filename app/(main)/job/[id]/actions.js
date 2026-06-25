@@ -237,6 +237,29 @@ export async function markRentalReturned(issueId, jobId) {
   return { ok: true, msg: 'Rental marked returned.' };
 }
 
+// Save the tech's closeout-question answers for a job (merged into the job_closeout_answers row).
+// Allowed for anyone who can work the job. Values are clamped; the gate (lib/qa) decides pass/block.
+export async function saveCloseoutAnswers(jobId, answers) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'changeStatus') || can(ctx.role, 'qaReview') || canUploadPhotos(ctx.role))) return { ok: false, msg: 'Your role can’t answer closeout questions.' };
+  const clean = {};
+  if (answers && typeof answers === 'object') {
+    for (const [k, v] of Object.entries(answers)) {
+      const key = cleanText(k, 60);
+      if (key) clean[key] = cleanText(v, 300);
+    }
+  }
+  const { data: existing } = await ctx.sb.from('job_closeout_answers').select('answers').eq('job_id', String(ctx.job.id)).maybeSingle();
+  const merged = { ...((existing && existing.answers) || {}), ...clean };
+  const { error } = await ctx.sb.from('job_closeout_answers').upsert(
+    { job_id: String(ctx.job.id), answers: merged, updated_by: ctx.profile?.name || ctx.user.email, updated_at: new Date().toISOString() },
+    { onConflict: 'job_id' });
+  if (error) return { ok: false, msg: /schema cache|does not exist|could not find/i.test(error.message || '') ? 'Run supabase/67_closeout_questions.sql first.' : error.message };
+  revalidatePath(`/job/${ctx.job.id}`);
+  return { ok: true, msg: 'Answers saved.' };
+}
+
 // Closeout v2 — save the disposition checklist (payment, signature, invoice, review, cash, warranty).
 export async function saveCloseout(formData) {
   const supabase = createClient();
