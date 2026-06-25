@@ -26,7 +26,7 @@ const RAIL = [
     { icon: '🏁', label: 'Races', href: '/soon', money: true, badge: '5' },
     { icon: '🏆', label: 'Record', href: '/soon', money: true },
     { icon: '🎰', label: 'Vegas', href: '/soon', money: true },
-    { icon: '📆', label: 'Cal', href: '/soon' },
+    { icon: '📆', label: 'Cal', href: '/cal' },
     { icon: '📅', label: 'PTO', href: '/soon' },
     { icon: '⭐', label: 'Reviews', href: '/reviews' },
   ] },
