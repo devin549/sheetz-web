@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { resolveShell, switchableShells } from '@/lib/shells';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
-import { weeklyLeaderboard } from '@/lib/leaderboard';
+import { weeklyLeaderboard, onTimeStreak } from '@/lib/leaderboard';
 import Sidebar from './Sidebar';
 import TechShell from './TechShell';
 
@@ -53,9 +53,19 @@ export default async function MainLayout({ children }) {
   if (shell === 'tech') {
     const activeJob = await loadActiveJob(profile.tech_id);
     const wmId = String(user.id || '').replace(/-/g, '').slice(0, 8); // short leak-trace id → maps to this user
-    // Live rank in the ribbon (real this-week leaderboard); streak/level stay sample until those wire.
+    // Live rank + on-time streak in the ribbon (real data); Power Plunger Hour / level stay sample.
     let game;
-    try { const lb = await weeklyLeaderboard(getSupabaseAdmin(), name, Date.now()); if (lb.available && lb.you) game = { rank: lb.you.rank, rankDelta: 0, streak: 6, powerHour: 47, level: 7, levelPct: 84 }; } catch (_) {}
+    try {
+      const sbAdmin = getSupabaseAdmin();
+      const [lb, st] = await Promise.all([
+        weeklyLeaderboard(sbAdmin, name, Date.now()),
+        onTimeStreak(sbAdmin, { techId: profile.tech_id, name }, Date.now()),
+      ]);
+      const haveRank = lb.available && lb.you;
+      if (haveRank || st.available) {
+        game = { rank: haveRank ? lb.you.rank : 2, rankDelta: 0, streak: st.available ? st.streak : 6, powerHour: 47, level: 7, levelPct: 84 };
+      }
+    } catch (_) {}
     return <TechShell name={name} shells={shells} activeJob={activeJob} wmId={wmId} game={game}>{children}</TechShell>;
   }
   return (
