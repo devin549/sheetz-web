@@ -13,6 +13,7 @@ import MessageOffice from './MessageOffice';
 import EstimatePanel from './EstimatePanel';
 import DispatchMeRef from './DispatchMeRef';
 import JobCosts from './JobCosts';
+import JobVideo from './JobVideo';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
 
@@ -123,6 +124,9 @@ export default async function JobDetail({ params }) {
   const annoByPhoto = await loadAnnotations(sb, failReviewIds);
   Object.values(reviewByPhoto).forEach((r) => { r.annotations = annoByPhoto[r.photo_id] || []; });
   const isEstimate = isEstimateJob(job);
+  const isVid = (p) => /^video\//.test(p.mime_type || '') || p.kind === 'walkthrough';
+  const videos = photos.filter(isVid);
+  const stillPhotos = photos.filter((p) => !isVid(p));
   const closeout = computeCloseout({ photos, reviews, rule: ruleForJob(job) });
   const dispo = await getDispo(sb, id, job);
   const parts = await getParts(sb, id);
@@ -363,9 +367,11 @@ export default async function JobDetail({ params }) {
 
       {!photoError && !isEstimate && <CloseoutV2 jobId={id} dispo={dispo} needWarranty={needWarranty} />}
 
+      <JobVideo jobId={id} videos={videos} canUpload={canUpload && !photoError} requireVideo={closeout.requireVideo} />
+
       <JobPhotos
         jobId={id}
-        photos={photos}
+        photos={stillPhotos}
         reviewByPhoto={reviewByPhoto}
         closeout={closeout}
         canUpload={canUpload && !photoError}

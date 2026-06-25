@@ -131,6 +131,43 @@ export async function uploadJobPhoto(formData) {
   return { ok: true, msg: 'Photo added.' };
 }
 
+// Walkthrough VIDEO — big files, so the browser uploads DIRECT to Storage via a signed URL (avoids the
+// serverless body limit). Step 1: mint the signed upload URL. Same job_photos spine, kind='walkthrough'.
+const VIDEO_MIME = new Set(['video/mp4', 'video/quicktime', 'video/webm', 'video/x-m4v', 'video/3gpp']);
+const VIDEO_EXT = new Map([['video/mp4', 'mp4'], ['video/quicktime', 'mov'], ['video/webm', 'webm'], ['video/x-m4v', 'm4v'], ['video/3gpp', '3gp']]);
+const VIDEO_MAX = 300 * 1024 * 1024; // 300 MB (the Storage bucket limit must allow this)
+
+export async function createVideoUploadUrl(jobId, fileName, mime, size) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!canUploadPhotos(ctx.role)) return { ok: false, msg: 'Your role can’t upload.' };
+  if (!VIDEO_MIME.has(String(mime))) return { ok: false, msg: 'Use an MP4 / MOV / WebM video.' };
+  if (Number(size) > VIDEO_MAX) return { ok: false, msg: 'Video is over 300 MB — keep it short.' };
+  const ext = VIDEO_EXT.get(String(mime)) || 'mp4';
+  const id = randomUUID();
+  const path = `jobs/${ctx.job.id}/${new Date().toISOString().slice(0, 10)}/${id}-walkthrough.${ext}`;
+  const { data, error } = await ctx.sb.storage.from(BUCKET).createSignedUploadUrl(path);
+  if (error) return { ok: false, msg: error.message };
+  return { ok: true, signedUrl: data.signedUrl, path, id };
+}
+
+// Step 2 (after the browser PUTs the file to the signed URL): record the job_photos row.
+export async function recordVideoUpload(jobId, path, fileName, mime, size) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!canUploadPhotos(ctx.role)) return { ok: false, msg: 'Your role can’t upload.' };
+  const p = cleanText(path, 300);
+  if (!p.startsWith(`jobs/${ctx.job.id}/`)) return { ok: false, msg: 'Bad upload path.' };
+  const { error } = await ctx.sb.from('job_photos').insert({
+    job_id: String(ctx.job.id), storage_bucket: BUCKET, storage_path: p,
+    file_name: cleanText(fileName, 160) || 'walkthrough.mp4', mime_type: String(mime), size_bytes: Number(size) || null,
+    kind: 'walkthrough', uploaded_by: ctx.user.id, uploaded_by_email: ctx.user.email, uploaded_by_name: ctx.profile?.name || ctx.user.email,
+  });
+  if (error) { try { await ctx.sb.storage.from(BUCKET).remove([p]); } catch (_) {} return { ok: false, msg: error.message }; }
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/my-day');
+  return { ok: true, msg: '🎬 Walkthrough video uploaded.' };
+}
+
 export async function archiveJobPhoto(photoId, jobId) {
   const cleanPhotoId = cleanText(photoId, 80);
   const cleanJobId = cleanText(jobId, 80);
