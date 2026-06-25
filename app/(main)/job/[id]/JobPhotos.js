@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { archiveJobPhoto, uploadJobPhoto, reviewPhoto, overrideCloseout } from './actions';
+import { archiveJobPhoto, uploadJobPhoto, reviewPhoto, overrideCloseout, createCorrection } from './actions';
 import { FAIL_REASONS, FAIL_LABEL } from '@/lib/qa';
 import { CircleCheck, CircleX, ShieldAlert, Camera } from 'lucide-react';
 
@@ -176,6 +176,14 @@ export default function JobPhotos({ jobId, photos, reviewByPhoto = {}, closeout,
                   <button type="button" onClick={() => startCorrected(photo)} disabled={pending}
                     style={{ marginTop: 10, width: '100%', padding: '10px', borderRadius: 8, border: '1px solid var(--red)', background: 'rgba(239,83,80,.10)', color: 'var(--red)', fontWeight: 800, fontSize: 13, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                     <Camera size={15} /> Upload corrected proof
+                  </button>
+                )}
+
+                {/* OFFICE: tech already left → open a QA Hold / correction work order */}
+                {failed && canReview && (
+                  <button type="button" onClick={() => run(() => createCorrection(jobId, photo.id))} disabled={pending}
+                    style={{ marginTop: 8, width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px dashed var(--amber-dim)', background: 'transparent', color: 'var(--amber)', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                    🚧 Open QA Hold (tech left)
                   </button>
                 )}
 

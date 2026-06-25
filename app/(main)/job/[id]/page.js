@@ -9,6 +9,7 @@ import CloseoutV2 from './CloseoutV2';
 import JobParts from './JobParts';
 import JobForms from './JobForms';
 import JobFlow from './JobFlow';
+import MessageOffice from './MessageOffice';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
 
@@ -210,6 +211,16 @@ export default async function JobDetail({ params }) {
         </div>
       </div>
 
+      {/* Failed-QA alert — immediate, top-of-job, when a photo failed and the job isn't closed. */}
+      {!photoError && closeout.openFails > 0 && !isDone && (
+        <a href="#photos" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, padding: '11px 13px', borderRadius: 10, border: '1px solid var(--red)', background: 'rgba(239,83,80,.10)' }}>
+          <CircleAlert size={17} style={{ color: 'var(--red)' }} />
+          <span style={{ fontWeight: 800, color: 'var(--red)', fontSize: 13 }}>{closeout.openFails} photo{closeout.openFails > 1 ? 's' : ''} failed QA</span>
+          <span className="muted" style={{ fontSize: 12 }}>— see the circle + note below, fix &amp; re-shoot.</span>
+          <span style={{ marginLeft: 'auto', color: 'var(--red)', fontWeight: 800, fontSize: 12 }}>Fix ↓</span>
+        </a>
+      )}
+
       {/* Customer warnings — never lose context the tech needs before knocking. */}
       {urgent && (
         <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--red)', display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(239,83,80,.08)' }}>
@@ -238,6 +249,8 @@ export default async function JobDetail({ params }) {
       )}
 
       <JobFlow jobId={id} status={st} reached={reached} gateReady={gateReady} gateMissing={gateMissing} nextHint={gateMissing[0] || ''} canAct={canAct} />
+
+      {canAct && <div style={{ marginTop: 8 }}><MessageOffice jobId={id} /></div>}
 
       {photoError && (
         <div className="notice">

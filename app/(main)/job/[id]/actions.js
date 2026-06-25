@@ -301,6 +301,101 @@ export async function saveCloseoutAnswers(jobId, answers) {
   return { ok: true, msg: 'Answers saved.' };
 }
 
+// ── CB Cam corrections (QA Hold) — the "tech already left" flow ────────────────────────────────
+// Open a correction work order for a failed photo: links orig job + photo + latest fail review (reason,
+// note, circle). Office-only (qaReview). The job can't fully close while a correction is open.
+export async function createCorrection(jobId, photoId) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!can(ctx.role, 'qaReview')) return { ok: false, msg: 'Only a supervisor/office can open a correction.' };
+  const pid = cleanText(photoId, 80);
+  const { data: rev } = await ctx.sb.from('job_photo_reviews')
+    .select('id, fail_reason, manager_note').eq('photo_id', pid).eq('job_id', String(ctx.job.id))
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (!rev || rev.result === 'pass') { /* still allow — office may correct a non-failed photo */ }
+  const { data: existing } = await ctx.sb.from('job_corrections').select('id').eq('orig_job_id', String(ctx.job.id)).eq('photo_id', pid).eq('status', 'open').maybeSingle();
+  if (existing) return { ok: false, msg: 'A correction is already open for this photo.' };
+  const { data: row, error } = await ctx.sb.from('job_corrections').insert({
+    orig_job_id: String(ctx.job.id), photo_id: pid, review_id: rev?.id || null,
+    fail_reason: rev?.fail_reason || null, manager_note: rev?.manager_note || null,
+    created_by: ctx.user.id, created_by_name: ctx.profile?.name || ctx.user.email,
+  }).select('id').single();
+  if (error) return { ok: false, msg: /schema cache|does not exist|could not find/i.test(error.message || '') ? 'Run supabase/68_job_corrections.sql first.' : error.message };
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'correction.open', entity: 'job', entity_id: String(ctx.job.id), detail: { photo_id: pid, correction_id: row.id } }); } catch (_) {}
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/corrections'); revalidatePath('/supervisor/jobs');
+  return { ok: true, msg: 'QA Hold opened — correction needed.' };
+}
+
+// Load a correction + authorize the caller via its original job. Returns {ctx, corr} or {ok:false}.
+async function correctionCtx(correctionId) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Sign in required.' };
+  const profile = await loadProfile(user);
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const { data: corr } = await sb.from('job_corrections').select('*').eq('id', cleanText(correctionId, 80)).maybeSingle();
+  if (!corr) return { ok: false, msg: 'Correction not found.' };
+  return { ok: true, sb, user, profile, role: profile.role, corr };
+}
+
+// Office logs that the customer was contacted about a correction (never auto-texts — human decision).
+export async function markCustomerContacted(correctionId) {
+  const c = await correctionCtx(correctionId);
+  if (!c.ok) return c;
+  if (!(can(c.role, 'contactCustomer') || can(c.role, 'qaReview') || can(c.role, 'manageUsers'))) return { ok: false, msg: 'Not allowed.' };
+  const { error } = await c.sb.from('job_corrections').update({ customer_contacted: true, contacted_by: c.profile?.name || c.user.email, contacted_at: new Date().toISOString() }).eq('id', c.corr.id);
+  if (error) return { ok: false, msg: error.message };
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile?.name || c.user.email, role: c.role, action: 'correction.contacted', entity: 'job', entity_id: c.corr.orig_job_id, detail: { correction_id: c.corr.id } }); } catch (_) {}
+  revalidatePath('/corrections'); revalidatePath(`/job/${c.corr.orig_job_id}`);
+  return { ok: true, msg: 'Logged — customer contacted.' };
+}
+
+// Resolve a correction (corrected proof passed). Supervisor only.
+export async function resolveCorrection(correctionId) {
+  const c = await correctionCtx(correctionId);
+  if (!c.ok) return c;
+  if (!can(c.role, 'qaReview')) return { ok: false, msg: 'Only a supervisor/office can resolve.' };
+  const { error } = await c.sb.from('job_corrections').update({ status: 'resolved', resolved_by_name: c.profile?.name || c.user.email, resolved_at: new Date().toISOString() }).eq('id', c.corr.id);
+  if (error) return { ok: false, msg: error.message };
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile?.name || c.user.email, role: c.role, action: 'correction.resolved', entity: 'job', entity_id: c.corr.orig_job_id, detail: { correction_id: c.corr.id } }); } catch (_) {}
+  revalidatePath('/corrections'); revalidatePath(`/job/${c.corr.orig_job_id}`);
+  return { ok: true, msg: 'Correction resolved.' };
+}
+
+// Book a correction VISIT — clones the original into a new scheduled high-priority 'Correction' job so
+// it lands on the tech's schedule with the failure context. Best-effort; links correction_job_id.
+export async function scheduleCorrectionVisit(correctionId) {
+  const c = await correctionCtx(correctionId);
+  if (!c.ok) return c;
+  if (!(can(c.role, 'qaReview') || can(c.role, 'assignJobs') || can(c.role, 'createJobs'))) return { ok: false, msg: 'Not allowed.' };
+  if (c.corr.correction_job_id) return { ok: false, msg: 'A correction visit is already booked.' };
+  const { data: orig } = await c.sb.from('jobs').select('customer_id, tech_id, job_type, address').eq('id', c.corr.orig_job_id).maybeSingle();
+  if (!orig) return { ok: false, msg: 'Original job not found.' };
+  const note = `QA correction for job ${c.corr.orig_job_id} — ${c.corr.fail_reason || 'failed photo'}${c.corr.manager_note ? ': ' + c.corr.manager_note : ''}`;
+  const base = { customer_id: orig.customer_id, tech_id: orig.tech_id, job_type: `Correction — ${orig.job_type || 'photo redo'}`, status: 'scheduled', priority: 'high', notes: note };
+  let ins = await c.sb.from('jobs').insert(base).select('id').single();
+  if (ins.error) { const { priority, notes, ...core } = base; ins = await c.sb.from('jobs').insert(core).select('id').single(); }
+  if (ins.error) return { ok: false, msg: ins.error.message };
+  await c.sb.from('job_corrections').update({ correction_job_id: String(ins.data.id) }).eq('id', c.corr.id);
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile?.name || c.user.email, role: c.role, action: 'correction.scheduled', entity: 'job', entity_id: c.corr.orig_job_id, detail: { correction_id: c.corr.id, correction_job_id: String(ins.data.id) } }); } catch (_) {}
+  revalidatePath('/corrections'); revalidatePath('/board');
+  return { ok: true, msg: 'Correction visit booked on the schedule.' };
+}
+
+// Tech → office message from the cockpit (e.g. "photo failed, need help"). Internal only; logged.
+export async function messageOffice(jobId, text) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  const body = cleanText(text, 500);
+  if (body.length < 2) return { ok: false, msg: 'Type a short message.' };
+  try {
+    await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'tech.message', entity: 'job', entity_id: String(ctx.job.id), detail: { text: body } });
+  } catch (e) { return { ok: false, msg: 'Could not send.' }; }
+  revalidatePath(`/job/${ctx.job.id}`);
+  return { ok: true, msg: 'Sent to the office.' };
+}
+
 // Closeout v2 — save the disposition checklist (payment, signature, invoice, review, cash, warranty).
 export async function saveCloseout(formData) {
   const supabase = createClient();
