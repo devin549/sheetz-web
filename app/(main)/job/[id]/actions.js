@@ -9,6 +9,7 @@ import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { canArchivePhoto, canUploadPhotos, canViewJob, loadJob } from './jobAccess';
 import { closeoutReason } from '@/lib/qa';
+import { postToDiscord } from '@/lib/discord';
 
 const STATUS_STEPS = ['scheduled', 'enroute', 'on_site', 'done'];
 
@@ -309,6 +310,64 @@ export async function setJobStatus(jobId, status) {
   if (error) return { ok: false, msg: error.message };
   revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/my-day'); revalidatePath('/board');
   return { ok: true, msg: status === 'done' ? '🎉 Job complete!' : 'Updated.' };
+}
+
+// ── HTML job-screen parity cards (En route → Notify · Need a hand / step away · Roll over) ──────────
+// All internal pings: the customer is NEVER auto-texted from here (no-auto-send rule). The office relays
+// the ETA to the customer. Logged to audit_log; best-effort Discord ping to #sheetz.
+const custName = (job) => (job.customers && job.customers.name) || 'the customer';
+async function pingOffice(ctx, action, message, detail = {}) {
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action, entity: 'job', entity_id: String(ctx.job.id), detail }); } catch (_) {}
+  try { await postToDiscord(message); } catch (_) {}
+}
+
+// "You're marked EN ROUTE" → Notify. Marks en route (stamps enroute_at) + pings the office to text the
+// customer the ETA. One tap, no back-and-forth — but the customer text is office-relayed, never auto-sent.
+export async function notifyEnRoute(jobId) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!can(ctx.role, 'changeStatus')) return { ok: false, msg: 'Your role can’t update status.' };
+  const s = String(ctx.job.status || '').toLowerCase();
+  if (!/enroute|rolling/.test(s)) {
+    const { error } = await ctx.sb.from('jobs').update({ status: 'enroute', enroute_at: new Date().toISOString() }).eq('id', ctx.job.id);
+    if (error) return { ok: false, msg: error.message };
+  }
+  await pingOffice(ctx, 'job.enroute_notify', `🚚 **${ctx.profile?.name || 'Tech'} is EN ROUTE** to ${custName(ctx.job)}${ctx.job.job_number ? ` · job ${ctx.job.job_number}` : ''} — text them the ETA.`, { job_number: ctx.job.job_number });
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/my-day'); revalidatePath('/board');
+  return { ok: true, msg: `Marked en route — office will text ${custName(ctx.job)} your ETA.` };
+}
+
+// "Need a hand?" + step-away (Parts run / Lunch / Personal). The job STAYS OPEN; the office is told why
+// the tech stepped off so nobody thinks it stalled. Internal only.
+const STEP_REASONS = { parts_run: 'Parts run', lunch: 'Lunch', personal: 'Personal', help: 'Needs a hand' };
+export async function stepAway(jobId, reason, note) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'changeStatus') || can(ctx.role, 'seeOwnOnly'))) return { ok: false, msg: 'Not allowed.' };
+  const key = STEP_REASONS[reason] ? reason : null;
+  if (!key) return { ok: false, msg: 'Pick a reason.' };
+  const label = STEP_REASONS[key];
+  const n = cleanText(note, 200);
+  await pingOffice(ctx, 'job.step_away', `🚶 **${ctx.profile?.name || 'Tech'} — ${label}** on ${custName(ctx.job)}${ctx.job.job_number ? ` · job ${ctx.job.job_number}` : ''}${n ? `: ${n}` : ''}. Job stays open.`, { reason: key, note: n });
+  revalidatePath(`/job/${ctx.job.id}`);
+  return { ok: true, msg: key === 'help' ? 'Office pinged — help is on the way.' : `Office knows you're on ${label.toLowerCase()} — job stays open.` };
+}
+
+// "Can't finish today?" → roll the job to another day. SAME job number, parts, and history — we just move
+// the schedule and reset it to scheduled. Default +1 day at the same time.
+export async function rollOverJob(jobId, note) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!can(ctx.role, 'changeStatus')) return { ok: false, msg: 'Your role can’t reschedule.' };
+  const base = ctx.job.scheduled_at ? new Date(ctx.job.scheduled_at) : new Date();
+  if (isNaN(base.getTime())) base.setTime(Date.now());
+  const next = new Date(base.getTime() + 24 * 3600 * 1000);
+  const n = cleanText(note, 200);
+  const { error } = await ctx.sb.from('jobs').update({ scheduled_at: next.toISOString(), status: 'scheduled', enroute_at: null, started_at: null }).eq('id', ctx.job.id);
+  if (error) return { ok: false, msg: error.message };
+  await pingOffice(ctx, 'job.rollover', `📆 **Rolled over** — ${custName(ctx.job)}${ctx.job.job_number ? ` · job ${ctx.job.job_number}` : ''} moved to ${next.toLocaleDateString()} (same job, parts & history kept)${n ? `: ${n}` : ''}.`, { to: next.toISOString(), note: n });
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/my-day'); revalidatePath('/board');
+  return { ok: true, msg: `Rolled to ${next.toLocaleDateString()} — same job, parts & history kept.` };
 }
 
 // Mark a rental issued to this job as RETURNED — clears it from the closeout gate. Allowed for anyone

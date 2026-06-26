@@ -17,6 +17,7 @@ import JobCosts from './JobCosts';
 import JobVideo from './JobVideo';
 import CustomerMemory from './CustomerMemory';
 import LinkToProject from './LinkToProject';
+import JobActionCards from './JobActionCards';
 import { loadCustomerMemory } from '@/lib/customerMemory';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
 import JobContext from './JobContext';
@@ -259,6 +260,8 @@ export default async function JobDetail({ params }) {
       <JobContext job={job} customer={customer} />
 
       <div id="customer" style={{ scrollMarginTop: 70 }}><CustomerMemory mem={memory} customer={customer} job={job} /></div>
+
+      <JobActionCards jobId={id} jobNumber={job.job_number} customerName={customer.name} jobType={job.job_type} status={job.status} canAct={canAct} />
 
       <JobFlow jobId={id} status={st} reached={reached} gateReady={gateReady} gateMissing={gateMissing} nextHint={gateMissing[0] || ''} canAct={canAct} />
 
