@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { revalidatePath } from 'next/cache';
+import { ALL_SCANS } from '@/lib/alertScans';
+import { createAlert } from '@/lib/alerts';
 
 async function assertOffice() {
   const supabase = createClient();
@@ -46,4 +48,27 @@ export async function reopenTask(id) {
   if (error) return { ok: false, msg: error.message };
   revalidatePath('/tasks');
   return { ok: true };
+}
+
+export async function dismissTask(id) {
+  let ctx; try { ctx = await assertOffice(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const { error } = await ctx.sb.from('tasks').update({ status: 'dismissed', done_at: new Date().toISOString(), resolved_by: ctx.profile.name || ctx.user.email }).eq('id', clean(id, 80));
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/tasks');
+  return { ok: true };
+}
+
+// Manager-triggered run of the P4 trigger brain (same scanners as the cron, no secret needed — the
+// caller is already an authenticated office user). Creates/bumps in-app alert tasks; never emails.
+export async function runChecksNow() {
+  let ctx; try { ctx = await assertOffice(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const now = Date.now();
+  let created = 0, found = 0;
+  for (const scan of ALL_SCANS) {
+    let hits = []; try { hits = (await scan(ctx.sb, now)) || []; } catch (_) { hits = []; }
+    found += hits.length;
+    for (const a of hits) { const r = await createAlert(ctx.sb, { ...a, nowISO: new Date(now).toISOString() }); if (r.ok && r.created) created++; if (r.error && /86_task_alerts/.test(r.error)) return { ok: false, msg: 'Run supabase/86_task_alerts.sql first.' }; }
+  }
+  revalidatePath('/tasks');
+  return { ok: true, msg: created ? `${created} new alert${created > 1 ? 's' : ''} (${found} conditions checked).` : `All clear — ${found} conditions checked, nothing new.` };
 }
