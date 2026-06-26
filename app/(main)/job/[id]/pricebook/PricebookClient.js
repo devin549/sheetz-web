@@ -11,7 +11,7 @@ import { createEstimate } from './estimateActions';
 const money = (n) => '$' + (Number(n) || 0).toLocaleString();
 const TIER_STYLE = { good: { c: 'var(--fg-2)' }, better: { c: 'var(--amber)' }, best: { c: 'var(--green)' } };
 
-export default function PricebookClient({ job, customer, items = [], categories = [], tiers = [], bundle, showMargin }) {
+export default function PricebookClient({ job, customer, items = [], categories = [], tiers = [], bundle, showMargin, plans = [] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [mode, setMode] = useState('tech');     // 'tech' | 'customer'
@@ -24,6 +24,13 @@ export default function PricebookClient({ job, customer, items = [], categories 
   const [link, setLink] = useState(null);        // shareable estimate link once sent
   const [copied, setCopied] = useState(false);
   const customerMode = mode === 'customer';
+
+  // ⭐ Member pricing — turn it on when offering a membership; each plan carries its own savings %.
+  const [memberOn, setMemberOn] = useState(false);
+  const [planSlug, setPlanSlug] = useState(plans[0]?.slug || '');
+  const plan = plans.find((p) => p.slug === planSlug) || plans[0] || null;
+  const memberDisc = memberOn && plan ? Math.max(0, Math.min(100, Number(plan.discount_pct) || 0)) / 100 : 0;
+  const memberPrice = (p) => Math.round((Number(p) || 0) * (1 - memberDisc) * 100) / 100;
 
   const add = (it) => { setLink(null); setCart((c) => c.find((x) => x.id === it.id) ? c : [...c, { id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: it.internal?.minimum ?? null }]); };
   const addTier = (tier) => { setLink(null); setTierKey(tier.key); setCart(() => tier.items.map((it) => ({ id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: null }))); };
@@ -40,13 +47,17 @@ export default function PricebookClient({ job, customer, items = [], categories 
     }).sort((a, b) => (b.suggested ? 1 : 0) - (a.suggested ? 1 : 0));
   }, [items, q, cat]);
 
-  const subtotal = cart.reduce((s, l) => s + (Number(l.soldPrice) || 0), 0);
+  const listSubtotal = cart.reduce((s, l) => s + (Number(l.soldPrice) || 0), 0);
+  const subtotal = memberDisc ? Math.round(listSubtotal * (1 - memberDisc) * 100) / 100 : listSubtotal;
+  const memberSavings = Math.round((listSubtotal - subtotal) * 100) / 100;
   const cardFee = Math.round(subtotal * 0.04 * 100) / 100;
-  const anyBelowMin = cart.some((l) => l.min != null && Number(l.soldPrice) < l.min);
+  const anyBelowMin = cart.some((l) => l.min != null && memberPrice(Number(l.soldPrice)) < l.min);
+  // What actually gets sold/quoted — member price applied per line when member pricing is on.
+  const soldLines = () => cart.map((l) => ({ itemId: l.id, quantity: 1, soldPrice: memberPrice(Number(l.soldPrice) || 0) }));
 
   const sell = () => start(async () => {
     setMsg(null); setApproval(null);
-    const r = await recordSale(job.id, cart.map((l) => ({ itemId: l.id, quantity: 1, soldPrice: Number(l.soldPrice) || 0 })));
+    const r = await recordSale(job.id, soldLines());
     if (r.ok) { setMsg(r.msg); setCart([]); router.refresh(); }
     else if (r.needsApproval) setApproval(r.msg);
     else setMsg(r.msg);
@@ -54,7 +65,7 @@ export default function PricebookClient({ job, customer, items = [], categories 
   // Build a customer-safe estimate and get a shareable link (text it OR present on this iPad).
   const present = () => start(async () => {
     setMsg(null); setLink(null);
-    const r = await createEstimate(job.id, cart.map((l) => ({ itemId: l.id, soldPrice: Number(l.soldPrice) || 0, quantity: 1 })), { tierKey, bundleSlug: bundle?.slug, headline: tierKey && bundle ? bundle.name : '' });
+    const r = await createEstimate(job.id, soldLines(), { tierKey, bundleSlug: bundle?.slug, headline: (memberDisc && plan ? `${plan.name} member · ` : '') + (tierKey && bundle ? bundle.name : '') });
     if (r.ok) setLink(r.url); else setMsg(r.msg);
   });
   const fullLink = link && typeof window !== 'undefined' ? window.location.origin + link : link;
@@ -72,6 +83,21 @@ export default function PricebookClient({ job, customer, items = [], categories 
           ))}
         </div>
         {customerMode && <span className="muted" style={{ fontSize: 11.5 }}>Safe to show the customer — no cost or margin on screen.</span>}
+
+        {/* ⭐ Member pricing toggle — turn on when offering a plan; pick the plan for its savings. */}
+        {plans.length > 0 && (
+          <div style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={() => setMemberOn((v) => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', borderRadius: 999, padding: '6px 12px', fontSize: 12.5, fontWeight: 800, border: '1px solid ' + (memberOn ? 'var(--green)' : 'var(--border)'), background: memberOn ? 'var(--green)' : 'var(--surface-2)', color: memberOn ? '#06210f' : 'var(--fg-2)' }}>
+              ⭐ Member pricing {memberOn ? 'ON' : 'OFF'}
+            </button>
+            {memberOn && plans.length > 1 && (
+              <select value={planSlug} onChange={(e) => setPlanSlug(e.target.value)} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '6px 9px', fontSize: 12.5 }}>
+                {plans.map((p) => <option key={p.slug} value={p.slug}>{p.name} · {p.discount_pct}% off</option>)}
+              </select>
+            )}
+            {memberOn && plan && plans.length <= 1 && <span style={{ fontSize: 11.5, color: 'var(--green)', fontWeight: 700 }}>{plan.name} · {plan.discount_pct}% off</span>}
+          </div>
+        )}
       </div>
 
       {/* GOOD / BETTER / BEST ladder — the clean checkout. */}
@@ -163,7 +189,13 @@ export default function PricebookClient({ job, customer, items = [], categories 
 
             {cart.length > 0 && (
               <div style={{ borderTop: '2px solid var(--amber-dim)', paddingTop: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span className="muted">Subtotal</span><strong>{money(subtotal)}</strong></div>
+                {memberDisc > 0 && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}><span className="muted">Regular price</span><span className="muted" style={{ textDecoration: 'line-through' }}>{money(listSubtotal)}</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: 'var(--green)', fontWeight: 700 }}><span>⭐ {plan?.name} saves</span><span>−{money(memberSavings)}</span></div>
+                  </>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span className="muted">{memberDisc > 0 ? 'Member subtotal' : 'Subtotal'}</span><strong>{money(subtotal)}</strong></div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5 }}><span className="muted">Card fee if paid online</span><span className="muted">{money(cardFee)}</span></div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, marginTop: 4 }}><strong>Customer pays</strong><strong style={{ color: 'var(--amber)' }}>{money(subtotal + cardFee)}</strong></div>
               </div>

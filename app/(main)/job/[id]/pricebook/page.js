@@ -47,6 +47,10 @@ export default async function JobPricebook({ params }) {
 
   const job = { id: c.job.id, number: c.job.job_number || '', type: jt, customerId: c.job.customer_id || null, techId: c.job.tech_id || null };
 
+  // ⭐ Member plans for the member-pricing toggle (best-effort; empty before migration 118).
+  let plans = [];
+  try { const { data } = await c.sb.from('membership_plans').select('slug, name, discount_pct').eq('active', true).order('sort_order'); plans = (data || []).map((p) => ({ slug: p.slug, name: p.name, discount_pct: Number(p.discount_pct) || 0 })); } catch (_) {}
+
   // Sent estimates for this job + their proof timeline (best-effort; empty before migration 117).
   let estimates = [];
   try {
@@ -66,7 +70,7 @@ export default async function JobPricebook({ params }) {
         <div className="notice" style={{ marginTop: 10 }}>Run <code>supabase/104_pricebook.sql</code> + <code>105_pricebook_seed.sql</code> to load the Sheetz Pricebook.</div>
       ) : (
         <>
-          <PricebookClient job={job} customer={{ name: c.customer?.name || 'Customer', address: c.customer?.address || '', phone: c.customer?.phone || '' }} items={shaped} categories={categories} tiers={tiers} bundle={bundle ? { slug: bundle.slug, name: bundle.name, customerDescription: bundle.customer_description, warranty: bundle.warranty_text, approveText: bundle.approval_button_text } : null} showMargin={canSeeCost(role)} />
+          <PricebookClient job={job} customer={{ name: c.customer?.name || 'Customer', address: c.customer?.address || '', phone: c.customer?.phone || '' }} items={shaped} categories={categories} tiers={tiers} bundle={bundle ? { slug: bundle.slug, name: bundle.name, customerDescription: bundle.customer_description, warranty: bundle.warranty_text, approveText: bundle.approval_button_text } : null} showMargin={canSeeCost(role)} plans={plans} />
           <EstimateProofPanel estimates={estimates} />
         </>
       )}
