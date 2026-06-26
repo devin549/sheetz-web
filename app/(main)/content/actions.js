@@ -84,6 +84,16 @@ export async function draftIdea(id) {
   return { ok: true, msg: 'Drafted.', draft };
 }
 
+// ✏️ Save your edits to a draft (you can rewrite anything the AI wrote before publishing).
+export async function saveDraft(id, draft) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const body = clean(draft, 20000);
+  const { error } = await c.sb.from('content_ideas').update({ draft: body, status: 'drafted' }).eq('id', id);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/content');
+  return { ok: true, msg: 'Saved.' };
+}
+
 export async function setIdeaStatus(id, status, url) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
   if (!['idea', 'drafted', 'published', 'dismissed'].includes(status)) return { ok: false, msg: 'Bad status.' };
