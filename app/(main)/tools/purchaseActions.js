@@ -40,19 +40,25 @@ export async function createToolPurchase(opts = {}) {
     } catch (_) {}
   }
 
+  // Bypass: approve the tool to just stay on the van as company gear — no weekly deduction.
+  const keepOnVan = !!opts.keepOnVan;
   const row = {
     tool_id: toolId, tool_name: toolName || 'Tool', tech_name: techName, purchase_cents: purchase,
     weekly_pct: pct, weekly_cents: weeklyCents(purchase, pct), vendor: clean(opts.vendor, 120) || null,
-    receipt_path: clean(opts.receiptPath, 400) || null, created_by: c.user.id, created_by_name: c.profile.name || c.user.email,
+    receipt_path: clean(opts.receiptPath, 400) || null, waived: keepOnVan, created_by: c.user.id, created_by_name: c.profile.name || c.user.email,
   };
-  const { data: purch, error } = await c.sb.from('tool_purchases').insert(row).select('id').maybeSingle();
+  let { data: purch, error } = await c.sb.from('tool_purchases').insert(row).select('id').maybeSingle();
+  // Fail-soft if the waiver column (migration 99) isn't applied yet — retry without it.
+  if (error && /waived|column|schema cache/i.test(error.message || '')) {
+    delete row.waived; ({ data: purch, error } = await c.sb.from('tool_purchases').insert(row).select('id').maybeSingle());
+  }
   if (error) return { ok: false, msg: missing(error) ? 'Run supabase/98_tool_purchases.sql first.' : error.message };
 
   if (toolId) { try { await c.sb.from('tools').update({ company_owned: true, purchase_id: purch?.id, assigned_to: techName, status: 'assigned' }).eq('id', toolId); } catch (_) {} }
-  try { await c.sb.from('tool_events').insert({ tool_id: toolId, tool_name: row.tool_name, event: 'issued', holder_name: techName, by_name: row.created_by_name, by_id: c.user.id, cost_cents: purchase, condition_photo: row.receipt_path, note: `Purchase plan · ${centsToStr(row.weekly_cents)}/wk` }); } catch (_) {}
-  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: row.created_by_name, role: c.profile.role, action: 'tool.purchase.create', entity: 'tool_purchase', entity_id: String(purch?.id), detail: { techName, purchase, pct } }); } catch (_) {}
+  try { await c.sb.from('tool_events').insert({ tool_id: toolId, tool_name: row.tool_name, event: 'issued', holder_name: techName, by_name: row.created_by_name, by_id: c.user.id, cost_cents: purchase, condition_photo: row.receipt_path, note: keepOnVan ? `Company tool · kept on van (no deduction)` : `Purchase plan · ${centsToStr(row.weekly_cents)}/wk` }); } catch (_) {}
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: row.created_by_name, role: c.profile.role, action: 'tool.purchase.create', entity: 'tool_purchase', entity_id: String(purch?.id), detail: { techName, purchase, pct, keepOnVan } }); } catch (_) {}
   revalidatePath('/tools'); revalidatePath('/pay');
-  return { ok: true, msg: `Plan set · ${centsToStr(row.weekly_cents)}/wk for ${techName}.` };
+  return { ok: true, msg: keepOnVan ? `Company tool — kept on ${techName}'s van, no deduction.` : `Plan set · ${centsToStr(row.weekly_cents)}/wk for ${techName}.` };
 }
 
 // Post one week's deduction toward a plan (defaults to the weekly rate, capped at the balance). Once fully
@@ -63,6 +69,7 @@ export async function postDeduction(purchaseId, opts = {}) {
   const { data: p } = await c.sb.from('tool_purchases').select('*').eq('id', purchaseId).maybeSingle();
   if (!p) return { ok: false, msg: 'Plan not found.' };
   if (p.status !== 'active') return { ok: false, msg: 'Plan is already closed.' };
+  if (p.waived) return { ok: false, msg: 'This is a company tool kept on the van — no deductions.' };
   const amount = opts.amountDollars != null ? Math.min(dollarsToCents(opts.amountDollars), remainingCents(p)) : nextDeductionCents(p);
   if (amount <= 0) return { ok: false, msg: 'Nothing left to deduct.' };
   const week = clean(opts.weekOf, 12) || weekMonday();
@@ -89,6 +96,7 @@ export async function postWeeklyForAll() {
   if (error) return { ok: false, msg: missing(error) ? 'Run supabase/98_tool_purchases.sql first.' : error.message };
   const week = weekMonday(); let posted = 0, total = 0;
   for (const p of plans || []) {
+    if (p.waived) continue; // company tool kept on the van — never deduct
     const amount = nextDeductionCents(p); if (amount <= 0) continue;
     const { error: e } = await c.sb.from('tool_payments').insert({ purchase_id: p.id, tech_name: p.tech_name, amount_cents: amount, kind: 'deduction', week_of: week, created_by: c.user.id, created_by_name: c.profile.name || c.user.email });
     if (e) continue; // duplicate week → already posted, skip
@@ -118,4 +126,37 @@ export async function closeOnSeparation(purchaseId, reason = 'separated') {
   try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'tool.purchase.separate', entity: 'tool_purchase', entity_id: String(purchaseId), detail: { refund, reason } }); } catch (_) {}
   revalidatePath('/tools'); revalidatePath('/pay');
   return { ok: true, msg: `Refunded ${centsToStr(refund)} to ${p.tech_name}; company keeps ${p.tool_name}.` };
+}
+
+// BYPASS: approve a tool to stay on the van as company gear — stops the weekly deduction. The tool stays
+// assigned to the tech (company property), and anything they've already paid is refunded (company eats it).
+export async function keepOnVan(purchaseId, opts = {}) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  if (!isMgr(c.profile.role)) return { ok: false, msg: 'A manager approves company tools.' };
+  const { data: p } = await c.sb.from('tool_purchases').select('*').eq('id', purchaseId).maybeSingle();
+  if (!p) return { ok: false, msg: 'Plan not found.' };
+  if (p.status !== 'active') return { ok: false, msg: 'Plan is already closed.' };
+  const refund = opts.noRefund ? 0 : (Number(p.paid_cents) || 0);
+  if (refund > 0) { try { await c.sb.from('tool_payments').insert({ purchase_id: purchaseId, tech_name: p.tech_name, amount_cents: refund, kind: 'refund', week_of: weekMonday(), note: 'Approved as company tool — kept on van', created_by: c.user.id, created_by_name: c.profile.name || c.user.email }); } catch (_) {} }
+  let { error } = await c.sb.from('tool_purchases').update({ waived: true, paid_cents: refund > 0 ? 0 : p.paid_cents }).eq('id', purchaseId);
+  if (error && /waived|column|schema cache/i.test(error.message || '')) return { ok: false, msg: 'Run supabase/99_tool_purchase_waiver.sql first.' };
+  if (error) return { ok: false, msg: error.message };
+  if (p.tool_id) { try { await c.sb.from('tools').update({ company_owned: true, assigned_to: p.tech_name, status: 'assigned' }).eq('id', p.tool_id); } catch (_) {} }
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'tool.purchase.keep_on_van', entity: 'tool_purchase', entity_id: String(purchaseId), detail: { refund } }); } catch (_) {}
+  revalidatePath('/tools'); revalidatePath('/pay');
+  return { ok: true, msg: `${p.tool_name} stays on ${p.tech_name}'s van as company gear${refund > 0 ? ` · refunded ${centsToStr(refund)}` : ''}.` };
+}
+
+// Undo the bypass — start charging the weekly deduction again on a company tool.
+export async function startCharging(purchaseId) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  if (!isMgr(c.profile.role)) return { ok: false, msg: 'A manager runs deductions.' };
+  const { data: p } = await c.sb.from('tool_purchases').select('id, tool_name, tech_name, status').eq('id', purchaseId).maybeSingle();
+  if (!p) return { ok: false, msg: 'Plan not found.' };
+  if (p.status !== 'active') return { ok: false, msg: 'Plan is already closed.' };
+  const { error } = await c.sb.from('tool_purchases').update({ waived: false }).eq('id', purchaseId);
+  if (error) return { ok: false, msg: error.message };
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'tool.purchase.resume', entity: 'tool_purchase', entity_id: String(purchaseId), detail: {} }); } catch (_) {}
+  revalidatePath('/tools'); revalidatePath('/pay');
+  return { ok: true, msg: `Deductions resumed on ${p.tool_name} (${p.tech_name}).` };
 }

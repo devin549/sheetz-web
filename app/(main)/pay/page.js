@@ -21,7 +21,7 @@ export default async function Pay() {
   const roastLevel = profile.roastLevel || 'PG';
   // The tech's own tool purchase plans (company-bought tools they're paying off weekly). Read-only here.
   if (isAdminConfigured) {
-    try { const { data } = await getSupabaseAdmin().from('tool_purchases').select('id, tool_name, purchase_cents, weekly_cents, weekly_pct, paid_cents, status').ilike('tech_name', name).order('status', { ascending: true }).limit(20); toolPlans = data || []; } catch (_) {}
+    try { let q = await getSupabaseAdmin().from('tool_purchases').select('id, tool_name, purchase_cents, weekly_cents, weekly_pct, paid_cents, status, waived').ilike('tech_name', name).order('status', { ascending: true }).limit(20); if (q.error && /waived|column|schema cache/i.test(q.error.message || '')) q = await getSupabaseAdmin().from('tool_purchases').select('id, tool_name, purchase_cents, weekly_cents, weekly_pct, paid_cents, status').ilike('tech_name', name).order('status', { ascending: true }).limit(20); toolPlans = q.data || []; } catch (_) {}
   }
   if (isAdminConfigured && profile.tech_id) {
     const sb = getSupabaseAdmin();
@@ -196,17 +196,23 @@ export default async function Pay() {
             </div>
             <div style={{ display: 'grid', gap: 6 }}>
               {toolPlans.map((p) => {
-                const done = p.status !== 'active'; const pc = pctPaid(p); const wl = weeksLeft(p);
+                const done = p.status !== 'active'; const onVan = !done && p.waived; const pc = pctPaid(p); const wl = weeksLeft(p);
+                const accent = onVan ? 'var(--blue)' : done ? 'var(--green)' : 'var(--amber)';
                 return (
-                  <div key={p.id} style={{ padding: '9px 11px', borderRadius: 9, background: 'var(--surface-2)', borderLeft: `3px solid ${done ? 'var(--green)' : 'var(--amber)'}` }}>
+                  <div key={p.id} style={{ padding: '9px 11px', borderRadius: 9, background: 'var(--surface-2)', borderLeft: `3px solid ${accent}` }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 700, fontSize: 12.5 }}>{p.tool_name}</span>
-                      <span className="pill" style={{ fontSize: 9.5, marginLeft: 'auto', color: done ? 'var(--green)' : 'var(--amber)' }}>{done ? (p.status === 'paid_off' ? 'Paid off · yours' : 'Closed') : `${centsToStr(p.weekly_cents)}/wk`}</span>
+                      <span className="pill" style={{ fontSize: 9.5, marginLeft: 'auto', color: accent }}>{onVan ? '🚐 Company gear · no deduction' : done ? (p.status === 'paid_off' ? 'Paid off · yours' : 'Closed') : `${centsToStr(p.weekly_cents)}/wk`}</span>
                     </div>
-                    <div style={{ height: 6, background: 'var(--surface-1)', borderRadius: 4, overflow: 'hidden', margin: '7px 0 4px' }}>
-                      <div style={{ width: `${pc}%`, height: '100%', background: 'var(--green)' }} />
-                    </div>
-                    <div className="muted" style={{ fontSize: 11 }}>{centsToStr(p.paid_cents)} of {centsToStr(p.purchase_cents)} paid{!done ? ` · ${centsToStr(remainingCents(p))} left${wl != null ? ` · ~${wl} wk${wl === 1 ? '' : 's'}` : ''}` : ''}</div>
+                    {!onVan && (
+                      <>
+                        <div style={{ height: 6, background: 'var(--surface-1)', borderRadius: 4, overflow: 'hidden', margin: '7px 0 4px' }}>
+                          <div style={{ width: `${pc}%`, height: '100%', background: 'var(--green)' }} />
+                        </div>
+                        <div className="muted" style={{ fontSize: 11 }}>{centsToStr(p.paid_cents)} of {centsToStr(p.purchase_cents)} paid{!done ? ` · ${centsToStr(remainingCents(p))} left${wl != null ? ` · ~${wl} wk${wl === 1 ? '' : 's'}` : ''}` : ''}</div>
+                      </>
+                    )}
+                    {onVan && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Company-owned tool on your van — nothing comes out of your pay.</div>}
                   </div>
                 );
               })}
