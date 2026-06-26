@@ -6,6 +6,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { canAny } from '@/lib/roles';
 import { postToDiscord } from '@/lib/discord';
+import { marginPct, priceForTargetMargin } from '@/lib/pricebookEngine';
 
 // Owner pricebook editor — add/customize items, and let Flush Gordon hype new drops to the team.
 const FLUSH = { username: 'Flush Gordon 🚀' };
@@ -53,6 +54,72 @@ export async function updateItemPrice(id, retailPrice, materialCost) {
   if (error) return { ok: false, msg: error.message };
   revalidatePath('/pricebook-admin'); revalidatePath('/catalog');
   return { ok: true, msg: 'Price updated.' };
+}
+
+// ── AI suggests, owner approves, NEVER auto-changes (Devin's hard rule) ──────────────────────────────
+// Margin watch: scan items priced below their target margin and file a PENDING price-change request for
+// each. It never touches a price — it just surfaces old price / suggested price / reason for your sign-off.
+const DEFAULT_TARGET = 59; // CB house margin when an item has none set.
+export async function runMarginWatch() {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  let items = [];
+  try {
+    const { data, error } = await c.sb.from('pricebook_items')
+      .select('id, name, customer_name, retail_price, estimated_material_cost, target_margin_pct')
+      .eq('active', true).gt('retail_price', 0).gt('estimated_material_cost', 0).limit(2000);
+    if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/104_pricebook.sql first.' : error.message };
+    items = data || [];
+  } catch (e) { return { ok: false, msg: String(e?.message || e) }; }
+
+  // Don't double-file: skip items that already have a pending request.
+  const pending = new Set();
+  try { const { data } = await c.sb.from('pricebook_price_update_requests').select('item_id').eq('status', 'pending'); (data || []).forEach((r) => pending.add(r.item_id)); } catch (_) {}
+
+  const reqs = [];
+  for (const it of items) {
+    if (pending.has(it.id)) continue;
+    const target = Number(it.target_margin_pct) || DEFAULT_TARGET;
+    const m = marginPct(it);
+    if (m == null || m >= target - 0.5) continue; // healthy enough — leave it.
+    const rec = priceForTargetMargin(it.estimated_material_cost, target);
+    if (!rec || rec <= it.retail_price) continue;
+    reqs.push({
+      item_id: it.id, old_price: it.retail_price, recommended_price: rec,
+      old_cost: it.estimated_material_cost, new_cost: it.estimated_material_cost,
+      reason: `Margin is ${m}% — below the ${target}% target. Raising to $${rec} restores it.`,
+      source: 'margin-watch', status: 'pending', requested_by: c.user.id,
+    });
+  }
+  if (!reqs.length) return { ok: true, msg: 'All priced items are at or near target margin — nothing to flag. 👍' };
+  const { error } = await c.sb.from('pricebook_price_update_requests').insert(reqs);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/pricebook-admin');
+  return { ok: true, msg: `Flagged ${reqs.length} low-margin item${reqs.length === 1 ? '' : 's'} for your approval below — no prices changed.` };
+}
+
+// Owner/GM approves → the recommended price goes live, request marked applied. This is the ONLY path that
+// moves a price from a suggestion.
+export async function approvePriceChange(id) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  if (!id) return { ok: false, msg: 'No request.' };
+  const { data: req } = await c.sb.from('pricebook_price_update_requests').select('id, item_id, recommended_price, old_price, status').eq('id', id).maybeSingle();
+  if (!req) return { ok: false, msg: 'Request not found.' };
+  if (req.status !== 'pending') return { ok: false, msg: `Already ${req.status}.` };
+  const up = await c.sb.from('pricebook_items').update({ retail_price: req.recommended_price }).eq('id', req.item_id);
+  if (up.error) return { ok: false, msg: up.error.message };
+  await c.sb.from('pricebook_price_update_requests').update({ status: 'applied', approved_by: c.user.id, approved_at: new Date().toISOString() }).eq('id', id);
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'pricebook.price_approve', entity: 'pricebook_item', entity_id: String(req.item_id), detail: { from: req.old_price, to: req.recommended_price } }); } catch (_) {}
+  revalidatePath('/pricebook-admin'); revalidatePath('/catalog');
+  return { ok: true, msg: `Approved — new price $${req.recommended_price} is live.` };
+}
+
+export async function rejectPriceChange(id) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  if (!id) return { ok: false, msg: 'No request.' };
+  const { error } = await c.sb.from('pricebook_price_update_requests').update({ status: 'rejected', approved_by: c.user.id, approved_at: new Date().toISOString() }).eq('id', id).eq('status', 'pending');
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/pricebook-admin');
+  return { ok: true, msg: 'Rejected — price left unchanged.' };
 }
 
 // 🚀 Flush Gordon hypes the items added in the last `sinceHours` to the team Discord.

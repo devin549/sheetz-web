@@ -1,13 +1,16 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { addPricebookItem, updateItemPrice, announceDrop } from './actions';
+import { addPricebookItem, updateItemPrice, announceDrop, runMarginWatch, approvePriceChange, rejectPriceChange } from './actions';
 
 const emptyForm = { name: '', customerName: '', categoryId: '', retailPrice: '', materialCost: '', customerDescription: '', customerVisible: true };
 const inp = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 7, padding: '9px 11px', fontSize: 14, width: '100%' };
 
-export default function PricebookAdmin({ items, cats, needsMig, newCount }) {
+export default function PricebookAdmin({ items, cats, needsMig, newCount, priceReqs = [] }) {
   const [list, setList] = useState(items);
+  const [reqs, setReqs] = useState(priceReqs);
+  const [scan, setScan] = useState(false);
+  const [scanMsg, setScanMsg] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -26,6 +29,26 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount }) {
     const r = await announceDrop(168);
     setMsg({ ok: r.ok, t: r.msg });
     setBusy(false);
+  };
+
+  const watch = async () => {
+    setScan(true); setScanMsg(null);
+    const r = await runMarginWatch();
+    setScanMsg({ ok: r.ok, t: r.msg });
+    setScan(false);
+  };
+  const decide = async (id, approve) => {
+    setReqs((rs) => rs.map((x) => (x.id === id ? { ...x, busy: true } : x)));
+    const r = approve ? await approvePriceChange(id) : await rejectPriceChange(id);
+    if (r.ok) {
+      setReqs((rs) => rs.filter((x) => x.id !== id));
+      if (approve) {
+        const done = reqs.find((x) => x.id === id);
+        if (done) setList((l) => l.map((i) => (i.id === done.item_id ? { ...i, retail_price: done.recommended_price } : i)));
+      }
+    } else {
+      setReqs((rs) => rs.map((x) => (x.id === id ? { ...x, busy: false, err: r.msg } : x)));
+    }
   };
 
   const filtered = useMemo(() => {
@@ -67,6 +90,43 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount }) {
         <button className="btn btn-primary" disabled={busy || !form.name.trim()} onClick={add}>{busy ? 'Saving…' : 'Add to pricebook'}</button>
         <button className="btn" disabled={busy} onClick={announce} style={{ marginLeft: 8 }}>🚀 Announce drop (Flush Gordon)</button>
         {msg && <span style={{ marginLeft: 12, color: msg.ok ? '#3fae6a' : '#d9534f', fontSize: 13 }}>{msg.t}</span>}
+      </div>
+
+      {/* 📉 Margin Watch — AI suggests, you approve. Never auto-changes a price. */}
+      <div className="card" style={{ marginBottom: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontWeight: 800 }}>📉 Margin Watch {reqs.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#ff8a3d', border: '1px solid #ff8a3d', borderRadius: 6, padding: '1px 6px' }}>{reqs.length} to review</span>}</div>
+            <div style={{ color: 'var(--mute)', fontSize: 12.5, marginTop: 2 }}>The AI flags items priced under target margin. <strong>It never changes a price</strong> — you approve or reject each one.</div>
+          </div>
+          <button className="btn" disabled={scan} onClick={watch}>{scan ? 'Scanning…' : '🔍 Run margin scan'}</button>
+        </div>
+        {scanMsg && <div style={{ marginTop: 8, color: scanMsg.ok ? '#3fae6a' : '#d9534f', fontSize: 13 }}>{scanMsg.t}</div>}
+        {reqs.length > 0 && (
+          <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+            {reqs.map((r) => (
+              <div key={r.id} style={{ padding: '10px 12px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>{r.itemName}</div>
+                    <div style={{ fontSize: 13, marginTop: 3 }}>
+                      <span style={{ color: 'var(--fg-3)', textDecoration: 'line-through' }}>${r.old_price}</span>
+                      <span style={{ margin: '0 7px', color: 'var(--fg-3)' }}>→</span>
+                      <span style={{ fontWeight: 800, color: '#3fae6a' }}>${r.recommended_price}</span>
+                      {r.source && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--fg-3)' }}>· {r.source === 'margin-watch' ? 'AI' : r.source}</span>}
+                    </div>
+                    <div style={{ color: 'var(--mute)', fontSize: 12, marginTop: 3 }}>{r.reason}</div>
+                    {r.err && <div style={{ color: '#d9534f', fontSize: 12, marginTop: 3 }}>{r.err}</div>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 7 }}>
+                    <button className="btn btn-primary" disabled={r.busy} onClick={() => decide(r.id, true)} style={{ fontSize: 12 }}>{r.busy ? '…' : '✓ Approve'}</button>
+                    <button className="btn" disabled={r.busy} onClick={() => decide(r.id, false)} style={{ fontSize: 12 }}>Reject</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* List + inline price edit */}

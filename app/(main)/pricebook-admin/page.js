@@ -19,6 +19,19 @@ export default async function PricebookAdminPage() {
     cats = cq.data || [];
   } catch { needsMig = true; }
 
+  // Pending AI price-change suggestions awaiting owner sign-off (never auto-applied).
+  let priceReqs = [];
+  try {
+    const pr = await sb.from('pricebook_price_update_requests')
+      .select('id, item_id, old_price, recommended_price, old_cost, new_cost, reason, source, created_at')
+      .eq('status', 'pending').order('created_at', { ascending: false }).limit(100);
+    const reqs = pr.data || [];
+    const ids = [...new Set(reqs.map((r) => r.item_id).filter(Boolean))];
+    const names = {};
+    if (ids.length) { const { data: its } = await sb.from('pricebook_items').select('id, customer_name, name').in('id', ids); (its || []).forEach((i) => { names[i.id] = i.customer_name || i.name; }); }
+    priceReqs = reqs.map((r) => ({ ...r, itemName: names[r.item_id] || 'Item' }));
+  } catch (_) {}
+
   const newCount = items.filter((i) => i.isNew).length;
-  return <PricebookAdmin items={items} cats={cats} needsMig={needsMig} newCount={newCount} />;
+  return <PricebookAdmin items={items} cats={cats} needsMig={needsMig} newCount={newCount} priceReqs={priceReqs} />;
 }
