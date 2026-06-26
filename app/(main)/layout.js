@@ -10,6 +10,7 @@ import { loadOnboarding, onboardingComplete } from '@/lib/onboarding';
 import { verifyUnlock, IPAD_COOKIE } from '@/lib/ccPin';
 import Sidebar from './Sidebar';
 import TechShell from './TechShell';
+import HelperShell from './HelperShell';
 import Onboarding from './Onboarding';
 import CommandCenterPinGate from './CommandCenterPinGate';
 
@@ -72,6 +73,13 @@ export default async function MainLayout({ children }) {
   if (shell === 'tech') {
     const activeJob = await loadActiveJob(profile.tech_id);
     const wmId = String(user.id || '').replace(/-/g, '').slice(0, 8); // short leak-trace id → maps to this user
+
+    // Helper = the phone-only simple seat: stripped chrome, NO money/pricing/races/estimate anywhere.
+    // (Same onboarding gate above already applied; helper perms also block money server-side.)
+    if (String(role || '').toLowerCase() === 'helper') {
+      return <HelperShell name={name} activeJob={activeJob} wmId={wmId}>{children}</HelperShell>;
+    }
+
     // Live rank + on-time streak in the ribbon (real data); Power Plunger Hour / level stay sample.
     let game;
     try {

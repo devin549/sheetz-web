@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { loadCockpit } from '../cockpit';
+import { loadCockpitMoney } from '../cockpit';
 import JobHeader from '../JobHeader';
 import CollectPay from './CollectPay';
 import { can } from '@/lib/roles';
@@ -9,7 +9,7 @@ const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFra
 const dial = (p) => String(p || '').replace(/[^0-9+]/g, '');
 
 export default async function InvoiceTab({ params }) {
-  const c = await loadCockpit(params.id);
+  const c = await loadCockpitMoney(params.id);
   if (!c.configured) return <div className="wrap"><div className="h1">Invoice</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code>.</div></div>;
 
   let invoices = [];

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { loadCockpit } from '../cockpit';
+import { loadCockpitMoney } from '../cockpit';
 import JobHeader from '../JobHeader';
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ const SUGGEST = [
 const suggestFor = (t) => (SUGGEST.find(([re]) => re.test(String(t || ''))) || [null, ['Diagnostic', 'Repair', 'Membership', 'Financing']])[1];
 
 export default async function EstimateTab({ params }) {
-  const c = await loadCockpit(params.id);
+  const c = await loadCockpitMoney(params.id);
   if (!c.configured) return <div className="wrap"><div className="h1">Estimate</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code>.</div></div>;
   const sugg = suggestFor(c.job.job_type);
 
