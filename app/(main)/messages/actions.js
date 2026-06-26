@@ -57,6 +57,22 @@ export async function postChat(formData) {
   return r.ok ? { ok: true, msg: 'Posted to the team.' } : { ok: true, msg: 'Posted (Discord offline — saved to the feed).' };
 }
 
+// "On it" — a tech acks a personal/office message so the office sees it was caught (closes the loop).
+export async function ackChat(fromName) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const profile = user ? await loadProfile(user) : null;
+  if (!user || !profile || profile.active === false) return { ok: false, msg: 'Sign in required.' };
+  const sb = getSupabaseAdmin();
+  const who = profile.name || user.email;
+  const ref = String(fromName || '').trim().split(/\s+/)[0];
+  const text = `✅ ${who} — on it${ref ? ` (@${ref})` : ''}`;
+  const r = await postToDiscord(text);
+  try { await sb.from('cb_comms').insert({ channel: 'discord', direction: 'out', to_addr: '#sheetz', body: text, status: r.ok ? 'sent' : 'failed', sent_by: who, from_name: who }); } catch (_) {}
+  revalidatePath('/messages');
+  return { ok: true, msg: 'Marked: on it.' };
+}
+
 // Pull #sheetz chatter into the feed (the read-back the webhook alone can't do). Button-triggered;
 // the core lives in lib/discordSync so the cron route can share it without crossing the action boundary.
 export async function syncDiscordNow() {

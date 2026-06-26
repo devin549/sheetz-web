@@ -4,7 +4,7 @@
 // Comms Desk (delete / proposed-actions / customer threads). Read the team, drop a line, see Hank's chime.
 import { useRef, useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { postChat } from './actions';
+import { postChat, ackChat } from './actions';
 
 const fmt = (iso) => { try { return new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
 const initials = (n) => String(n || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
@@ -55,6 +55,9 @@ export default function TechChat({ messages = [], me = '' }) {
               <div className={blinkClass} style={{ maxWidth: '80%', padding: '8px 11px', borderRadius: 12, background: mine ? 'rgba(255,179,0,0.12)' : 'var(--surface-2)', border: `1px solid ${bubbleBorder}` }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: isHank ? 'var(--purple, #9c64f4)' : 'var(--fg-2)' }}>{m.from_name || 'Someone'}{tagBadge} <span className="muted" style={{ fontWeight: 400 }}>· {fmt(m.created_at)}</span></div>
                 <div style={{ fontSize: 13.5, marginTop: 2, whiteSpace: 'pre-wrap' }}>{m.body}</div>
+                {(m.tag === 'personal' || m.tag === 'office') && !mine && (
+                  <button onClick={() => start(async () => { const r = await ackChat(m.from_name); setMsg(r); router.refresh(); })} disabled={pending} className="pill" style={{ cursor: 'pointer', marginTop: 6, fontSize: 10.5, color: 'var(--green)', border: '1px solid var(--green)' }}>👍 On it</button>
+                )}
               </div>
             </div>
           );
