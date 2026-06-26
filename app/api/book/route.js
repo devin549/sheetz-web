@@ -4,6 +4,8 @@ import { postToDiscord } from '@/lib/discord';
 import { readDataPlate } from '@/lib/aiVision';
 import { windowOpen, windowByLabel, BOOKING_BETA } from '@/lib/availability';
 import { rankTechs } from '@/lib/dispatch';
+import { geocodeFull, mapsConfigured } from '@/lib/maps';
+import { assessServiceArea, servedCitySet } from '@/lib/serviceArea';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -47,6 +49,24 @@ export async function POST(request) {
     arrivalWindow = win; status = 'scheduled';
   } else if (date) { scheduledAt = `${date}T08:00:00`; }
 
+  // 📍 Server-side address gate (never trust the client). Geocode the service address; if it's a city
+  // we don't serve or > MAX_MILES from base, we can't guarantee a slot → force a review HOLD and drop
+  // the confirmed window so an out-of-area booking can't lock real capacity. Fail-soft (no key / no hit).
+  let geo = null, addrReview = false, distanceMi = null;
+  const addrQuery = [address, where].filter(Boolean).join(', ');
+  if (mapsConfigured() && addrQuery.replace(/[^a-z0-9]/gi, '').length >= 4) {
+    try {
+      const g = await geocodeFull(addrQuery);
+      if (g && typeof g.lat === 'number') {
+        geo = g;
+        const a = assessServiceArea(g, await servedCitySet(sb));
+        addrReview = a.needsReview; distanceMi = a.distanceMi;
+      }
+    } catch (_) {}
+  }
+  if (addrReview) { arrivalWindow = null; status = 'hold'; if (!date) scheduledAt = new Date().toISOString(); }
+  const areaLine = addrReview ? `⚠ OUT-OF-AREA — NEEDS REVIEW${distanceMi != null ? ` (~${distanceMi} mi from base)` : ' (unserved city)'} · do NOT promise a slot until confirmed` : '';
+
   // 📷 Optional data-plate photo (water heater etc.) → OCR brand/model/fuel/age so we know the exact unit.
   let plate = null;
   if (body.platePhoto && /^data:image\//.test(String(body.platePhoto))) {
@@ -84,10 +104,12 @@ export async function POST(request) {
   const recoLine = recommended ? `${BOOKING_BETA ? 'BETA · pending office approval · ' : 'Auto-assigned '}suggested tech: ${recommended.tech.name}${recommended.reasons.length ? ` (${recommended.reasons.join(', ')})` : ''}` : (BOOKING_BETA && arrivalWindow ? 'BETA · pending office approval' : '');
 
   // Create the job. A picked slot → 'scheduled' with the arrival window; otherwise 'hold' for the office.
-  const header = arrivalWindow ? `🌐 WEB BOOKING — ${date} · ${arrivalWindow}${emergency ? ' · 🚨 EMERGENCY' : ''}` : `🌐 WEB BOOKING — ${emergency ? '🚨 EMERGENCY · ' : ''}confirm a time.`;
-  const fullNotes = [header, recoLine, qa, plateLine, notes].filter(Boolean).join('\n');
+  const header = addrReview
+    ? `🌐 WEB BOOKING — 🗺 REVIEW (out of area) — confirm before scheduling.${emergency ? ' · 🚨 EMERGENCY' : ''}`
+    : (arrivalWindow ? `🌐 WEB BOOKING — ${date} · ${arrivalWindow}${emergency ? ' · 🚨 EMERGENCY' : ''}` : `🌐 WEB BOOKING — ${emergency ? '🚨 EMERGENCY · ' : ''}confirm a time.`);
+  const fullNotes = [header, areaLine, recoLine, qa, plateLine, notes].filter(Boolean).join('\n');
   const base = { customer_id: customerId, job_type: service, status, notes: fullNotes };
-  const extra = { referral_code: ref || null, how_heard: 'website', address: address || null, scheduled_at: scheduledAt, arrival_window: arrivalWindow };
+  const extra = { referral_code: ref || null, how_heard: 'website', address: (geo && geo.formatted) || address || null, scheduled_at: scheduledAt, arrival_window: arrivalWindow };
   // Only auto-assign the tech when out of beta; in beta the office approves + assigns.
   if (!BOOKING_BETA && recommended && recommended.tech.id) extra.tech_id = recommended.tech.id;
   let jobId = null;
@@ -101,12 +123,14 @@ export async function POST(request) {
     try { await sb.from('customer_equipment').insert({ customer_id: customerId, job_id: jobId, type: service, brand: plate.brand || null, model: plate.model || null, serial: plate.serial || null, fuel_type: plate.fuelType || null, capacity_gallons: Number(plate.capacityGallons) || null, year: Number(plate.year) || null, notes: 'From customer booking photo', created_by_name: 'Website' }); } catch (_) {}
   }
   try { await sb.from('audit_log').insert({ actor_name: 'Website', role: 'public', action: 'booking.web', entity: 'job', entity_id: String(jobId || ''), detail: { name, service, ref, plate: !!plate } }); } catch (_) {}
-  try { await postToDiscord(`🌐 **New web booking**${BOOKING_BETA ? ' · ⏳ BETA — approve on the board' : ''}\n${name} · ${phone}${address ? ` · ${address}` : ''}\nService: ${service}${arrivalWindow ? `\n🗓 ${date} · ${arrivalWindow}` : ''}${recoLine ? `\n🧠 ${recoLine}` : ''}${ref ? `\nReferral: ${ref}` : ''}${qa ? `\n${qa}` : ''}${plateLine ? `\n🔧 ${plateLine}` : ''}${notes ? `\n📝 ${notes.slice(0, 200)}` : ''}`); } catch (_) {}
+  try { await postToDiscord(`🌐 **New web booking**${addrReview ? ' · 🗺 OUT-OF-AREA — REVIEW' : (BOOKING_BETA ? ' · ⏳ BETA — approve on the board' : '')}\n${name} · ${phone}${(geo && geo.formatted) || address ? ` · ${(geo && geo.formatted) || address}` : ''}\nService: ${service}${arrivalWindow ? `\n🗓 ${date} · ${arrivalWindow}` : ''}${areaLine ? `\n${areaLine}` : ''}${recoLine ? `\n🧠 ${recoLine}` : ''}${ref ? `\nReferral: ${ref}` : ''}${qa ? `\n${qa}` : ''}${plateLine ? `\n🔧 ${plateLine}` : ''}${notes ? `\n📝 ${notes.slice(0, 200)}` : ''}`); } catch (_) {}
 
-  const message = arrivalWindow
-    ? (BOOKING_BETA
-        ? `Got it! We've reserved ${date}, ${arrivalWindow} — our office will text you shortly to confirm.`
-        : `You're booked for ${date}, ${arrivalWindow}! We'll text a confirmation${plate ? ' — and thanks for the photo, it helps us come prepared' : ''}.`)
-    : "Thanks! We've got your request — we'll text you to confirm a time.";
-  return NextResponse.json({ ok: true, jobId, scheduled: !BOOKING_BETA && !!arrivalWindow, message }, { headers: CORS });
+  const message = addrReview
+    ? `Thanks ${name.split(' ')[0] || ''}! Your address looks like it may be outside our usual service area, so we couldn't auto-reserve a time — but we've got your request and we'll review it and call you to confirm.`.replace('  ', ' ')
+    : arrivalWindow
+      ? (BOOKING_BETA
+          ? `Got it! We've reserved ${date}, ${arrivalWindow} — our office will text you shortly to confirm.`
+          : `You're booked for ${date}, ${arrivalWindow}! We'll text a confirmation${plate ? ' — and thanks for the photo, it helps us come prepared' : ''}.`)
+      : "Thanks! We've got your request — we'll text you to confirm a time.";
+  return NextResponse.json({ ok: true, jobId, scheduled: !BOOKING_BETA && !addrReview && !!arrivalWindow, needsReview: addrReview, message }, { headers: CORS });
 }
