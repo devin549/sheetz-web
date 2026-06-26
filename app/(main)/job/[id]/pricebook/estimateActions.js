@@ -1,13 +1,18 @@
 'use server';
 
 import { randomUUID } from 'crypto';
+import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
+import { postToDiscord } from '@/lib/discord';
+import { marginPct } from '@/lib/pricebookEngine';
 
 const missing = (e) => /relation|column|schema cache|does not exist/i.test(e?.message || '');
 const num = (v) => Number(v) || 0;
+const clean = (v, n = 400) => String(v == null ? '' : v).trim().slice(0, n);
+const APPROVAL_METHODS = ['phone', 'in_person', 'text', 'email'];
 
 async function ctx() {
   const supabase = createClient();
@@ -80,5 +85,64 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
   if (error) return { ok: false, msg: missing(error) ? 'Run supabase/106_pricebook_estimates.sql first.' : error.message };
 
   try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: row.tech_name, role: c.profile.role, action: 'estimate.create', entity: 'pricebook_estimate', entity_id: token, detail: { lines: snapLines.length, subtotal } }); } catch (_) {}
+  try { await c.sb.from('pricebook_estimate_events').insert({ token, event_type: 'sent', method: 'link', actor: row.tech_name, actor_role: 'tech', amount: subtotal }); } catch (_) {}
   return { ok: true, token, url: `/e/${token}`, msg: 'Estimate ready to present or send.' };
+}
+
+// 📞 Log a phone / verbal / text approval that happened OFF the link — the out-of-state landlord who
+// says "yes" on the phone. The tech is the witness on record. Same proof table, same conversion to usage
+// rows, so it counts identically to a tapped approval — and can't later be disputed.
+export async function logManualApproval(token, opts = {}) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const tk = clean(token, 64);
+  const name = clean(opts.name, 120);
+  const method = APPROVAL_METHODS.includes(opts.method) ? opts.method : 'phone';
+  const note = clean(opts.note, 400);
+  if (!tk) return { ok: false, msg: 'No estimate.' };
+  if (!name) return { ok: false, msg: 'Who approved it? Enter their name.' };
+
+  const { data: est } = await c.sb.from('pricebook_estimates').select('*').eq('token', tk).maybeSingle();
+  if (!est) return { ok: false, msg: 'Estimate not found.' };
+  if (est.status === 'approved') return { ok: true, msg: 'Already approved.' };
+
+  const total = num(est.subtotal);
+  const methodLabel = { phone: 'over the phone', in_person: 'in person', text: 'by text', email: 'by email' }[method];
+  const consentText = `Verbal/${method} approval of $${total.toLocaleString()} from ${name} ${methodLabel}, logged by ${c.profile.name || c.user.email}.${note ? ' Note: ' + note : ''}`;
+
+  // Convert to usage rows (mirrors the customer-link approval).
+  const lines = Array.isArray(est.lines) ? est.lines : [];
+  const itemIds = lines.map((l) => l.itemId).filter(Boolean);
+  const costById = {};
+  if (itemIds.length) { try { const { data: items } = await c.sb.from('pricebook_items').select('id, estimated_material_cost, estimated_labor_hours').in('id', itemIds); (items || []).forEach((i) => { costById[i.id] = i; }); } catch (_) {} }
+  const nowISO = new Date().toISOString();
+  const usage = lines.filter((l) => l.itemId).map((l) => {
+    const it = costById[l.itemId] || {}; const cost = num(it.estimated_material_cost); const price = num(l.price);
+    return { job_id: est.job_id, job_number: est.job_number, customer_id: est.customer_id, tech_id: est.tech_id, item_id: l.itemId, quantity: num(l.quantity) || 1, sold_price: price, actual_cost: cost, estimated_labor_hours: num(it.estimated_labor_hours), margin_pct: marginPct({ retail_price: price, estimated_material_cost: cost }), source: 'manual_approval', sold_at: nowISO };
+  });
+  if (usage.length) { try { await c.sb.from('job_pricebook_usage').insert(usage); } catch (_) {} }
+
+  try {
+    await c.sb.from('pricebook_estimates').update({ status: 'approved', responded_at: nowISO, approved_name: name, approval_method: method, consent_text: consentText, witnessed_by_tech_id: c.user.id, witnessed_by_name: c.profile.name || c.user.email }).eq('id', est.id);
+  } catch (e) { return { ok: false, msg: missing(e) ? 'Run supabase/117_estimate_proof.sql first.' : e.message }; }
+  try { await c.sb.from('pricebook_estimate_events').insert({ estimate_id: est.id, token: tk, event_type: 'phone_approval', method, actor: name, actor_role: 'customer', note: consentText, amount: total }); } catch (_) {}
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'estimate.manual_approval', entity: 'pricebook_estimate', entity_id: tk, detail: { name, method, total } }); } catch (_) {}
+  try { await postToDiscord(`✅ **Approval logged (${methodLabel})** — ${name}${est.job_number ? ` · job ${est.job_number}` : ''} approved $${total.toLocaleString()}, witnessed by ${c.profile.name || ''}.`); } catch (_) {}
+  revalidatePath(`/job/${est.job_id}/pricebook`);
+  return { ok: true, msg: `Logged — ${name}'s ${methodLabel} approval is on record.` };
+}
+
+// Estimates for this job + their proof timeline (for the tech/office to see status + who approved + how).
+export async function listJobEstimates(jobId) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err, estimates: [] };
+  if (!jobId) return { ok: false, msg: 'No job.', estimates: [] };
+  try {
+    const { data: rows } = await c.sb.from('pricebook_estimates').select('token, headline, subtotal, status, approved_name, approval_method, witnessed_by_name, consent_text, responded_at, viewed_at, created_at').eq('job_id', jobId).order('created_at', { ascending: false }).limit(20);
+    const estimates = rows || [];
+    const tokens = estimates.map((e) => e.token);
+    const eventsByToken = {};
+    if (tokens.length) {
+      try { const { data: evs } = await c.sb.from('pricebook_estimate_events').select('token, event_type, method, actor, note, amount, created_at').in('token', tokens).order('created_at', { ascending: true }).limit(300); (evs || []).forEach((ev) => { (eventsByToken[ev.token] = eventsByToken[ev.token] || []).push(ev); }); } catch (_) {}
+    }
+    return { ok: true, estimates: estimates.map((e) => ({ ...e, events: eventsByToken[e.token] || [] })) };
+  } catch (e) { return { ok: false, msg: missing(e) ? 'Run supabase/117_estimate_proof.sql first.' : e.message, estimates: [] }; }
 }

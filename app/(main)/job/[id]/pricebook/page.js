@@ -3,6 +3,7 @@ import { loadCockpit } from '../cockpit';
 import JobHeader from '../JobHeader';
 import { canSeeCost, buildTiers, shapeItem } from '@/lib/pricebookEngine';
 import PricebookClient from './PricebookClient';
+import EstimateProofPanel from './EstimateProofPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +47,17 @@ export default async function JobPricebook({ params }) {
 
   const job = { id: c.job.id, number: c.job.job_number || '', type: jt, customerId: c.job.customer_id || null, techId: c.job.tech_id || null };
 
+  // Sent estimates for this job + their proof timeline (best-effort; empty before migration 117).
+  let estimates = [];
+  try {
+    const { data: rows } = await c.sb.from('pricebook_estimates').select('token, headline, subtotal, status, approved_name, approval_method, witnessed_by_name, responded_at, viewed_at, created_at').eq('job_id', c.job.id).order('created_at', { ascending: false }).limit(20);
+    const list = rows || [];
+    const tokens = list.map((e) => e.token);
+    const byTok = {};
+    if (tokens.length) { try { const { data: evs } = await c.sb.from('pricebook_estimate_events').select('token, event_type, method, actor, note, amount, created_at').in('token', tokens).order('created_at', { ascending: true }).limit(300); (evs || []).forEach((ev) => { (byTok[ev.token] = byTok[ev.token] || []).push(ev); }); } catch (_) {} }
+    estimates = list.map((e) => ({ ...e, events: byTok[e.token] || [] }));
+  } catch (_) {}
+
   return (
     <div className="wrap" style={{ maxWidth: 980 }}>
       <JobHeader job={c.job} customer={c.customer} tab="Pricebook" />
@@ -53,7 +65,10 @@ export default async function JobPricebook({ params }) {
       {needsMigration ? (
         <div className="notice" style={{ marginTop: 10 }}>Run <code>supabase/104_pricebook.sql</code> + <code>105_pricebook_seed.sql</code> to load the Sheetz Pricebook.</div>
       ) : (
-        <PricebookClient job={job} customer={{ name: c.customer?.name || 'Customer', address: c.customer?.address || '', phone: c.customer?.phone || '' }} items={shaped} categories={categories} tiers={tiers} bundle={bundle ? { slug: bundle.slug, name: bundle.name, customerDescription: bundle.customer_description, warranty: bundle.warranty_text, approveText: bundle.approval_button_text } : null} showMargin={canSeeCost(role)} />
+        <>
+          <PricebookClient job={job} customer={{ name: c.customer?.name || 'Customer', address: c.customer?.address || '', phone: c.customer?.phone || '' }} items={shaped} categories={categories} tiers={tiers} bundle={bundle ? { slug: bundle.slug, name: bundle.name, customerDescription: bundle.customer_description, warranty: bundle.warranty_text, approveText: bundle.approval_button_text } : null} showMargin={canSeeCost(role)} />
+          <EstimateProofPanel estimates={estimates} />
+        </>
       )}
     </div>
   );

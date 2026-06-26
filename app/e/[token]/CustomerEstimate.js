@@ -9,11 +9,15 @@ const AMBER = '#ffb300', GREEN = '#3fb56a', SURF = '#171922', SURF2 = '#1f2230',
 export default function CustomerEstimate({ est }) {
   const [pending, start] = useTransition();
   const [status, setStatus] = useState(est.status);
-  const [view, setView] = useState(null);    // 'question' | 'decline'
+  const [view, setView] = useState(null);    // 'question' | 'decline' | 'approve'
   const [text, setText] = useState('');
   const [done, setDone] = useState(null);
+  const [name, setName] = useState(est.customerName || '');
+  const [consent, setConsent] = useState(false);
+  const [err, setErr] = useState(null);
 
-  const act = (fn, arg) => start(async () => { const r = await fn(est.token, arg); if (r.ok) { setDone(r.msg); setStatus('done'); } else setDone(r.msg); });
+  const act = (fn, arg) => start(async () => { setErr(null); const r = await fn(est.token, arg); if (r.ok) { setDone(r.msg); setStatus('done'); } else setErr(r.msg); });
+  const approve = () => { if (!name.trim()) { setErr('Please type your name to approve.'); return; } if (!consent) { setErr('Please check the box to authorize the work.'); return; } act(approveEstimate, { name: name.trim(), consent: true }); };
 
   const closed = ['approved', 'declined', 'deposit_requested', 'question'].includes(status) || status === 'done';
   const total = est.subtotal + est.cardFee;
@@ -70,9 +74,38 @@ export default function CustomerEstimate({ est }) {
           <div style={{ fontWeight: 700, marginTop: 6 }}>{done}</div>
           {est.techName && <div style={{ opacity: 0.6, fontSize: 13, marginTop: 4 }}>— {est.techName}, Clog Busterz</div>}
         </div>
+      ) : status === 'approved' ? (
+        <div style={{ ...card, borderColor: GREEN }}>
+          <div style={{ textAlign: 'center', fontSize: 34 }}>✅</div>
+          <div style={{ textAlign: 'center', fontWeight: 800, marginTop: 4 }}>Approved — thank you!</div>
+          {est.approvedName && (
+            <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: SURF2, fontSize: 12.5, lineHeight: 1.6 }}>
+              <div style={{ opacity: 0.55, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10, marginBottom: 4 }}>Approval on record</div>
+              <div><strong>{est.approvedName}</strong> · {money(est.subtotal)}</div>
+              {est.approvedAt && <div style={{ opacity: 0.7 }}>{new Date(est.approvedAt).toLocaleString()}</div>}
+              {est.consentText && <div style={{ opacity: 0.7, marginTop: 6, fontStyle: 'italic' }}>“{est.consentText}”</div>}
+            </div>
+          )}
+        </div>
       ) : closed ? (
         <div style={{ ...card, textAlign: 'center' }}>
-          <div style={{ opacity: 0.8 }}>{status === 'approved' ? '✅ Approved — thank you!' : status === 'declined' ? 'This estimate was declined.' : 'Thanks — we’ll be in touch.'}</div>
+          <div style={{ opacity: 0.8 }}>{status === 'declined' ? 'This estimate was declined.' : 'Thanks — we’ll be in touch.'}</div>
+        </div>
+      ) : view === 'approve' ? (
+        <div style={{ ...card, borderColor: GREEN }}>
+          <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>Approve {money(est.subtotal)}</div>
+          <p style={{ opacity: 0.72, fontSize: 13, margin: '0 0 12px' }}>Type your name to authorize the work. This is your record of approval.</p>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your full name" autoFocus
+            style={{ width: '100%', boxSizing: 'border-box', background: SURF2, border: `1px solid ${LINE}`, color: '#fff', borderRadius: 10, padding: 13, fontSize: 16, marginBottom: 12 }} />
+          <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5, opacity: 0.9, cursor: 'pointer', marginBottom: 14 }}>
+            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }} />
+            <span>I, <strong>{name.trim() || 'the customer'}</strong>, approve this {money(est.subtotal)} estimate from Clog Busterz Plumbing and authorize the work described.</span>
+          </label>
+          {err && <div style={{ color: '#ff8a8a', fontSize: 13, marginBottom: 10 }}>{err}</div>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => { setView(null); setErr(null); }} style={btn(SURF2, '#fff')}>Back</button>
+            <button onClick={approve} disabled={pending} style={btn(GREEN, '#06210f')}>{pending ? '…' : '✓ Approve & Schedule'}</button>
+          </div>
         </div>
       ) : view === 'question' ? (
         <div style={card}>
@@ -95,12 +128,13 @@ export default function CustomerEstimate({ est }) {
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 10 }}>
-          <button onClick={() => act(approveEstimate)} disabled={pending} style={btn(GREEN, '#06210f')}>✓ {est.approveText}</button>
+          <button onClick={() => { setView('approve'); setErr(null); }} disabled={pending} style={btn(GREEN, '#06210f')}>✓ {est.approveText}</button>
           <button onClick={() => act(requestDeposit)} disabled={pending} style={btn(SURF, AMBER, `1px solid ${AMBER}`)}>💳 Put a deposit down</button>
           <div style={{ display: 'flex', gap: 10 }}>
             <button onClick={() => setView('question')} disabled={pending} style={btn(SURF, '#fff', `1px solid ${LINE}`)}>Ask a question</button>
             <button onClick={() => setView('decline')} disabled={pending} style={btn(SURF, '#9aa', `1px solid ${LINE}`)}>Not now</button>
           </div>
+          {err && <div style={{ color: '#ff8a8a', fontSize: 13, textAlign: 'center' }}>{err}</div>}
         </div>
       )}
 
