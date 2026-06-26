@@ -81,6 +81,10 @@ export async function uploadJobPhoto(formData) {
   const caption = cleanText(formData.get('caption'), 700);
   const tags = tagsFrom(formData.get('tags'));
   const customerVisible = formData.get('customerVisible') === 'on';
+  // Proof-flow extras (camera-first): where + how it was captured, and which crew session it belongs to.
+  const segmentId = cleanText(formData.get('segmentId'), 60) || null;
+  const source = formData.get('source') === 'camera' ? 'camera' : 'upload';
+  const lat = Number(formData.get('lat')); const lng = Number(formData.get('lng'));
 
   const ctx = await getActionContext(jobId);
   if (!ctx.ok) return ctx;
@@ -103,7 +107,7 @@ export async function uploadJobPhoto(formData) {
     });
   if (uploadError) return { ok: false, msg: uploadError.message };
 
-  const { error: insertError } = await ctx.sb.from('job_photos').insert({
+  const base = {
     id,
     job_id: jobId,
     storage_bucket: BUCKET,
@@ -118,7 +122,13 @@ export async function uploadJobPhoto(formData) {
     uploaded_by: ctx.user.id,
     uploaded_by_email: ctx.user.email,
     uploaded_by_name: ctx.user.user_metadata?.name || ctx.user.email,
-  });
+  };
+  // Proof-flow columns (migrations 87 + 88). Insert with them; on a missing-column DB, retry with base.
+  const extra = { segment_id: segmentId, source, qa_status: 'pending', lat: Number.isFinite(lat) ? lat : null, lng: Number.isFinite(lng) ? lng : null };
+  let { error: insertError } = await ctx.sb.from('job_photos').insert({ ...base, ...extra });
+  if (insertError && /column|schema cache|does not exist/i.test(insertError.message || '')) {
+    ({ error: insertError } = await ctx.sb.from('job_photos').insert(base));
+  }
 
   if (insertError) {
     await ctx.sb.storage.from(BUCKET).remove([storagePath]);

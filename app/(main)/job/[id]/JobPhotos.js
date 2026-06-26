@@ -22,7 +22,7 @@ function bytes(value) {
   return `${n} B`;
 }
 
-export default function JobPhotos({ jobId, photos, reviewByPhoto = {}, closeout, canUpload, canArchive, canReview, canOverride, isDone, currentUserId }) {
+export default function JobPhotos({ jobId, photos, reviewByPhoto = {}, closeout, canUpload, canArchive, canReview, canOverride, isDone, currentUserId, hideAddForm = false }) {
   const router = useRouter();
   const formRef = useRef(null);
   const [pending, start] = useTransition();
@@ -89,7 +89,7 @@ export default function JobPhotos({ jobId, photos, reviewByPhoto = {}, closeout,
         </div>
       )}
 
-      {canUpload && (
+      {canUpload && !(hideAddForm && !prefill) && (
         <form key={prefill ? 'corr' : 'new'} ref={formRef} onSubmit={onSubmit} className="card card-amber" style={{ display: 'grid', gap: 10, borderColor: prefill ? 'var(--red)' : undefined }}>
           <input type="hidden" name="jobId" value={jobId} />
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>

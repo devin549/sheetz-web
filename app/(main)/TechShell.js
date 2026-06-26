@@ -94,7 +94,7 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
         { icon: '‹', label: 'My Day', href: '/my-day' },
         { icon: '📋', label: 'Overview', href: `/job/${curId}` },
         { icon: '📝', label: 'Forms', href: `/job/${curId}/forms` },
-        { icon: '📸', label: 'Photos', href: `/job/${curId}/photos` },
+        { icon: '🧾', label: 'Proof', href: `/job/${curId}/photos` },
         { icon: '🧾', label: 'Estimate', href: `/job/${curId}/estimate` },
         { icon: '💳', label: 'Invoice', href: `/job/${curId}/invoice` },
         { icon: '📦', label: 'Parts/PO', href: `/job/${curId}/parts` },
@@ -104,7 +104,7 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
       ] }]
     : [{ group: 'Job', items: [
         { icon: '🧰', label: 'Job', href: activeJob ? `/job/${activeJob.id}` : '/my-day' },
-        { icon: '📸', label: 'Photos', href: pick('/photos') },
+        { icon: '🧾', label: 'Proof', href: pick('/photos') },
         { icon: '🔧', label: 'Tools', href: pick('/tools') },
       ] }, ...RAIL];
 

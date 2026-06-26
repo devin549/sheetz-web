@@ -15,7 +15,7 @@ function statusLabel(v) {
 // Shared Job Cockpit top section — back · customer · job# · address · call/text/CSR/directions · warnings.
 // `tab` highlights the current tab in a compact sub-nav (so it's reachable even off the iPad rail).
 const TABS = [
-  ['Overview', ''], ['Forms', '/forms'], ['Photos', '/photos'], ['Estimate', '/estimate'],
+  ['Overview', ''], ['Forms', '/forms'], ['Proof', '/photos'], ['Estimate', '/estimate'],
   ['Invoice', '/invoice'], ['Parts/PO', '/parts'], ['Prices', '/prices'], ['Equipment', '/equipment'], ['History', '/history'],
 ];
 

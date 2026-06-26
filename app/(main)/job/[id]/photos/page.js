@@ -7,6 +7,7 @@ import { computeCloseout, ruleForJob } from '@/lib/qa';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from '../jobAccess';
 import JobPhotos from '../JobPhotos';
 import JobVideo from '../JobVideo';
+import ProofTiles from '../ProofTiles';
 import PhotoQACheck from './PhotoQACheck';
 import { CircleCheck, CircleAlert, ArrowLeft } from 'lucide-react';
 
@@ -53,14 +54,17 @@ export default async function JobPhotosScreen({ params }) {
   const closeout = computeCloseout({ photos, reviews, rule: ruleForJob(job) });
   const customer = job.customers || {};
   const canUpload = canUploadPhotos(role);
+  // Crew sessions to attribute proof to (fail-soft pre-87).
+  let segments = [];
+  try { const { data } = await sb.from('job_segments').select('id, segment_no, kind, assigned_tech_name, status').eq('parent_job_id', id).neq('status', 'cancelled').order('created_at', { ascending: true }); segments = data || []; } catch (_) {}
   const isDone = /done|complete|closed/.test(String(job.status || '').toLowerCase());
   const missing = new Set(closeout.missingKinds || []);
 
   return (
     <div className="wrap" style={{ maxWidth: 1040 }}>
       <Link href={`/job/${id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--amber)', textDecoration: 'none' }}><ArrowLeft size={14} /> Job Cockpit</Link>
-      <div className="h1" style={{ marginTop: 6, marginBottom: 2 }}>📸 Photos · {customer.name || 'Customer'}</div>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{jobTitle(job)}{job.job_number ? ` · #${job.job_number}` : ''} — proof for this job only.</div>
+      <div className="h1" style={{ marginTop: 6, marginBottom: 2 }}>🧾 Proof · {customer.name || 'Customer'}</div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{jobTitle(job)}{job.job_number ? ` · #${job.job_number}` : ''} — tap a tile, the camera opens. Proof attaches to this job only.</div>
 
       {/* Required proof checklist */}
       {!photoError && (closeout.requiredKinds?.length > 0 || closeout.requireVideo || closeout.minPhotos > 0) && (
@@ -79,13 +83,20 @@ export default async function JobPhotosScreen({ params }) {
         </div>
       )}
 
+      {/* Camera-FIRST proof tiles — tap a tile, the iPad camera opens. */}
+      {canUpload && !photoError && (
+        <div className="card" style={{ marginTop: 10 }}>
+          <ProofTiles jobId={id} photos={photos} segments={segments} requiredKinds={closeout.requiredKinds || []} requireVideo={closeout.requireVideo} />
+        </div>
+      )}
+
       {canUpload && !photoError && <PhotoQACheck jobType={job.job_type || ''} requiredKinds={closeout.requiredKinds || []} />}
 
       <JobVideo jobId={id} videos={videos} canUpload={canUpload && !photoError} requireVideo={closeout.requireVideo} />
 
       <div style={{ marginTop: 10 }}>
         <JobPhotos jobId={id} photos={stillPhotos} reviewByPhoto={reviewByPhoto} closeout={closeout}
-          canUpload={canUpload && !photoError} canArchive={can(role, 'deleteJobs') || can(role, 'manageUsers') || can(role, 'assignJobs')}
+          canUpload={canUpload && !photoError} hideAddForm canArchive={can(role, 'deleteJobs') || can(role, 'manageUsers') || can(role, 'assignJobs')}
           canReview={can(role, 'qaReview') && !photoError} canOverride={can(role, 'qaOverride') && !photoError} isDone={isDone} currentUserId={user.id} />
       </div>
     </div>
