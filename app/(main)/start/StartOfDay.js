@@ -10,6 +10,7 @@ import { saveShift, coachText } from './actions';
 import { coachMessage, TONES, tonesForLevel } from '@/lib/roast';
 import { rankChip } from '@/lib/rankFx';
 import RankFx from '../RankFx';
+import SodGate from './SodGate';
 import { CircleCheck, Circle } from 'lucide-react';
 
 const usd0 = (n) => '$' + Math.round(Number(n || 0)).toLocaleString();
@@ -35,7 +36,7 @@ function RankRow({ label, chip }) {
   );
 }
 
-export default function StartOfDay({ name, lastWorked, scorecard, rankings, fieldSize, overallRank, fx, jobs = [], win, onCall, saved, roastLevel = 'PG' }) {
+export default function StartOfDay({ name, lastWorked, scorecard, rankings, fieldSize, overallRank, fx, jobs = [], win, onCall, saved, roastLevel = 'PG', sodGate = null }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const allowedTones = tonesForLevel(roastLevel);
@@ -245,6 +246,9 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
         </button>
         <div className="muted" style={{ fontSize: 11, marginTop: 6, textAlign: 'center' }}>Tapping takes you to My Day. Hank's word stays private to you.</div>
       </div>
+
+      {/* ── START OF DAY GATE (HTML sod pane) — pre-trip / tools / handbook + unlock My Day ── */}
+      {sodGate && <SodGate sod={sodGate.sod} tools={sodGate.tools} handbook={sodGate.handbook} helper={sodGate.helper} />}
     </div>
   );
 }

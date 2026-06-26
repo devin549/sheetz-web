@@ -80,9 +80,27 @@ export default async function Start() {
   let saved = null;
   try { const { data } = await sb.from('tech_shift_log').select('checklist, ready, notes, flags').eq('user_id', user.id).eq('day_key', day).eq('kind', 'sod').maybeSingle(); saved = data || null; } catch (_) {}
 
+  // ── Start of Day GATE (HTML sod pane): today's checks + tools roster + handbook status + helper ──
+  let sodRow = null, sodTools = [], sodHelper = null, sodHandbook = { due: true, daysOverdue: null };
+  try {
+    const q = profile.tech_id
+      ? await sb.from('sod_checks').select('*').eq('tech_id', profile.tech_id).eq('day', day).maybeSingle()
+      : await sb.from('sod_checks').select('*').eq('tech_name', name).eq('day', day).maybeSingle();
+    sodRow = q.data || null;
+  } catch (_) {}
+  try { let tq = await sb.from('tools').select('id, name, identifier').ilike('assigned_to', name).order('name').limit(60); if (tq.error) tq = await sb.from('tools').select('id, name').ilike('assigned_to', name).limit(60); sodTools = tq.data || []; } catch (_) {}
+  try { const { data } = await sb.from('helper_pairings').select('helper_name, lead_tech_name, status').or(`lead_tech_id.eq.${profile.tech_id || '00000000-0000-0000-0000-000000000000'},helper_id.eq.${profile.tech_id || '00000000-0000-0000-0000-000000000000'}`).in('status', ['active', 'pending']).order('started_at', { ascending: false }).limit(1).maybeSingle(); sodHelper = data || null; } catch (_) {}
+  try {
+    const { handbookDue } = await import('@/lib/sod');
+    let lastAck = sodRow?.handbook_acked_at || null;
+    if (!lastAck) { const { data } = await sb.from('policy_acks').select('acked_at').eq('user_id', user.id).eq('kind', 'handbook').order('acked_at', { ascending: false }).limit(1).maybeSingle(); lastAck = data?.acked_at || null; }
+    sodHandbook = handbookDue(lastAck, nowMs);
+  } catch (_) {}
+
   const rankings = ranks.available ? ranks.metrics : null;
   return (
     <StartOfDay
+      sodGate={{ sod: sodRow || {}, tools: sodTools, handbook: sodHandbook, helper: sodHelper }}
       name={name}
       lastWorked={{ ...lw, pretty: prettyDay(lw.dayKey) }}
       scorecard={scorecard}
