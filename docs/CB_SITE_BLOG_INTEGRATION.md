@@ -72,6 +72,47 @@ export default async function Post({ params }) {
 That's it. Publish in Sheetz → it appears at `clogbusterzplumbing.com/blog`. The 5-minute `revalidate` means new
 posts show up within a few minutes without a manual redeploy.
 
+## Schedule from the website → Sheetz (with the tech `?ref=` link)
+
+The site's "Schedule" / "Book online" form POSTs to `https://tech.sheetzz.com/api/book`. It creates a job on
+the dispatch board (status `hold` for the office to confirm a time) and records the tech's referral code, so
+a booking from an employee's shared link credits that tech.
+
+**Booking form** (any page; reads `?ref=` from the URL automatically):
+```jsx
+'use client';
+import { useState } from 'react';
+const CMS = process.env.NEXT_PUBLIC_CMS_URL || 'https://tech.sheetzz.com';
+
+export default function BookForm() {
+  const [done, setDone] = useState(null);
+  async function submit(e) {
+    e.preventDefault();
+    const f = e.target;
+    const ref = new URLSearchParams(location.search).get('ref') || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('cb_ref')) || '';
+    const body = { name: f.name.value, phone: f.phone.value, email: f.email.value, address: f.address.value, service: f.service.value, notes: f.notes.value, company: f.company.value, ref };
+    const r = await fetch(`${CMS}/api/book`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json();
+    setDone(j.ok ? (j.message || "Thanks! We'll be in touch.") : (j.error || 'Something went wrong.'));
+  }
+  if (done) return <p style={{ padding: 20 }}>{done}</p>;
+  return (
+    <form onSubmit={submit} style={{ display: 'grid', gap: 10, maxWidth: 460 }}>
+      <input name="name" placeholder="Your name" required />
+      <input name="phone" placeholder="Phone" required />
+      <input name="email" placeholder="Email (optional)" />
+      <input name="address" placeholder="Service address" />
+      <select name="service"><option>Drain cleaning</option><option>Water heater</option><option>Sewer / main line</option><option>Toilet / faucet</option><option>Other</option></select>
+      <textarea name="notes" placeholder="What's going on?" rows={3} />
+      <input name="company" style={{ display: 'none' }} tabIndex={-1} autoComplete="off" />{/* honeypot — leave hidden */}
+      <button type="submit">Request my appointment</button>
+    </form>
+  );
+}
+```
+Put the same `?ref=` capture script (from the earlier chat) in the site `<head>` so the code survives page
+clicks — then ANY page's form attributes correctly.
+
 ## Optional: instant publish (no wait)
 Add a Vercel **Deploy Hook** for the site and have Sheetz ping it on publish — say the word and I'll wire the
 Sheetz side to call your deploy hook so the post is live in seconds.
