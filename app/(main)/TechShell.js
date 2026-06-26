@@ -32,6 +32,7 @@ const RAIL = [
   ] },
   { group: 'Truck', items: [
     { icon: '🚐', label: 'My Truck', href: '/my-truck' },
+    { icon: '🔍', label: 'ID Part', href: '/identify' },
     // Shop folded into My Truck (Shop Inventory + truck-wide search) — matches the HTML unified inventory.
     { icon: '📣', label: 'Mkt', href: '/mkt' },
     { icon: '⚙️', label: 'Set', href: '/account' },
