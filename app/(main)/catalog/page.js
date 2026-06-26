@@ -1,6 +1,7 @@
 import { requirePerm } from '@/lib/guard';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { canSeeCost, marginPct, marginHealth } from '@/lib/pricebookEngine';
+import { artFor } from '@/lib/catalogArt';
 import CatalogBrowser from './CatalogBrowser';
 
 export const dynamic = 'force-dynamic';
@@ -39,7 +40,7 @@ export default async function Catalog() {
     const kids = (childrenOf[cat.id] || []).map(build).filter((n) => n.count > 0);
     const direct = byCat[cat.id] || [];
     if (kids.length === 1 && direct.length === 0) return kids[0]; // pass-through wrapper → skip
-    const node = { id: cat.id, label: cat.name, icon: iconFor(cat.name), items: direct, children: kids };
+    const node = { id: cat.id, label: cat.name, icon: iconFor(cat.name), art: artFor(cat.name), items: direct, children: kids };
     node.count = direct.length + kids.reduce((s, k) => s + k.count, 0);
     return node;
   }

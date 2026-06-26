@@ -96,8 +96,10 @@ function CatTile({ n, onClick }) {
   const accent = `hsl(${hue}, 85%, 55%)`;
   return (
     <div onClick={onClick} style={{ position: 'relative', cursor: 'pointer', borderRadius: 16, overflow: 'hidden', minHeight: 150, border: '1px solid var(--border)', background: `radial-gradient(120% 90% at 20% 0%, hsla(${hue},70%,30%,.35), transparent 60%), linear-gradient(165deg, #1b1d26, #101218)`, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: 14 }}>
-      <div aria-hidden style={{ position: 'absolute', top: 10, left: 12, fontSize: 9, letterSpacing: '.18em', fontWeight: 800, color: accent, opacity: 0.55 }}>CLOG BUSTERZ</div>
-      <div aria-hidden style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-58%)', fontSize: 64, lineHeight: 1, filter: 'drop-shadow(0 4px 12px rgba(0,0,0,.5))' }}>{n.icon}</div>
+      {n.art && <img src={n.art} alt="" aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+      {n.art && <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(10,11,15,.15) 30%, rgba(10,11,15,.88))' }} />}
+      <div aria-hidden style={{ position: 'absolute', top: 10, left: 12, fontSize: 9, letterSpacing: '.18em', fontWeight: 800, color: accent, opacity: 0.55, zIndex: 1 }}>CLOG BUSTERZ</div>
+      {!n.art && <div aria-hidden style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-58%)', fontSize: 64, lineHeight: 1, filter: 'drop-shadow(0 4px 12px rgba(0,0,0,.5))' }}>{n.icon}</div>}
       <div style={{ position: 'relative', zIndex: 1 }}>
         <div style={{ fontWeight: 800, fontSize: 16, color: '#fff', lineHeight: 1.15 }}>{n.label}</div>
         <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.6)', marginTop: 3 }}>{n.count} item{n.count === 1 ? '' : 's'}{n.children?.length ? ` · ${n.children.length} groups` : ''} ›</div>
