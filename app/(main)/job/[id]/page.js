@@ -214,7 +214,9 @@ export default async function JobDetail({ params }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 16 }}>
           <div>
             <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em' }}>Customer</div>
-            <div style={{ fontWeight: 800, marginTop: 4 }}>{customer.name || 'Customer'}</div>
+            {job.customer_id
+              ? <Link href={`/customers/${job.customer_id}`} style={{ fontWeight: 800, marginTop: 4, display: 'inline-block', color: 'var(--fg-1)' }} title="Open full customer history">{customer.name || 'Customer'} <span style={{ color: 'var(--amber)', fontWeight: 600, fontSize: 12 }}>· 360 →</span></Link>
+              : <div style={{ fontWeight: 800, marginTop: 4 }}>{customer.name || 'Customer'}</div>}
             {customer.phone && <a href={`tel:${String(customer.phone).replace(/[^0-9+]/g, '')}`} style={{ display: 'block', marginTop: 4 }}>{customer.phone}</a>}
             {customer.email && <div className="muted" style={{ marginTop: 3 }}>{customer.email}</div>}
           </div>

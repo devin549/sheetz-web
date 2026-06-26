@@ -137,7 +137,7 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 15 }}>
             {urgent && <span className="alert-dot" aria-hidden="true" />}
-            {cust.name || 'Customer'}
+            <Link href={`/job/${job.id}`} style={{ color: 'var(--fg-1)', textDecoration: 'none' }} title="Open this job">{cust.name || 'Customer'} <span style={{ color: 'var(--amber)', fontSize: 12, fontWeight: 600 }}>›</span></Link>
             {urgent && <span className="pill pill-red pill-blink" style={{ marginLeft: 8 }}>RUNNING LATE</span>}
           </div>
           {cust.address && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {cust.address}</div>}

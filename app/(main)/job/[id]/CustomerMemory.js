@@ -9,14 +9,18 @@ const KIND_LABEL = { active: 'ACTIVE', estimate: 'ESTIMATE', unpaid: 'UNPAID', p
 // "Customer Memory" — the cockpit's customer/history brain. Server component; everything pre-loaded.
 export default function CustomerMemory({ mem, customer = {}, job = {} }) {
   const badge = (label, val, color) => val ? <span key={label} className="pill" style={{ fontSize: 11, color }}>{label}: {val}</span> : null;
+  const cid = customer.id || job.customer_id || null; // → the customer's full 360
 
   return (
     <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
       {/* memory badges */}
       <div className="card" style={{ borderLeft: '3px solid var(--amber)' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontWeight: 800, fontSize: 15 }}>🧠 {customer.name || 'Customer'}</span>
+          {cid
+            ? <Link href={`/customers/${cid}`} style={{ fontWeight: 800, fontSize: 15, textDecoration: 'none', color: 'var(--fg-1)' }} title="Open full customer history">🧠 {customer.name || 'Customer'}</Link>
+            : <span style={{ fontWeight: 800, fontSize: 15 }}>🧠 {customer.name || 'Customer'}</span>}
           {job.job_number ? <span className="muted" style={{ fontSize: 12 }}>#{job.job_number}</span> : null}
+          {cid && <Link href={`/customers/${cid}`} className="pill" style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--amber)' }}>360 view →</Link>}
         </div>
         {customer.address && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {customer.address}</div>}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
@@ -60,7 +64,7 @@ export default function CustomerMemory({ mem, customer = {}, job = {} }) {
       {/* Timeline */}
       {mem.timeline.length > 0 && (
         <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><History size={16} style={{ color: 'var(--amber)' }} /><span style={{ fontWeight: 800 }}>Job history</span></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><History size={16} style={{ color: 'var(--amber)' }} /><span style={{ fontWeight: 800 }}>Job history</span>{cid && <Link href={`/customers/${cid}`} className="pill" style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--amber)' }}>see all {customer.name ? customer.name.split(' ')[0] + "'s" : ''} jobs →</Link>}</div>
           <div style={{ position: 'relative', display: 'grid', gap: 8, paddingLeft: 14 }}>
             <div style={{ position: 'absolute', left: 4, top: 4, bottom: 4, width: 2, background: 'var(--border)' }} />
             {mem.timeline.map((t, i) => (
