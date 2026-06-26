@@ -2,6 +2,7 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireRole } from '@/lib/guard';
 import ReviewsClient from './ReviewsClient';
 import TechReviews from './TechReviews';
+import DisputeQueue from './DisputeQueue';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,10 +64,15 @@ export default async function Reviews() {
   let techsData = (await sb.from('techs').select('id, name').order('name')).data || [];
   const techs = techsData.map((t) => ({ id: t.id, name: t.name })).filter((t) => t.name);
 
+  // Pending tech disputes for the manager queue (fail-soft pre-90).
+  let disputes = [];
+  try { const dq = await sb.from('reviews').select('id, customer_name, rating, text, tech_name, dispute_reason, dispute_by, created_at').eq('dispute_status', 'pending').order('disputed_at', { ascending: false }).limit(50); disputes = dq.error ? [] : (dq.data || []); } catch (_) {}
+
   return (
     <div className="wrap" style={{ maxWidth: 880 }}>
       <div className="h1">Reviews</div>
-      <p className="muted">Log customer reviews → this week&apos;s count feeds the board&apos;s Game Plan. 1–3★ get flagged for Customer Recovery.</p>
+      <p className="muted">Log customer reviews → this week&apos;s count feeds the board&apos;s Game Plan. 1–3★ get flagged for Customer Recovery. Google reviews auto-import + auto-match to the tech.</p>
+      <DisputeQueue disputes={disputes} />
       <ReviewsClient rows={res.data || []} techs={techs} />
     </div>
   );
