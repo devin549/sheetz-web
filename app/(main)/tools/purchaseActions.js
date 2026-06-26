@@ -9,7 +9,7 @@ import { dollarsToCents, weeklyCents, remainingCents, nextDeductionCents, separa
 
 const clean = (v, n = 300) => String(v == null ? '' : v).trim().slice(0, n);
 const missing = (e) => /relation|column|schema cache|does not exist/i.test(e?.message || '');
-const isMgr = (r) => canAny(r, ['manageInventory', 'assignJobs', 'manageUsers', 'seeCrew']);
+const isMgr = (r) => canAny(r, ['manageInventory', 'assignJobs', 'manageUsers', 'seeCrew', 'seeFinancials']);
 const weekMonday = () => { const d = new Date(); const day = (d.getDay() + 6) % 7; d.setDate(d.getDate() - day); return d.toISOString().slice(0, 10); };
 
 async function ctx() {

@@ -50,7 +50,7 @@ export default async function Receipts() {
 
   const receipts = withUrls.map((p) => ({
     photoId: p.id, jobId: p.job_id || '', signedUrl: p.signedUrl, fileName: p.file_name,
-    uploadedBy: p.uploaded_by_name || '', createdAt: p.created_at,
+    storagePath: p.storage_path || '', uploadedBy: p.uploaded_by_name || '', createdAt: p.created_at,
     job: jobById[p.job_id] || {}, entry: entryByPhoto[p.id] || null,
   }));
 

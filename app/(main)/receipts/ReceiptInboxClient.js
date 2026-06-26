@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { saveReceipt, readReceipt } from './actions';
+import { createToolPurchase } from '../tools/purchaseActions';
 
 const CATS = ['materials', 'fuel', 'tools', 'permit', 'other'];
 const money = (cents) => '$' + (Number(cents || 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -20,6 +21,18 @@ function ReceiptCard({ r, canSave, aiReady }) {
   const [category, setCategory] = useState(e.category || 'materials');
   const [note, setNote] = useState(e.note || '');
   const st = STATUS[e.status] || null;
+  // Tool-plan setup (shown when this receipt is a 'tools' purchase) — turns the receipt into a payoff plan.
+  const [planOpen, setPlanOpen] = useState(false);
+  const [plan, setPlan] = useState({ toolName: '', techName: r.job.tech || '', weeklyPct: '10', keepOnVan: false });
+  const setP = (k) => (ev) => setPlan((s) => ({ ...s, [k]: ev.target.value }));
+  function makePlan() {
+    setMsg(null);
+    start(async () => {
+      const res = await createToolPurchase({ toolName: plan.toolName, techName: plan.techName, valueDollars: amount, weeklyPct: plan.weeklyPct, vendor, receiptPath: r.storagePath, keepOnVan: plan.keepOnVan });
+      setMsg(res.ok ? { ok: true, msg: res.msg } : res);
+      if (res.ok) { setPlanOpen(false); router.refresh(); }
+    });
+  }
 
   function save(status) {
     const fd = new FormData();
@@ -61,6 +74,33 @@ function ReceiptCard({ r, canSave, aiReady }) {
             <button disabled={pending} onClick={() => save('verified')} className="pill" style={{ cursor: 'pointer', flex: 1, justifyContent: 'center', display: 'flex', background: 'rgba(70,193,120,.16)', color: 'var(--green)', fontWeight: 800, border: '1px solid var(--border-strong)' }}>Verify</button>
             <button disabled={pending} onClick={() => save('flagged')} className="pill" style={{ cursor: 'pointer', flex: 1, justifyContent: 'center', display: 'flex', color: 'var(--red)', border: '1px solid var(--border-strong)' }}>Flag</button>
             <button disabled={pending} onClick={() => save('pending')} className="pill" style={{ cursor: 'pointer', border: '1px solid var(--border-strong)' }}>Save</button>
+          </div>
+        )}
+        {/* 🧰 Company-bought tool → spin up a weekly-payoff plan straight off this receipt. */}
+        {category === 'tools' && (
+          <div style={{ borderTop: '1px dashed var(--border-strong)', paddingTop: 8, marginTop: 1 }}>
+            {!planOpen ? (
+              <button onClick={() => setPlanOpen(true)} className="pill" style={{ cursor: 'pointer', width: '100%', justifyContent: 'center', display: 'flex', color: 'var(--amber)', border: '1px solid var(--amber-dim)', fontWeight: 700 }}>🧰 Set up tool plan</button>
+            ) : (
+              <div style={{ display: 'grid', gap: 6 }}>
+                <input value={plan.toolName} onChange={setP('toolName')} placeholder="tool (e.g. K-60 cable machine)" style={input} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 64px', gap: 6 }}>
+                  <input value={plan.techName} onChange={setP('techName')} placeholder="tech name" style={input} />
+                  <input value={plan.weeklyPct} onChange={setP('weeklyPct')} placeholder="%" inputMode="decimal" style={{ ...input, textAlign: 'right' }} />
+                </div>
+                {!plan.keepOnVan && amount && Number(amount) > 0 && Number(plan.weeklyPct) > 0 && (
+                  <div className="muted" style={{ fontSize: 10.5 }}>≈ {money(Math.round(Number(amount) * Number(plan.weeklyPct)))}/wk · ~{Math.ceil(100 / Number(plan.weeklyPct))} wks · {money(Math.round(Number(amount) * 100))} value</div>
+                )}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={plan.keepOnVan} onChange={(ev) => setPlan((s) => ({ ...s, keepOnVan: ev.target.checked }))} />
+                  🚐 Company tool — keep on van, no deduction
+                </label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button disabled={pending} onClick={makePlan} className="pill" style={{ cursor: 'pointer', flex: 1, justifyContent: 'center', display: 'flex', background: 'color-mix(in oklab, var(--amber) 16%, var(--surface-2))', color: 'var(--amber)', fontWeight: 800, border: '1px solid var(--border-strong)' }}>{plan.keepOnVan ? 'Add company tool' : 'Start plan'}</button>
+                  <button disabled={pending} onClick={() => setPlanOpen(false)} className="pill" style={{ cursor: 'pointer', color: 'var(--fg-3)', border: '1px solid var(--border-strong)' }}>✕</button>
+                </div>
+              </div>
+            )}
           </div>
         )}
         {r.jobId && <Link href={`/job/${r.jobId}`} className="muted" style={{ fontSize: 11 }}>open job →</Link>}
