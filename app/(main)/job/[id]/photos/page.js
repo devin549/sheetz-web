@@ -7,6 +7,7 @@ import { computeCloseout, ruleForJob } from '@/lib/qa';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from '../jobAccess';
 import JobPhotos from '../JobPhotos';
 import JobVideo from '../JobVideo';
+import PhotoQACheck from './PhotoQACheck';
 import { CircleCheck, CircleAlert, ArrowLeft } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -77,6 +78,8 @@ export default async function JobPhotosScreen({ params }) {
           </div>
         </div>
       )}
+
+      {canUpload && !photoError && <PhotoQACheck jobType={job.job_type || ''} requiredKinds={closeout.requiredKinds || []} />}
 
       <JobVideo jobId={id} videos={videos} canUpload={canUpload && !photoError} requireVideo={closeout.requireVideo} />
 
