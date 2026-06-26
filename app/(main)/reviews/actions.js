@@ -18,6 +18,47 @@ async function gate() {
 }
 const missing = (e) => /could not find|does not exist|schema cache/i.test(e?.message || '');
 
+// Any signed-in user (incl. a tech) for the tech-side reviews pane.
+async function anyUser() {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Sign in required.' };
+  const profile = await loadProfile(user);
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  return { ok: true, sb, user, profile, who: profile.name || user.email };
+}
+
+// A TECH disputes an unfair low review (Karen / not CB's fault). Flags it pending for a manager; can only
+// dispute reviews tied to their OWN name. Notifies the office via the P4 alert brain.
+export async function disputeReview(id, reason) {
+  const g = await anyUser(); if (!g.ok) return g;
+  const r = String(reason || '').trim().slice(0, 500);
+  if (!r) return { ok: false, msg: 'Add a quick reason (Karen / not our fault / wrong tech…).' };
+  const { data: rev } = await g.sb.from('reviews').select('tech_name, rating, customer_name').eq('id', id).maybeSingle();
+  if (!rev) return { ok: false, msg: 'Review not found.' };
+  const mine = String(rev.tech_name || '').trim().toLowerCase() === String(g.who).trim().toLowerCase();
+  const isMgr = MANAGE.includes(String(g.profile.role || '').toLowerCase());
+  if (!mine && !isMgr) return { ok: false, msg: 'You can only dispute your own reviews.' };
+  let { error } = await g.sb.from('reviews').update({ disputed: true, dispute_status: 'pending', dispute_reason: r, disputed_at: new Date().toISOString(), dispute_by: g.who }).eq('id', id);
+  if (error) return { ok: false, msg: missing(error) ? 'Run supabase/90_review_dispute.sql first.' : error.message };
+  try { const { createAlert } = await import('@/lib/alerts'); await createAlert(g.sb, { kind: 'photo_qa', entity: 'review', entityId: String(id), title: `Review dispute: ${g.who} (${rev.rating}★)`, body: `${g.who} disputes a ${rev.rating}★ from ${rev.customer_name || 'a customer'}: “${r}”. Approve → wipes it from the Review Race; deny → it stands.`, severity: 'med', dedupeKey: `review-dispute:${id}` }); } catch (_) {}
+  revalidatePath('/reviews');
+  return { ok: true, msg: 'Sent to a manager — they decide within 48 hrs.' };
+}
+
+// Manager resolves a dispute. Approved wipes it from the race (we mark responded so it drops out of counts).
+export async function resolveDispute(id, approve) {
+  const g = await gate(); if (!g.ok) return g;
+  const patch = approve
+    ? { dispute_status: 'approved', responded: true, decided_by: g.who, decided_at: new Date().toISOString() }
+    : { dispute_status: 'denied', decided_by: g.who, decided_at: new Date().toISOString() };
+  const { error } = await g.sb.from('reviews').update(patch).eq('id', id);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/reviews');
+  return { ok: true };
+}
+
 export async function createReview(formData) {
   const g = await gate();
   if (!g.ok) return g;
