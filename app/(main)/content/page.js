@@ -3,6 +3,8 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { isAiConfigured } from '@/lib/anthropic';
 import ContentClient from './ContentClient';
 
+const isOwner = (r) => ['owner', 'admin'].includes(r);
+
 export const dynamic = 'force-dynamic';
 
 export default async function Content() {
@@ -12,7 +14,9 @@ export default async function Content() {
 
   let ideas = [], needsMig = false;
   try {
-    const { data, error } = await sb.from('content_ideas').select('id, title, target_keyword, target_town, rationale, draft, status, published_url, created_at').order('created_at', { ascending: false }).limit(200);
+    let q = await sb.from('content_ideas').select('id, title, target_keyword, target_town, rationale, draft, status, submitted, approved_by, published_url, created_at').order('created_at', { ascending: false }).limit(200);
+    if (q.error && /submitted|approved_by|column|schema cache/i.test(q.error.message || '')) q = await sb.from('content_ideas').select('id, title, target_keyword, target_town, rationale, draft, status, published_url, created_at').order('created_at', { ascending: false }).limit(200);
+    const { data, error } = q;
     if (error) { if (/relation|does not exist|schema cache/i.test(error.message)) needsMig = true; } else ideas = data || [];
   } catch { needsMig = true; }
 
@@ -21,7 +25,7 @@ export default async function Content() {
       <div className="h1" style={{ marginBottom: 2 }}>✍️ SEO Content Engine</div>
       <p className="muted" style={{ fontSize: 13 }}>AI-recommended local blog posts that attack your rank gaps (Lexington, Nicholasville, hydro jetting…) — generate ideas, draft them, publish to grow.</p>
       {needsMig && <div className="notice">Run <code>supabase/110_content_ideas.sql</code> to save ideas.</div>}
-      <ContentClient ideas={ideas} aiReady={isAiConfigured(role)} disabled={needsMig} />
+      <ContentClient ideas={ideas} aiReady={isAiConfigured(role)} isOwner={isOwner(role)} disabled={needsMig} />
     </div>
   );
 }

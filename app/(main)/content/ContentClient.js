@@ -2,11 +2,11 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { generateIdeas, draftIdea, setIdeaStatus, saveDraft } from './actions';
+import { generateIdeas, draftIdea, setIdeaStatus, saveDraft, submitForApproval, approveAndPublish } from './actions';
 
 const STATUS = { idea: ['Ideas', 'var(--amber)'], drafted: ['Drafted', 'var(--blue)'], published: ['Published 🎉', 'var(--green)'], dismissed: ['Dismissed', 'var(--fg-3)'] };
 
-export default function ContentClient({ ideas = [], aiReady, disabled }) {
+export default function ContentClient({ ideas = [], aiReady, isOwner, disabled }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
@@ -21,6 +21,10 @@ export default function ContentClient({ ideas = [], aiReady, disabled }) {
   const copy = (text) => { try { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) {} };
   const startEdit = (it) => { setEditing(it.id); setEditText(it.draft || ''); setOpen(it.id); };
   const save = (id) => start(async () => { const r = await saveDraft(id, editText); setMsg(r.msg); if (r.ok) setEditing(null); router.refresh(); });
+  const submit = (id) => start(async () => { const r = await submitForApproval(id); setMsg(r.msg); router.refresh(); });
+  const approve = (id) => start(async () => { const r = await approveAndPublish(id); setMsg(r.msg); router.refresh(); });
+
+  const awaiting = ideas.filter((i) => i.submitted && i.status !== 'published').length;
 
   const byStatus = {}; Object.keys(STATUS).forEach((k) => { byStatus[k] = ideas.filter((i) => i.status === k); });
 
@@ -29,6 +33,7 @@ export default function ContentClient({ ideas = [], aiReady, disabled }) {
       <button onClick={gen} disabled={pending || disabled || !aiReady} className="btn" style={{ padding: '11px 16px' }}>🤖 Generate ideas from rank gaps</button>
       {!aiReady && <div className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>Add an ANTHROPIC_KEY_* in Vercel to enable AI generation.</div>}
       {msg && <div style={{ fontSize: 12.5, margin: '8px 2px', color: 'var(--fg-2)' }}>{msg}</div>}
+      {isOwner && awaiting > 0 && <div className="card" style={{ marginTop: 8, borderLeft: '3px solid var(--amber)', fontWeight: 700, fontSize: 13 }}>⏳ {awaiting} post{awaiting > 1 ? 's' : ''} awaiting your approval — review, edit, then ✓ Approve to put live.</div>}
 
       {ideas.length === 0 && <div className="card" style={{ marginTop: 8 }}><span className="muted">No ideas yet — tap Generate. It reads where you don’t rank and recommends blogs to win those towns.</span></div>}
 
@@ -52,8 +57,14 @@ export default function ContentClient({ ideas = [], aiReady, disabled }) {
                   {it.draft && <button onClick={() => startEdit(it)} className="pill" style={{ cursor: 'pointer', color: 'var(--amber)' }}>✏️ Edit</button>}
                   {it.draft && <button onClick={() => copy(it.draft)} className="pill" style={{ cursor: 'pointer' }}>{copied ? '✓ Copied' : '📋 Copy'}</button>}
                   {it.draft && <button onClick={() => draft(it.id)} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--fg-3)' }}>🔄 Rewrite</button>}
-                  {it.status !== 'published' && <button onClick={() => mark(it.id, 'published')} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--green)', border: '1px solid var(--green)' }}>✓ Approve &amp; publish</button>}
-                  {it.status !== 'dismissed' && <button onClick={() => mark(it.id, 'dismissed')} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--fg-3)' }}>✕</button>}
+                  {/* 2-step approval: marketing submits → owner approves to the website. */}
+                  {it.draft && it.status !== 'published' && !it.submitted && <button onClick={() => submit(it.id)} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--blue)', border: '1px solid var(--blue)' }}>📤 Submit for approval</button>}
+                  {it.submitted && it.status !== 'published' && <span className="pill" style={{ fontSize: 10, color: 'var(--amber)' }}>⏳ Awaiting owner</span>}
+                  {isOwner && it.draft && it.status !== 'published' && <button onClick={() => approve(it.id)} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--green)', border: '1px solid var(--green)', fontWeight: 800 }}>✓ Approve &amp; publish</button>}
+                  {isOwner && it.submitted && it.status !== 'published' && <button onClick={() => mark(it.id, 'drafted')} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--fg-3)' }}>↩ Send back</button>}
+                  {it.status === 'published' && <span className="pill" style={{ fontSize: 10, color: 'var(--green)' }}>🌐 Live{it.approved_by ? ` · ${it.approved_by}` : ''}</span>}
+                  {isOwner && it.status === 'published' && <button onClick={() => mark(it.id, 'drafted')} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--fg-3)' }}>↩ Unpublish</button>}
+                  {it.status !== 'dismissed' && it.status !== 'published' && <button onClick={() => mark(it.id, 'dismissed')} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--fg-3)' }}>✕</button>}
                 </div>
 
                 {editing === it.id ? (

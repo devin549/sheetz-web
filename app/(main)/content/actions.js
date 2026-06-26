@@ -10,6 +10,7 @@ import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 const clean = (v, n = 4000) => String(v == null ? '' : v).trim().slice(0, n);
 const missing = (e) => /relation|column|schema cache|does not exist/i.test(e?.message || '');
 const isMkt = (r) => canAny(r, ['seeReports', 'manageUsers', 'seeFinancials']);
+const isOwner = (r) => ['owner', 'admin'].includes(r);   // the final approver — only the owner posts to the website
 
 async function ctx() {
   const supabase = createClient();
@@ -94,10 +95,32 @@ export async function saveDraft(id, draft) {
   return { ok: true, msg: 'Saved.' };
 }
 
+// 📤 Marketing sends a draft up for the owner's approval.
+export async function submitForApproval(id) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const { error } = await c.sb.from('content_ideas').update({ submitted: true }).eq('id', id);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/content');
+  return { ok: true, msg: 'Sent up for approval.' };
+}
+
+// ✓ OWNER ONLY — approve a post to the live website. The single gate.
+export async function approveAndPublish(id) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  if (!isOwner(c.profile.role)) return { ok: false, msg: 'Only the owner can approve a post to the website.' };
+  const { error } = await c.sb.from('content_ideas').update({ status: 'published', submitted: false, approved_by: c.profile.name || c.user.email, approved_at: new Date().toISOString() }).eq('id', id);
+  if (error) return { ok: false, msg: error.message };
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'content.approve', entity: 'content_idea', entity_id: String(id), detail: {} }); } catch (_) {}
+  revalidatePath('/content');
+  return { ok: true, msg: 'Approved — live on the website.' };
+}
+
 export async function setIdeaStatus(id, status, url) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
-  if (!['idea', 'drafted', 'published', 'dismissed'].includes(status)) return { ok: false, msg: 'Bad status.' };
-  const patch = { status }; const u = clean(url, 400); if (u) patch.published_url = u;
+  if (!['idea', 'drafted', 'dismissed'].includes(status)) return { ok: false, msg: 'Bad status.' };
+  // Taking a post DOWN from the website (published → drafted) or sending one back is owner-only.
+  if (status === 'drafted' || status === 'dismissed') { if (!isOwner(c.profile.role) && !isMkt(c.profile.role)) return { ok: false, msg: 'Not allowed.' }; }
+  const patch = { status, submitted: false }; const u = clean(url, 400); if (u) patch.published_url = u;
   const { error } = await c.sb.from('content_ideas').update(patch).eq('id', id);
   if (error) return { ok: false, msg: error.message };
   revalidatePath('/content');
