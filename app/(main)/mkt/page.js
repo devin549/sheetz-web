@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import { requirePerm } from '@/lib/guard';
+import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import ReferralShare from './ReferralShare';
 
 export const dynamic = 'force-dynamic';
 
-// Marketing · My Referrals — ported from pane-mkt. Referral code (copy/share) + qualification rules +
-// stats. Per the SPA, real referral history lives on the office Referral Rewards board until per-tech
-// stats land here — so the totals/list are sample (seam = stats/recent). Reviews link to /reviews.
+// Marketing · My Referrals — ported from pane-mkt. The code is REAL (per-tech, falls back to a deterministic
+// FIRST-NNN); stats + recent list are now REAL too, computed from jobs that booked with this tech's code
+// (jobs.referral_code, captured at booking). Reviews link to /reviews.
+const REFERRAL_PAYOUT = 15; // $15 CB credit to the tech per qualified (paid) referral
 function codeFor(name) {
   const first = String(name || 'Tech').trim().split(/\s+/)[0].toUpperCase().replace(/[^A-Z]/g, '').slice(0, 8) || 'TECH';
   let h = 0; for (const c of String(name || 'tech')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
@@ -20,19 +22,45 @@ const RULES = [
   'No cancel-and-rebook trick — credit reverses if they cancel within 14 days.',
   'One per household — same address = one payout, ever.',
 ];
-const stats = [['This Year', '5', 'qualified referrals'], ['Earned', '$75', 'in CB credits'], ['Pending', '2', 'awaiting paid job'], ['Conversion', '62%', 'above avg 48%']];
-const recent = [
-  ['Sarah Mitchell · 5/22', '1st paid job done', '+$15 ✓', 'var(--green)'],
-  ['Tom Bradley · 5/18', 'scheduled', 'PENDING', 'var(--amber)'],
-  ['Lisa Chen · 5/12', '1st paid job done', '+$15 ✓', 'var(--green)'],
-  ['Mike Decker · 5/9', 'estimate only · no book', 'DQ · tire kicker', 'var(--fg-3)'],
-  ['Karen Hill · 5/3', 'existing customer', 'DQ · not new', 'var(--fg-3)'],
-];
+const DONE = ['done', 'complete', 'completed', 'closed', 'paid'];
+const ACTIVE = ['scheduled', 'enroute', 'on_my_way', 'on_site', 'onsite', 'hold'];
+const fmtDay = (iso) => { try { return new Date(iso).toLocaleDateString([], { month: 'numeric', day: 'numeric' }); } catch { return ''; } };
+
+// Pull this tech's real referrals: jobs booked with their code this year.
+async function loadReferrals(code) {
+  if (!isAdminConfigured || !code) return { ready: true, rows: [] };
+  const sb = getSupabaseAdmin();
+  const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString();
+  let res = await sb.from('jobs').select('id, status, amount, scheduled_at, created_at, customers(name)')
+    .ilike('referral_code', code).gte('created_at', yearStart).order('created_at', { ascending: false }).limit(60);
+  if (res.error && /referral_code|column|schema cache/i.test(res.error.message || '')) return { ready: false, rows: [] };
+  if (res.error) return { ready: true, rows: [] };
+  const rows = (res.data || []).map((j) => {
+    const s = String(j.status || '').toLowerCase();
+    const tier = DONE.includes(s) ? 'qualified' : s === 'cancelled' ? 'dq' : ACTIVE.includes(s) ? 'pending' : 'pending';
+    return { id: j.id, who: (j.customers && j.customers.name) || 'Customer', when: fmtDay(j.created_at || j.scheduled_at), status: s, tier };
+  });
+  return { ready: true, rows };
+}
 
 export default async function Mkt() {
   const { user, profile } = await requirePerm('seeOwnOnly', 'changeStatus', 'seeCrew');
   const name = profile.name || user.email;
-  const code = codeFor(name);
+  const code = profile.referral_code || codeFor(name);
+
+  const { ready, rows } = await loadReferrals(code);
+  const qualified = rows.filter((r) => r.tier === 'qualified').length;
+  const pending = rows.filter((r) => r.tier === 'pending').length;
+  const total = rows.length;
+  const earned = qualified * REFERRAL_PAYOUT;
+  const conversion = total ? Math.round((qualified / total) * 100) : 0;
+  const stats = [
+    ['This Year', String(qualified), 'qualified referrals'],
+    ['Earned', `$${earned}`, 'in CB credits'],
+    ['Pending', String(pending), 'awaiting paid job'],
+    ['Conversion', total ? `${conversion}%` : '—', total ? 'qualified / sent' : 'no referrals yet'],
+  ];
+  const tierMeta = { qualified: { what: '1st paid job done', badge: `+$${REFERRAL_PAYOUT} ✓`, color: 'var(--green)' }, pending: { what: 'booked · awaiting paid job', badge: 'PENDING', color: 'var(--amber)' }, dq: { what: 'cancelled', badge: 'DQ', color: 'var(--fg-3)' } };
 
   return (
     <div className="wrap" style={{ maxWidth: 620 }}>
@@ -44,7 +72,8 @@ export default async function Mkt() {
         <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700 }}>Your code</div>
         <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 30, fontWeight: 800, color: 'var(--amber)', letterSpacing: '1px' }}>{code}</div>
         <ReferralShare code={code} />
-        <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>Sample view — your live code + history are on the office Referral Rewards board until per-tech stats land here.</div>
+        {!ready && <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>Run <code>supabase/101_profile_referral_code.sql</code> + ensure bookings capture the code to see live history.</div>}
+        {ready && !profile.referral_code && <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>This is your auto code. The office can set a custom one on the Referral Rewards board.</div>}
       </div>
 
       {/* qualify rules */}
@@ -64,15 +93,20 @@ export default async function Mkt() {
         ))}
       </div>
 
-      {/* recent */}
+      {/* recent — real */}
       <div className="card" style={{ marginTop: 10 }}>
         <div style={{ fontWeight: 800, marginBottom: 6 }}>Recent referrals</div>
-        {recent.map(([who, what, badge, color]) => (
-          <div key={who} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid var(--border)' }}>
-            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600 }}>{who}</div><div className="muted" style={{ fontSize: 11 }}>{what}</div></div>
-            <span className="pill" style={{ fontSize: 10, color }}>{badge}</span>
-          </div>
-        ))}
+        {rows.length === 0 ? (
+          <div className="muted" style={{ fontSize: 12.5, padding: '4px 0' }}>No referrals booked with your code yet this year. Share it on every job — $15 to them, $15 to you.</div>
+        ) : rows.slice(0, 12).map((r) => {
+          const m = tierMeta[r.tier] || tierMeta.pending;
+          return (
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid var(--border)' }}>
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.who}{r.when ? ` · ${r.when}` : ''}</div><div className="muted" style={{ fontSize: 11 }}>{m.what}</div></div>
+              <span className="pill" style={{ fontSize: 10, color: m.color }}>{m.badge}</span>
+            </div>
+          );
+        })}
       </div>
 
       <Link href="/reviews" className="card" style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', color: 'inherit' }}>
