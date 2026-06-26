@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ArrowLeft, Phone, MessageSquare, Mic, Navigation } from 'lucide-react';
+import JobContext from './JobContext';
 
 const dial = (p) => String(p || '').replace(/[^0-9+]/g, '');
 function statusLabel(v) {
@@ -40,13 +41,8 @@ export default function JobHeader({ job, customer = {}, tab = 'Overview' }) {
         {mapHref && <a href={mapHref} target="_blank" rel="noreferrer" className="pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Navigation size={13} /> Directions</a>}
       </div>
 
-      {/* warnings / access notes */}
-      {(job.access_notes || job.priority && /high|urgent|emergency/i.test(String(job.priority))) && (
-        <div style={{ marginTop: 8, fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>
-          {/high|urgent|emergency/i.test(String(job.priority || '')) && <span style={{ marginRight: 8 }}>⚠ {String(job.priority).toUpperCase()}</span>}
-          {job.access_notes && <span style={{ color: 'var(--fg-1)', fontWeight: 600 }}>🔑 {job.access_notes}</span>}
-        </div>
-      )}
+      {/* Customer context card — must-tell, do-not-service, what we promised, access, flags. */}
+      <JobContext job={job} customer={customer} />
 
       {/* tab sub-nav (also works without the iPad rail) */}
       <div style={{ display: 'flex', gap: 4, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>

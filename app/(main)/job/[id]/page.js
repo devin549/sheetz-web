@@ -18,6 +18,7 @@ import CustomerMemory from './CustomerMemory';
 import LinkToProject from './LinkToProject';
 import { loadCustomerMemory } from '@/lib/customerMemory';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
+import JobContext from './JobContext';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -241,14 +242,9 @@ export default async function JobDetail({ params }) {
         </a>
       )}
 
-      {/* Customer warnings — never lose context the tech needs before knocking. */}
-      {urgent && (
-        <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--red)', display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(239,83,80,.08)' }}>
-          <CircleAlert size={16} style={{ color: 'var(--red)' }} />
-          <span style={{ fontWeight: 800, color: 'var(--red)', fontSize: 13 }}>{String(job.priority).toUpperCase()} priority</span>
-          <span className="muted" style={{ fontSize: 12 }}>— handle first.</span>
-        </div>
-      )}
+      {/* Customer context — must-tell, do-not-service, what we promised, access, flags. Never lose what
+          the tech needs before knocking. (Real columns only; the card hides when there's nothing.) */}
+      <JobContext job={job} customer={customer} />
 
       <div id="customer" style={{ scrollMarginTop: 70 }}><CustomerMemory mem={memory} customer={customer} job={job} /></div>
 

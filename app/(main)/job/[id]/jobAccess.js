@@ -25,10 +25,11 @@ function isMissingColumn(err) {
 
 export async function loadJob(sb, jobId) {
   const base = 'id, status, priority, scheduled_at, tech_id, customer_id';
-  const relations = ', customers(name, address, phone, email), techs(name)';
+  const relations = ', customers(name, address, phone, email, type, tags, do_not_service, cb_number, lifetime_jobs, last_job_completed), techs(name)';
   // Tier 1: everything. Tier 2: drop the newest cost columns (migration 73 may not be live yet)
   // but keep all the rich dispatch fields. Tier 3: bare base — last resort so the page still renders.
-  const richFields = ', job_number, job_type, amount, tech_name, tech_email, enroute_at, started_at, completed_at, notes, access_notes, job_class, estimate_outcome, dispatchme_job_id, converted_to_job_id, converted_from_job_id, project_id, project_unit_id, lat, lng';
+  // must_tell_tech / customer_promise / arrival_window / triage = the field-context the cockpit header surfaces.
+  const richFields = ', job_number, job_type, amount, tech_name, tech_email, enroute_at, started_at, completed_at, notes, access_notes, must_tell_tech, customer_promise, arrival_window, triage, job_class, estimate_outcome, dispatchme_job_id, converted_to_job_id, converted_from_job_id, project_id, project_unit_id, lat, lng';
   const costFields = ', material_cost_cents, dispatch_fee_cents';
   const tiers = [
     `${base}${richFields}${costFields}${relations}`,
