@@ -2,7 +2,7 @@
 
 // Tech-side Team Chat (HTML chat pane) — simple: the #sheetz team feed + a post box. Not the office
 // Comms Desk (delete / proposed-actions / customer threads). Read the team, drop a line, see Hank's chime.
-import { useRef, useState, useTransition } from 'react';
+import { useRef, useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { postChat } from './actions';
 
@@ -14,6 +14,12 @@ export default function TechChat({ messages = [], me = '' }) {
   const formRef = useRef(null);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
+  // Auto-sync: re-pull the feed every 20s so new #sheetz chatter shows up without a manual refresh.
+  useEffect(() => { const id = setInterval(() => router.refresh(), 20000); return () => clearInterval(id); }, [router]);
+  // Blink: messages that weren't on screen at mount/last-render get a one-time highlight.
+  const seen = useRef(new Set(messages.map((m) => m.id)));
+  const isNew = (id) => !seen.current.has(id);
+  useEffect(() => { messages.forEach((m) => seen.current.add(m.id)); });
 
   const send = (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); setMsg(null); start(async () => { const r = await postChat(fd); setMsg(r); if (r.ok) { formRef.current?.reset(); router.refresh(); } }); };
 
@@ -38,8 +44,8 @@ export default function TechChat({ messages = [], me = '' }) {
           return (
             <div key={m.id} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', flexDirection: mine ? 'row-reverse' : 'row' }}>
               <div style={{ width: 30, height: 30, borderRadius: 999, flexShrink: 0, background: isHank ? 'var(--purple, #9c64f4)' : mine ? 'var(--amber)' : 'var(--surface-3)', color: isHank ? '#fff' : mine ? '#1a1206' : 'var(--fg-1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 11 }}>{isHank ? '🪠' : initials(m.from_name)}</div>
-              <div style={{ maxWidth: '80%', padding: '8px 11px', borderRadius: 12, background: mine ? 'rgba(255,179,0,0.12)' : 'var(--surface-2)', border: `1px solid ${isHank ? 'var(--purple, #9c64f4)' : 'var(--border)'}` }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: isHank ? 'var(--purple, #9c64f4)' : 'var(--fg-2)' }}>{m.from_name || 'Someone'} <span className="muted" style={{ fontWeight: 400 }}>· {fmt(m.created_at)}</span></div>
+              <div className={isNew(m.id) && !mine ? 'cb-blink' : ''} style={{ maxWidth: '80%', padding: '8px 11px', borderRadius: 12, background: mine ? 'rgba(255,179,0,0.12)' : 'var(--surface-2)', border: `1px solid ${isHank ? 'var(--purple, #9c64f4)' : 'var(--border)'}` }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: isHank ? 'var(--purple, #9c64f4)' : 'var(--fg-2)' }}>{m.from_name || 'Someone'}{isNew(m.id) && !mine ? <span style={{ color: 'var(--amber)', fontSize: 9, fontWeight: 800 }}> · NEW</span> : ''} <span className="muted" style={{ fontWeight: 400 }}>· {fmt(m.created_at)}</span></div>
                 <div style={{ fontSize: 13.5, marginTop: 2, whiteSpace: 'pre-wrap' }}>{m.body}</div>
               </div>
             </div>
