@@ -16,7 +16,7 @@ function statusLabel(v) {
 // `tab` highlights the current tab in a compact sub-nav (so it's reachable even off the iPad rail).
 const TABS = [
   ['Overview', ''], ['Forms', '/forms'], ['Proof', '/photos'], ['Estimate', '/estimate'],
-  ['Invoice', '/invoice'], ['Parts/PO', '/parts'], ['Prices', '/prices'], ['Equipment', '/equipment'], ['History', '/history'],
+  ['Invoice', '/invoice'], ['Parts/PO', '/parts'], ['Pricebook', '/pricebook'], ['Equipment', '/equipment'], ['History', '/history'],
 ];
 
 export default function JobHeader({ job, customer = {}, tab = 'Overview' }) {

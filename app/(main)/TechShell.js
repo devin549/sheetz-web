@@ -96,7 +96,7 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
         { icon: '🧾', label: 'Estimate', href: `/job/${curId}/estimate` },
         { icon: '💳', label: 'Invoice', href: `/job/${curId}/invoice` },
         { icon: '📦', label: 'Parts/PO', href: `/job/${curId}/parts` },
-        { icon: '📖', label: 'Prices', href: `/job/${curId}/prices` },
+        { icon: '📖', label: 'Pricebook', href: `/job/${curId}/pricebook` },
         { icon: '🔧', label: 'Equipment', href: `/job/${curId}/equipment` },
         { icon: '🕑', label: 'History', href: `/job/${curId}/history` },
       ] }]
