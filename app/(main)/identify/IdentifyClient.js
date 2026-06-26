@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { identifyPart } from './actions';
+import { identifyPart, learnPartFix } from './actions';
 import { recordSale } from '../job/[id]/pricebook/actions';
 import InAppCamera from '../job/[id]/InAppCamera';
 
@@ -14,10 +14,13 @@ export default function IdentifyClient({ activeJobId, activeJobNumber, showCost 
   const [res, setRes] = useState(null);
   const [msg, setMsg] = useState(null);
   const [added, setAdded] = useState({});
+  const [learned, setLearned] = useState({});
 
   const onPhoto = (file) => { setCam(false); setRes(null); setMsg('🔎 Identifying…'); start(async () => { const r = await identifyPart(toFD(file)); if (r.ok) { setRes(r); setMsg(null); } else setMsg(r.msg); }); };
   const toFD = (file) => { const fd = new FormData(); fd.set('photo', file); return fd; };
-  const addToJob = (fix) => start(async () => { const r = await recordSale(activeJobId, [{ itemId: fix.id, quantity: 1, soldPrice: fix.price }]); setMsg(r.msg); if (r.ok) setAdded((a) => ({ ...a, [fix.id]: true })); });
+  // Adding the fix to the job also teaches the library (confirming it's the right part).
+  const addToJob = (fix) => start(async () => { const r = await recordSale(activeJobId, [{ itemId: fix.id, quantity: 1, soldPrice: fix.price }]); setMsg(r.msg); if (r.ok) { setAdded((a) => ({ ...a, [fix.id]: true })); learnPartFix(res.guess, fix.id).catch(() => {}); setLearned((l) => ({ ...l, [fix.id]: true })); } });
+  const teach = (fix) => start(async () => { const r = await learnPartFix(res.guess, fix.id); setMsg(r.msg); if (r.ok) setLearned((l) => ({ ...l, [fix.id]: true })); });
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -42,9 +45,14 @@ export default function IdentifyClient({ activeJobId, activeJobNumber, showCost 
                       {showCost && f.marginHealth && <span className="pill" style={{ fontSize: 9.5, color: (HEALTH[f.marginHealth] || [])[1] }}>{(HEALTH[f.marginHealth] || [])[0]}{f.marginPct != null ? ` · ${f.marginPct}%` : ''}</span>}
                     </div>
                     <div style={{ fontWeight: 800, color: 'var(--green)', fontSize: 16 }}>{money(f.price)}</div>
-                    {activeJobId && (added[f.id]
-                      ? <span className="pill" style={{ fontSize: 10, color: 'var(--green)' }}>✓ added</span>
-                      : <button onClick={() => addToJob(f)} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>➕ Job #{activeJobNumber || ''}</button>)}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                      {activeJobId && (added[f.id]
+                        ? <span className="pill" style={{ fontSize: 10, color: 'var(--green)' }}>✓ added</span>
+                        : <button onClick={() => addToJob(f)} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>➕ Job #{activeJobNumber || ''}</button>)}
+                      {learned[f.id]
+                        ? <span className="pill" style={{ fontSize: 9, color: 'var(--purple, #a78bfa)' }}>🧠 learned</span>
+                        : <button onClick={() => teach(f)} disabled={pending} className="pill" style={{ cursor: 'pointer', fontSize: 9.5, color: 'var(--fg-3)' }}>✓ that’s it</button>}
+                    </div>
                   </div>
                 ))}
               </div>
