@@ -5,7 +5,9 @@
 // browser before it goes up, so the call stays fast and cheap. Reading is separate from saving — snapping
 // the plate to the equipment registry stays on the existing EquipmentSnap.
 import { useRef, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { scanDataPlate } from './visionActions';
+import { saveEquipment } from './equipActions';
 
 function fileToScaledDataUrl(file, max = 1100) {
   return new Promise((resolve) => {
@@ -24,11 +26,19 @@ function fileToScaledDataUrl(file, max = 1100) {
 
 const FUEL_COLOR = { 'NATURAL GAS': '#4f9bff', 'LP / PROPANE': '#ff8a3d', 'ELECTRIC': '#4caf50', 'UNKNOWN': 'var(--fg-3)' };
 
-export default function PlateScanner({ jobType = '' }) {
+export default function PlateScanner({ jobType = '', jobId = '' }) {
   const inputRef = useRef();
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [plate, setPlate] = useState(null);
   const [err, setErr] = useState(null);
+  const [saved, setSaved] = useState(null);
+
+  const save = () => start(async () => {
+    const r = await saveEquipment(jobId, plate, jobType);
+    setSaved(r.msg);
+    if (r.ok) router.refresh();
+  });
 
   const onFile = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -75,7 +85,12 @@ export default function PlateScanner({ jobType = '' }) {
             ))}
           </div>
           {plate.notes && <div className="muted" style={{ fontSize: 11, marginTop: 8, fontStyle: 'italic' }}>📝 {plate.notes}</div>}
-          <div className="muted" style={{ fontSize: 10.5, marginTop: 8 }}>Verify against the plate. Snap it above to save the photo to this location’s equipment.</div>
+          {!saved ? (
+            <button onClick={save} disabled={pending} style={{ width: '100%', marginTop: 10, padding: '10px', borderRadius: 9, border: '1px solid var(--green)', background: 'rgba(76,175,80,.1)', color: 'var(--green)', fontWeight: 800, fontSize: 13, cursor: pending ? 'default' : 'pointer' }}>
+              💾 Save to this location’s equipment
+            </button>
+          ) : <div style={{ fontSize: 12, marginTop: 10, color: 'var(--green)', fontWeight: 700 }}>✓ {saved}</div>}
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 8 }}>Saving keeps the model/serial/fuel on file. Snap the plate above to also save the photo.</div>
         </div>
       )}
     </div>
