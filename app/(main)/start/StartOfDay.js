@@ -4,9 +4,9 @@
 // celebration FX), Last-Shift Scorecard, Hank's Coach/Roast (live tone dial, PRIVATE to the tech),
 // Today's Briefing, Rankings, Win Condition, and the "I know today's plan" acknowledgement that routes
 // to My Day. iPad-first: cream/gold, compact, big tap targets, fun badges, no wasted space.
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { saveShift } from './actions';
+import { saveShift, coachText } from './actions';
 import { coachMessage, TONES, tonesForLevel } from '@/lib/roast';
 import { rankChip } from '@/lib/rankFx';
 import RankFx from '../RankFx';
@@ -45,7 +45,17 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
   const [showCheck, setShowCheck] = useState(false);
   const first = String(name || 'Tech').trim().split(/\s+/)[0];
 
-  const coach = useMemo(() => coachMessage({ name, tone, scorecard, level: roastLevel }), [name, tone, scorecard, roastLevel]);
+  // Instant deterministic line, then live-Claude swaps in when it returns (fails soft → keep deterministic).
+  const det = useMemo(() => coachMessage({ name, tone, scorecard, level: roastLevel }), [name, tone, scorecard, roastLevel]);
+  const [ai, setAi] = useState(null);
+  const [aiThinking, setAiThinking] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setAi(null); setAiThinking(true);
+    coachText({ scorecard, tone }).then((r) => { if (!cancelled) { setAi(r && r.body ? r : null); setAiThinking(false); } }).catch(() => { if (!cancelled) setAiThinking(false); });
+    return () => { cancelled = true; };
+  }, [tone, scorecard]);
+  const coach = ai || det;
   const sc = scorecard || {};
   const welcomeBack = (lastWorked?.daysOff || 0) >= 1;
 
@@ -140,7 +150,11 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
         </div>
         <div className="muted" style={{ fontSize: 10, marginTop: -2, marginBottom: 8 }}>Roast level <strong style={{ color: 'var(--amber)' }}>{roastLevel}</strong> — set it in <a href="/account">Settings</a> (locks after you pick).</div>
         <div className="card" style={{ borderLeft: `3px solid ${coach.clean ? 'var(--green)' : 'var(--amber)'}`, background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 7%, var(--surface-1)) 0%, var(--surface-1) 100%)' }}>
-          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 5 }}>{coach.emoji} {coach.headline}</div>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 5, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>{coach.emoji} {coach.headline}</span>
+            {ai && <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--purple)', background: 'color-mix(in oklab, var(--purple) 16%, var(--surface-1))', border: '1px solid var(--purple)', padding: '1px 6px', borderRadius: 20 }}>✨ LIVE</span>}
+            {aiThinking && !ai && <span style={{ fontSize: 9, color: 'var(--fg-3)' }}>Hank’s thinking…</span>}
+          </div>
           <div style={{ fontSize: 14, lineHeight: 1.5, color: 'var(--fg-1)' }}>{coach.body}</div>
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 11px', borderRadius: 9, background: 'color-mix(in oklab, var(--amber) 12%, var(--surface-2))', border: '1px solid var(--amber-dim)' }}>
             <span style={{ fontSize: 16 }}>🎯</span>
