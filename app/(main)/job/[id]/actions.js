@@ -227,12 +227,25 @@ export async function reviewPhoto(photoId, jobId, result, failReason, note, anno
       });
     } catch (_) { /* annotations table optional — fail soft */ }
   }
+  // A FAIL auto-opens a QA-Hold correction so the closeout block + corrections queue never depend on a
+  // manager also clicking the button; a PASS auto-resolves any open hold on that same photo. Dedup + soft.
+  if (reviewRow) {
+    try {
+      if (result === 'fail') {
+        const { data: open } = await ctx.sb.from('job_corrections').select('id').eq('orig_job_id', String(ctx.job.id)).eq('photo_id', cleanPhoto).eq('status', 'open').maybeSingle();
+        if (!open) await ctx.sb.from('job_corrections').insert({ orig_job_id: String(ctx.job.id), photo_id: cleanPhoto, review_id: reviewRow.id, fail_reason: reason, manager_note: cleanText(note, 500) || null, created_by: ctx.user.id, created_by_name: ctx.profile?.name || ctx.user.email });
+      } else {
+        await ctx.sb.from('job_corrections').update({ status: 'resolved', resolved_by_name: ctx.profile?.name || ctx.user.email, resolved_at: new Date().toISOString() }).eq('orig_job_id', String(ctx.job.id)).eq('photo_id', cleanPhoto).eq('status', 'open');
+      }
+    } catch (_) { /* job_corrections optional → manual create/resolve still works */ }
+  }
   try {
     await ctx.sb.from('audit_log').insert({
       actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role,
       action: 'qa.' + result, entity: 'photo', entity_id: cleanPhoto, detail: { job_id: String(ctx.job.id), reason },
     });
   } catch (_) {}
+  revalidatePath('/corrections');
   revalidatePath(`/job/${ctx.job.id}`);
   revalidatePath('/supervisor/jobs');
   return { ok: true, msg: result === 'pass' ? 'Marked pass.' : 'Marked fail — closeout stays blocked until it’s fixed.' };
