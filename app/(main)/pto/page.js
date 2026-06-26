@@ -1,5 +1,12 @@
 import { requirePerm } from '@/lib/guard';
+import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
+import { can } from '@/lib/roles';
 import RequestVacation from './RequestVacation';
+import PtoApprovals from './PtoApprovals';
+
+const fmtD = (s) => { if (!s) return ''; try { return new Date(s + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }); } catch { return s; } };
+const KIND_ICON = { vacation: '🏖', sick: '🤒', personal: '🙋', unpaid: '💸' };
+const REQ_COLOR = { pending: 'var(--amber)', approved: 'var(--green)', denied: 'var(--red)' };
 
 export const dynamic = 'force-dynamic';
 
@@ -66,8 +73,17 @@ function HolidayRow({ h, paid }) {
 }
 
 export default async function Pto() {
-  await requirePerm('seeOwnPayOnly', 'seeOwnOnly', 'changeStatus', 'seeReports');
+  const { user, role } = await requirePerm('seeOwnPayOnly', 'seeOwnOnly', 'changeStatus', 'seeReports');
   const pct = Math.min(100, (pto.unexcused / pto.unexcusedMax) * 100);
+
+  // Real time-off requests: the tech's own + (for approvers) the pending queue. Fail-soft.
+  const isApprover = can(role, 'manageUsers') || can(role, 'assignJobs') || can(role, 'seeCrew');
+  let myReqs = [], pendingReqs = [];
+  if (isAdminConfigured) {
+    const sb = getSupabaseAdmin();
+    try { const { data } = await sb.from('time_off_requests').select('id, kind, start_date, end_date, status, reason, decided_by_name, decision_note').eq('user_id', user.id).order('created_at', { ascending: false }).limit(12); myReqs = data || []; } catch (_) {}
+    if (isApprover) { try { const { data } = await sb.from('time_off_requests').select('id, tech_name, kind, start_date, end_date, reason').eq('status', 'pending').order('start_date', { ascending: true }).limit(40); pendingReqs = data || []; } catch (_) {} }
+  }
 
   return (
     <div className="wrap" style={{ maxWidth: 760 }}>
@@ -104,6 +120,30 @@ export default async function Pto() {
       </div>
 
       <div style={{ marginTop: 14 }}><RequestVacation /></div>
+
+      {/* Manager: pending approvals */}
+      {isApprover && pendingReqs.length > 0 && (
+        <div className="card" style={{ marginTop: 14, borderLeft: '3px solid var(--amber)' }}>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>🗳 Pending approvals · {pendingReqs.length}</div>
+          <PtoApprovals items={pendingReqs.map((r) => ({ ...r, label: `${KIND_ICON[r.kind] || ''} ${r.tech_name || 'Tech'} · ${fmtD(r.start_date)}${r.end_date ? `–${fmtD(r.end_date)}` : ''}${r.reason ? ` — ${r.reason}` : ''}` }))} />
+        </div>
+      )}
+
+      {/* My real requests */}
+      {myReqs.length > 0 && (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>📋 My time-off requests</div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {myReqs.map((r) => (
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 13 }}>{KIND_ICON[r.kind] || '📅'}</span>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>{fmtD(r.start_date)}{r.end_date ? `–${fmtD(r.end_date)}` : ''}<span className="muted"> · {r.kind}{r.reason ? ` · ${r.reason}` : ''}</span>{r.status !== 'pending' && r.decided_by_name ? <span className="muted"> · by {r.decided_by_name}{r.decision_note ? ` (${r.decision_note})` : ''}</span> : ''}</div>
+                <span className="pill" style={{ fontSize: 10, color: REQ_COLOR[r.status], border: `1px solid ${REQ_COLOR[r.status]}` }}>{r.status.toUpperCase()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <h3 style={{ margin: '16px 0 8px', fontSize: 13, color: 'var(--amber-dim)', textTransform: 'uppercase' }}>Pending Requests</h3>
       <div className="card">
