@@ -13,7 +13,7 @@ import Watermark from './Watermark';
 
 // Helper-safe tabs only. Money, pricing, estimates, invoices, shop-issue are intentionally absent.
 const TABS = [
-  { icon: '🏠', label: 'Today', href: '/my-day' },
+  { icon: '🏠', label: 'Today', href: '/helper' },
   { icon: '📸', label: 'Photos', href: '/photos-helper' },
   { icon: '💬', label: 'Chat', href: '/messages' },
   { icon: '🪠', label: 'Hank', href: '/hank' },
