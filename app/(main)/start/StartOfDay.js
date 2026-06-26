@@ -36,7 +36,7 @@ function RankRow({ label, chip }) {
   );
 }
 
-export default function StartOfDay({ name, lastWorked, scorecard, rankings, fieldSize, overallRank, fx, jobs = [], win, onCall, saved, roastLevel = 'PG', sodGate = null }) {
+export default function StartOfDay({ name, lastWorked, scorecard, rankings, fieldSize, overallRank, fx, jobs = [], win, onCall, saved, roastLevel = 'PG', sodGate = null, bounties = [] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const allowedTones = tonesForLevel(roastLevel);
@@ -220,6 +220,24 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
         <div style={{ fontSize: 10, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 800 }}>🎯 Today's Win Condition</div>
         <div style={{ fontSize: 16, fontWeight: 800, marginTop: 5, lineHeight: 1.45 }}>{win}</div>
       </div>
+
+      {/* 6.5 · TODAY'S BOUNTIES — the office's chase list (full board on Races) */}
+      {bounties.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <SectionLabel>💰 Today's Bounties · {bounties.length} live</SectionLabel>
+          <div style={{ display: 'grid', gap: 7 }}>
+            {bounties.map((b) => (
+              <a key={b.id} href="/races" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 20 }}>{b.icon || '🎯'}</span>
+                <span style={{ flex: 1, fontWeight: 700, fontSize: 13, color: 'var(--fg-1)' }}>{b.title}</span>
+                {(b.amount_cents != null || b.points != null) && <span className="pill" style={{ color: 'var(--green)' }}>{[b.amount_cents != null ? '$' + Math.round(b.amount_cents / 100) : '', b.points != null ? `${b.points} XP` : ''].filter(Boolean).join(' · ')}</span>}
+                <span style={{ color: 'var(--amber)', fontWeight: 800 }}>›</span>
+              </a>
+            ))}
+          </div>
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>Tap any bounty for the full board on Races.</div>
+        </div>
+      )}
 
       {/* 7 · ACKNOWLEDGE */}
       <div style={{ marginTop: 14 }}>

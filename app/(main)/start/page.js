@@ -98,8 +98,12 @@ export default async function Start() {
   } catch (_) {}
 
   const rankings = ranks.available ? ranks.metrics : null;
+  // Active bounties from the office (same catalog the Races board uses) — surfaced here to chase at sign-in.
+  let bounties = [];
+  try { const { data } = await sb.from('awards').select('id, title, icon, amount_cents, points').eq('active', true).in('kind', ['bounty', 'weekly']).order('sort', { ascending: true }).limit(6); bounties = data || []; } catch (_) {}
   return (
     <StartOfDay
+      bounties={bounties}
       sodGate={{ sod: sodRow || {}, tools: sodTools, handbook: sodHandbook, helper: sodHelper }}
       name={name}
       lastWorked={{ ...lw, pretty: prettyDay(lw.dayKey) }}
