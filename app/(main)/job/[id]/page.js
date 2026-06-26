@@ -10,6 +10,7 @@ import JobParts from './JobParts';
 import JobForms from './JobForms';
 import JobFlow from './JobFlow';
 import MessageOffice from './MessageOffice';
+import ReferToSales from './ReferToSales';
 import EstimatePanel from './EstimatePanel';
 import DispatchMeRef from './DispatchMeRef';
 import JobCosts from './JobCosts';
@@ -265,6 +266,9 @@ export default async function JobDetail({ params }) {
       {(canAct || job.project_id) && <LinkToProject jobId={id} currentProjectId={job.project_id} currentProjectName={projName} currentUnitLabel={unitLabel} canLink={can(role, 'assignJobs') || can(role, 'createJobs') || can(role, 'manageUsers')} />}
 
       {canAct && <div style={{ marginTop: 8 }}><MessageOffice jobId={id} /></div>}
+
+      {/* 💡 Refer a bigger opportunity (FloodBusterz / Reline) to Sales — internal handoff, customer not contacted. */}
+      {canAct && !isEstimate && <ReferToSales jobId={id} customerName={(customer && customer.name) || job.customer_name || ''} />}
 
       {isEstimate && <EstimatePanel jobId={id} outcome={job.estimate_outcome} convertedToJobId={job.converted_to_job_id} canAct={canAct} />}
 
