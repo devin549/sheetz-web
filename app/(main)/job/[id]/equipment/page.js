@@ -1,6 +1,7 @@
 import { loadCockpit } from '../cockpit';
 import JobHeader from '../JobHeader';
 import EquipmentSnap from './EquipmentSnap';
+import PlateScanner from './PlateScanner';
 import { canUploadPhotos } from '../jobAccess';
 
 export const dynamic = 'force-dynamic';
@@ -35,6 +36,7 @@ export default async function EquipmentTab({ params }) {
       <div className="card" style={{ marginTop: 10 }}>
         <div style={{ fontWeight: 800, marginBottom: 6 }}>🔧 Equipment at this location</div>
         <div className="muted" style={{ fontSize: 11.5 }}>Data plates captured at this address. Snap the model/serial so warranty + age are on file for next time.</div>
+        {canUploadPhotos(c.role) && <PlateScanner jobType={c.job.job_type || ''} />}
         {canUploadPhotos(c.role) && <EquipmentSnap jobId={params.id} />}
       </div>
 
