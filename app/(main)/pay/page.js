@@ -2,6 +2,7 @@ import { requirePerm } from '@/lib/guard';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { computeWeeklyPay, CB_STRUCTURE, dollars } from '@/lib/pay';
 import { nyWeekWindow, weeklyLeaderboard } from '@/lib/leaderboard';
+import { marginVerdict, MARGIN_TARGET } from '@/lib/marginCoach';
 import RequestAdvance from './RequestAdvance';
 
 export const dynamic = 'force-dynamic';
@@ -15,16 +16,20 @@ export default async function Pay() {
 
   // Compute the tech's REAL week from jobs + their pay profile + the CB structure. Commission techs
   // are commission-only (hourly = PTO/holiday). Award grants this week feed bonuses/deductions.
-  let pay = null, structure = CB_STRUCTURE, rank = null, weekLabel = '';
+  let pay = null, structure = CB_STRUCTURE, rank = null, weekLabel = '', margins = [];
+  const roastLevel = profile.roastLevel || 'PG';
   if (isAdminConfigured && profile.tech_id) {
     const sb = getSupabaseAdmin();
     const { startISO, endISO } = nyWeekWindow(new Date());
     weekLabel = new Date(startISO).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' – ' + new Date(Date.parse(endISO) - 86400000).toLocaleDateString([], { month: 'short', day: 'numeric' });
-    let jobs = [];
-    let jq = await sb.from('jobs').select('id, amount, status, material_cost_cents, dispatch_fee_cents')
+    let jobs = [], jobDetails = [];
+    let jq = await sb.from('jobs').select('id, amount, status, material_cost_cents, dispatch_fee_cents, job_type, customers(name)')
       .eq('tech_id', profile.tech_id).in('status', DONE).gte('scheduled_at', startISO).lt('scheduled_at', endISO);
-    if (jq.error) jq = await sb.from('jobs').select('id, amount, status').eq('tech_id', profile.tech_id).in('status', DONE).gte('scheduled_at', startISO).lt('scheduled_at', endISO); // pre-73
+    if (jq.error) jq = await sb.from('jobs').select('id, amount, status, job_type, customers(name)').eq('tech_id', profile.tech_id).in('status', DONE).gte('scheduled_at', startISO).lt('scheduled_at', endISO); // pre-73
     jobs = (jq.data || []).map((j) => ({ revenue_cents: Math.round(Number(j.amount || 0) * 100), material_cost_cents: j.material_cost_cents || 0, dispatch_fee_cents: j.dispatch_fee_cents || 0 }));
+    jobDetails = (jq.data || []).map((j) => ({ id: j.id, customer: (j.customers && j.customers.name) || 'Customer', type: j.job_type || 'Job', amount: Number(j.amount) || 0, materialCost: (j.material_cost_cents || 0) / 100, dispatchFee: (j.dispatch_fee_cents || 0) / 100 }));
+    // Per-job margin verdict (🌽 Corn ≥target / 💩 Turd below + $ to hit it). Roast heat = the tech's level.
+    margins = jobDetails.map((j) => ({ ...j, verdict: marginVerdict({ revenue: j.amount, materialCost: j.materialCost, dispatchFee: j.dispatchFee, level: roastLevel, name }) })).filter((j) => j.amount > 0);
 
     let prof = { pay_type: 'commission', commission_pct: 0, hourly_rate: 0, weekly_salary: 0, structure: 'cb' };
     try { const { data } = await sb.from('pay_profiles').select('*').eq('tech_id', profile.tech_id).maybeSingle(); if (data) prof = data; } catch (_) {}
@@ -109,6 +114,68 @@ export default async function Pay() {
               Commission techs are commission-only — the hourly base is PTO/holiday pay, never stacked on job time. Structure: {structure.label || 'Clog Busterz'}. Final pay is approved in the weekly payroll run.
             </div>
           </div>
+
+          {/* 📊 PER-JOB MARGIN — 🟢 Crown territory ≥target / 🔴 below + $ to hit it (lib/marginCoach) */}
+          {(() => {
+            const judged = margins.filter((m) => m.verdict);
+            const corns = judged.filter((m) => m.verdict.tier === 'corn');
+            const turds = judged.filter((m) => m.verdict.tier === 'turd');
+            const unjudged = margins.filter((m) => !m.verdict);
+            if (!margins.length) return null;
+            return (
+              <>
+                <div className="card" style={{ marginTop: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <h3 style={{ margin: 0, fontSize: 13, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Per-job margin · this week</h3>
+                    <span className="pill" style={{ fontSize: 9.5, color: 'var(--green)' }}>🌽 {corns.length}</span>
+                    <span className="pill" style={{ fontSize: 9.5, color: 'var(--red)' }}>💩 {turds.length}</span>
+                  </div>
+                  <div className="muted" style={{ fontSize: 11, marginBottom: 8 }}>🟢 GREEN ≥{MARGIN_TARGET}% = Crown territory (Corn bonus). 🔴 RED below — with the $ to get there.</div>
+                  <div style={{ display: 'grid', gap: 5 }}>
+                    {judged.map((m) => {
+                      const corn = m.verdict.tier === 'corn';
+                      return (
+                        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderRadius: 8, background: 'var(--surface-2)', borderLeft: `3px solid ${corn ? 'var(--green)' : 'var(--red)'}` }}>
+                          <span style={{ fontSize: 14 }}>{corn ? '🟢' : '🔴'}</span>
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>{m.customer}{m.type ? ` · ${m.type}` : ''} <span className="muted">· {dollars(Math.round(m.amount * 100))}</span></span>
+                          <span style={{ fontWeight: 800, fontSize: 12.5, color: corn ? 'var(--green)' : 'var(--red)' }}>{m.verdict.pct}%{!corn && m.verdict.action ? ` · ${m.verdict.action.match(/\+\$[\d,]+/)?.[0] || ''}` : ''}</span>
+                        </div>
+                      );
+                    })}
+                    {unjudged.map((m) => (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderRadius: 8, background: 'var(--surface-2)' }}>
+                        <span style={{ fontSize: 14 }}>⚪</span>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>{m.customer}{m.type ? ` · ${m.type}` : ''} <span className="muted">· {dollars(Math.round(m.amount * 100))}</span></span>
+                        <span className="muted" style={{ fontSize: 11 }}>enter material cost</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 🌽👑 / 💩🏆 CORN + TURD PAY COACH — praise the greens, roast the reds (lib/marginCoach + roast level) */}
+                {(corns.length > 0 || turds.length > 0) && (
+                  <div className="card" style={{ marginTop: 12, borderTop: '2px solid var(--amber)' }}>
+                    <h3 style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '.05em' }}>🌽👑 Corn + 💩🏆 Turd · Pay Coach</h3>
+                    {corns.length > 0 && (
+                      <div style={{ padding: '9px 11px', borderRadius: 9, background: 'rgba(76,175,80,.08)', border: '1px solid var(--green)', marginBottom: 8 }}>
+                        <div style={{ fontWeight: 800, color: 'var(--green)', fontSize: 12.5 }}>🌽👑 Corn Crown — what you killed</div>
+                        <div style={{ fontSize: 12, marginTop: 3 }}>{corns.length} job{corns.length > 1 ? 's' : ''} in Crown territory ({corns.map((c) => `${c.customer} ${c.verdict.pct}%`).slice(0, 3).join(' · ')}). That’s the Corn bonus zone — keep stacking these.</div>
+                      </div>
+                    )}
+                    {turds.length > 0 && (
+                      <div style={{ padding: '9px 11px', borderRadius: 9, background: 'rgba(239,83,80,.08)', border: '1px solid var(--red)' }}>
+                        <div style={{ fontWeight: 800, color: 'var(--red)', fontSize: 12.5 }}>💩🏆 Golden Turd — what bled profit</div>
+                        {turds.slice(0, 3).map((t) => (
+                          <div key={t.id} style={{ fontSize: 12, marginTop: 4 }}><strong>{t.customer} ({t.verdict.pct}%)</strong> — {t.verdict.body} {t.verdict.action}</div>
+                        ))}
+                        <div className="muted" style={{ fontSize: 10.5, marginTop: 6 }}>Roast level: {roastLevel} · set in Settings · never shown to customers.</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </>
       )}
     </div>
