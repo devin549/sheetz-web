@@ -156,7 +156,7 @@ export default async function Races() {
           <div style={{ fontSize: 11, color: 'var(--amber-dim)', textTransform: 'uppercase', fontWeight: 700 }}>You are</div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
             <span className={fx.tier === 'king' ? 'cb-bob' : fx.tier === 'basement' ? 'cb-wobble' : ''} style={{ fontSize: 30 }}>{fx.badge}</span>
-            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 42, fontWeight: 800, color: fx.tier === 'king' ? '#ffd24a' : fx.tier === 'basement' ? '#c98a2a' : 'var(--amber)' }}>#{rank}</span>
+            <span className="cb-glow" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 42, fontWeight: 800, color: fx.tier === 'king' ? '#ffd24a' : fx.tier === 'basement' ? '#c98a2a' : 'var(--amber)' }}>#{rank}</span>
           </div>
           <div className="muted" style={{ fontSize: 13 }}>{you$} this week · {Number(rank) === 1 ? '🥇 leading the board' : fx.tier === 'basement' ? fx.sub : `need ${toFirst} more to take #1`}</div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
@@ -167,7 +167,7 @@ export default async function Races() {
       </div>
       <div style={{ marginTop: 8, display: 'grid', gap: 5 }}>
         {board.map((b) => (
-          <div key={b.n} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 9, background: b.me ? 'color-mix(in oklab, var(--amber) 14%, var(--surface-2))' : 'var(--surface-2)', border: '1px solid ' + (b.n === 1 ? '#ffd24a' : b.me ? 'var(--amber)' : 'var(--border)') }}>
+          <div key={b.n} className={b.n === 1 ? 'cb-gold' : b.n === 2 ? 'cb-silver' : b.n === 3 ? 'cb-bronze' : ''} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 9, background: b.me ? 'color-mix(in oklab, var(--amber) 14%, var(--surface-2))' : 'var(--surface-2)', border: '1px solid ' + (b.n === 1 ? '#ffd24a' : b.me ? 'var(--amber)' : 'var(--border)') }}>
             <span style={{ fontWeight: 800, color: b.n === 1 ? '#ffd24a' : 'var(--fg-2)', minWidth: 28 }}>#{b.n}</span>
             {rowBadge(b.n) && <span style={{ fontSize: 15 }}>{rowBadge(b.n)}</span>}
             <span style={{ flex: 1, fontWeight: b.me ? 800 : 600 }}>{b.who}{b.me ? ' (YOU)' : ''}</span>

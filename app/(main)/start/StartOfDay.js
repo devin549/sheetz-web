@@ -98,7 +98,7 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
           </div>
           {overallRank ? (
             <div style={{ textAlign: 'center', flexShrink: 0 }}>
-              <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 30, fontWeight: 800, color: ringColor }}>#{overallRank}</div>
+              <div className="cb-glow" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 30, fontWeight: 800, color: ringColor }}>#{overallRank}</div>
               <div style={{ fontSize: 9, color: 'var(--fg-3)', textTransform: 'uppercase' }}>of {fieldSize}</div>
             </div>
           ) : null}

@@ -70,7 +70,7 @@ export default async function Pay() {
           {/* HERO — real current-week gross + EWA advance */}
           <div className="card card-amber">
             <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700 }}>Current Week · {PAY_TYPE_LABEL[pay.payType] || pay.payType}</div>
-            <div style={{ fontSize: 44, fontWeight: 800, color: 'var(--amber)', fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.05 }}>{dollars(pay.gross)}</div>
+            <div className="cb-glow" style={{ fontSize: 44, fontWeight: 800, color: 'var(--amber)', fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.05 }}>{dollars(pay.gross)}</div>
             <div style={{ fontSize: 13, color: 'var(--fg-2)' }}>Gross (pre-tax) · {pay.jobsCount} job{pay.jobsCount === 1 ? '' : 's'} · {dollars(pay.revenue)} revenue run{rank ? ` · rank #${rank}` : ''}</div>
             {!pay.materialEntered && pay.jobsCount > 0 && (
               <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--amber)', background: 'rgba(255,179,0,.08)', border: '1px solid var(--amber-dim)', borderRadius: 8, padding: '7px 10px' }}>

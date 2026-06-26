@@ -117,6 +117,13 @@ html.cb-tech .topbar { display: none; }
 }
 .card-amber { border-color: var(--amber-dim); }
 
+/* badass: subtle amber bloom on the hero numbers (the emotional payload — pay total, rank #) */
+.cb-glow { text-shadow: 0 0 16px color-mix(in oklab, var(--amber) 45%, transparent), 0 0 2px color-mix(in oklab, var(--amber) 30%, transparent); }
+/* gold / silver / bronze metallic rows for the leaderboard top 3 */
+.cb-gold   { background: linear-gradient(135deg, color-mix(in oklab, #ffd24a 22%, var(--surface-2)), var(--surface-2)) !important; border-color: #ffd24a !important; }
+.cb-silver { background: linear-gradient(135deg, color-mix(in oklab, #cdd3da 18%, var(--surface-2)), var(--surface-2)) !important; border-color: #b9c0c8 !important; }
+.cb-bronze { background: linear-gradient(135deg, color-mix(in oklab, #cd7f32 18%, var(--surface-2)), var(--surface-2)) !important; border-color: #cd7f32 !important; }
+
 .job {
   display: grid; grid-template-columns: 64px 1fr auto; gap: 12px; align-items: center;
 }
