@@ -19,6 +19,8 @@ import LinkToProject from './LinkToProject';
 import { loadCustomerMemory } from '@/lib/customerMemory';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
 import JobContext from './JobContext';
+import JobSegments from './JobSegments';
+import { rollupJob } from '@/lib/segments';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -144,6 +146,13 @@ export default async function JobDetail({ params }) {
   }
   const needWarranty = ['warranty', 'insurance'].includes(String(job.job_class || '').toLowerCase()) || !!job.warranty_provider;
 
+  // Crew & segments rollup (P8) — fail-soft if migration 87 isn't applied yet.
+  let segments = [], jobReceipts = [];
+  try { const { data } = await sb.from('job_segments').select('*').eq('parent_job_id', id).order('created_at', { ascending: true }); segments = data || []; } catch (_) {}
+  try { const { data } = await sb.from('job_receipts').select('id, total_cents, billable, segment_id').eq('parent_job_id', id); jobReceipts = data || []; } catch (_) {}
+  const rollup = rollupJob({ job, segments, receipts: jobReceipts, photos, now: Date.now() });
+  const canDispatchSeg = can(role, 'assignJobs') || can(role, 'manageUsers') || can(role, 'seeCrew') || can(role, 'reassignJobs');
+
   const customer = job.customers || {};
   const techName = job.tech_name || job.techs?.name || 'Unassigned';
   const title = jobTitle(job);
@@ -249,6 +258,9 @@ export default async function JobDetail({ params }) {
       <div id="customer" style={{ scrollMarginTop: 70 }}><CustomerMemory mem={memory} customer={customer} job={job} /></div>
 
       <JobFlow jobId={id} status={st} reached={reached} gateReady={gateReady} gateMissing={gateMissing} nextHint={gateMissing[0] || ''} canAct={canAct} />
+
+      {/* Crew & segments (split / second tech / helper / parts run / return visit / unit) — rolls up here. */}
+      <JobSegments parentJobId={id} rollup={rollup} segments={segments} canDispatch={canDispatchSeg} />
 
       {(canAct || job.project_id) && <LinkToProject jobId={id} currentProjectId={job.project_id} currentProjectName={projName} currentUnitLabel={unitLabel} canLink={can(role, 'assignJobs') || can(role, 'createJobs') || can(role, 'manageUsers')} />}
 
