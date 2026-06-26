@@ -1,0 +1,117 @@
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
+import { requireHref } from '@/lib/guard';
+import { loadCustomerMemory } from '@/lib/customerMemory';
+
+export const dynamic = 'force-dynamic';
+const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const dial = (r) => { const d = String(r || '').replace(/[^\d]/g, ''); return d.length === 10 ? '+1' + d : d.length === 11 ? '+' + d : d ? '+' + d : ''; };
+const fmt = (iso) => { if (!iso) return ''; try { return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }); } catch { return ''; } };
+
+export default async function CustomerProfile({ params }) {
+  await requireHref('/customers');
+  if (!isAdminConfigured) return <div className="wrap"><div className="h1">Customer</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code>.</div></div>;
+  const sb = getSupabaseAdmin();
+  const { data: c, error } = await sb.from('customers').select('id, cb_number, st_customer_id, name, phone, email, address, type, do_not_service, do_not_mail, lifetime_revenue, lifetime_jobs, last_job_completed').eq('id', params.id).maybeSingle();
+  if (error || !c) notFound();
+
+  // Reuse the Customer Memory aggregator (timeline / photos / equipment / balance / membership / summary).
+  const mem = await loadCustomerMemory(sb, { customer_id: c.id, id: '__profile__' });
+  const timeline = (mem.timeline || []).filter((t) => String(t.id) !== '__profile__');
+  const tel = dial(c.phone);
+  const mapHref = c.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.address)}` : null;
+
+  const Stat = ({ label, value, color }) => (
+    <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', textAlign: 'center', minWidth: 0 }}>
+      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 17, fontWeight: 800, color: color || 'var(--fg-1)' }}>{value}</div>
+      <div className="muted" style={{ fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
+    </div>
+  );
+
+  return (
+    <div className="wrap" style={{ maxWidth: 900 }}>
+      <Link href="/customers" className="muted" style={{ fontSize: 12 }}>← Customers</Link>
+
+      {/* Header */}
+      <div className="card card-amber" style={{ marginTop: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+          <span className="h1" style={{ margin: 0 }}>{c.name}</span>
+          {c.cb_number && <span className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)', fontWeight: 800 }}>CB-{c.cb_number}</span>}
+          {c.type && <span className="pill">{c.type}</span>}
+          {mem.membership && <span className="pill" style={{ color: 'var(--green)' }}>⭐ {mem.membership}</span>}
+          {c.do_not_service && <span className="pill" style={{ color: 'var(--red)', border: '1px solid var(--red)' }}>⛔ DO NOT SERVICE</span>}
+        </div>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 8, fontSize: 13 }}>
+          {tel && <a href={`tel:${tel}`}>📞 {c.phone}</a>}
+          {c.email && <a href={`mailto:${c.email}`}>✉️ {c.email}</a>}
+          {mapHref && <a href={mapHref} target="_blank" rel="noreferrer">📍 {c.address}</a>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(110px,1fr))', gap: 8, marginTop: 12 }}>
+          <Stat label="Lifetime" value={money(c.lifetime_revenue)} color="var(--green-bright)" />
+          <Stat label="Jobs" value={c.lifetime_jobs || mem.timeline.length || 0} />
+          <Stat label="Open balance" value={money(mem.openBalance)} color={mem.openBalance > 0 ? 'var(--red)' : 'var(--green)'} />
+          <Stat label="Photos" value={mem.photoCount} />
+          <Stat label="Last job" value={c.last_job_completed ? fmt(c.last_job_completed) : (mem.lastServiced ? fmt(mem.lastServiced) : '—')} />
+        </div>
+      </div>
+
+      {/* What to know */}
+      {mem.summary?.length > 0 && (
+        <div className="card" style={{ marginTop: 10 }}>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>🧠 What to know</div>
+          {mem.summary.map((s, i) => <div key={i} className="muted" style={{ fontSize: 12.5, padding: '2px 0' }}>• {s}</div>)}
+        </div>
+      )}
+
+      {/* Job history */}
+      <div className="card" style={{ marginTop: 10 }}>
+        <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>🕑 Job history</div>
+        {timeline.length === 0 ? <span className="muted" style={{ fontSize: 12.5 }}>No jobs recorded yet.</span> : (
+          <div style={{ display: 'grid', gap: 6 }}>
+            {timeline.map((t) => (
+              <Link key={String(t.id)} href={t.href} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--border)', textDecoration: 'none', color: 'inherit' }}>
+                <span style={{ fontSize: 10, fontWeight: 800, color: t.kind === 'unpaid' ? 'var(--red)' : t.kind === 'estimate' ? 'var(--amber)' : 'var(--fg-3)', minWidth: 58, textTransform: 'uppercase' }}>{t.kind}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>{t.jobType}{t.badge && <span className="pill" style={{ marginLeft: 6, fontSize: 9, color: t.badge === 'warranty' ? 'var(--green)' : 'var(--red)' }}>{t.badge}</span>}</div>
+                  <div className="muted" style={{ fontSize: 11 }}>{fmt(t.date)}{t.tech ? ` · ${t.tech}` : ''}{t.photos ? ` · 📸 ${t.photos}` : ''}</div>
+                </div>
+                {t.amount != null && <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 13, color: t.paid === false ? 'var(--red)' : 'var(--fg-1)' }}>{money(t.amount)}{t.paid === false ? ' due' : ''}</span>}
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Photos by job */}
+      {mem.photoGroups?.length > 0 && (
+        <div className="card" style={{ marginTop: 10 }}>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>📸 Photos by visit</div>
+          {mem.photoGroups.map((g) => (
+            <div key={g.jobId} style={{ marginBottom: 10 }}>
+              <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>{g.jobType} · {fmt(g.date)}</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {g.items.map((p) => p.url ? <a key={p.id} href={p.url} target="_blank" rel="noreferrer"><img src={p.url} alt="" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 6, border: p.qa === 'fail' ? '2px solid var(--red)' : p.qa === 'pass' ? '2px solid var(--green)' : '1px solid var(--border)' }} /></a> : <div key={p.id} style={{ width: 64, height: 64, borderRadius: 6, background: 'var(--surface-2)', display: 'grid', placeItems: 'center' }}>{p.video ? '🎬' : '📷'}</div>)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Equipment */}
+      {mem.equipment?.length > 0 && (
+        <div className="card" style={{ marginTop: 10 }}>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>🔧 Equipment on file</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 8 }}>
+            {mem.equipment.map((e, i) => (
+              <div key={i} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                {e.url ? <img src={e.url} alt="" style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover', display: 'block' }} /> : <div style={{ aspectRatio: '4/3', display: 'grid', placeItems: 'center', background: 'var(--surface-2)' }}>🔧</div>}
+                <div style={{ padding: 8 }}><div style={{ fontWeight: 700, fontSize: 12 }}>{e.name}</div><div className="muted" style={{ fontSize: 10 }}>{fmt(e.date)}</div></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

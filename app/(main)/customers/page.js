@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 
@@ -66,7 +67,7 @@ export default async function Customers({ searchParams }) {
       )}
 
       {results.map((c) => (
-        <div key={c.id} className="card card-amber">
+        <Link key={c.id} href={`/customers/${c.id}`} className="card card-amber" style={{ display: 'block', textDecoration: 'none', color: 'inherit' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 800, fontSize: 15 }}>{c.name}</span>
             {c.cb_number && <span className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)', fontWeight: 800 }}>CB-{c.cb_number}</span>}
@@ -83,7 +84,7 @@ export default async function Customers({ searchParams }) {
             {c.last_job_completed ? ' · last ' + c.last_job_completed : ''}
             {c.st_customer_id ? ' · was ST# ' + c.st_customer_id : '  · ✨ added in CB'}
           </div>
-        </div>
+        </Link>
       ))}
 
       {results.length === 50 && (
