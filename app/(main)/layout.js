@@ -94,7 +94,7 @@ export default async function MainLayout({ children }) {
         game = { rank: haveRank ? lb.you.rank : 2, rankDelta: 0, streak: st.available ? st.streak : 6, powerHour: 47, level: xp.available ? xp.level : 7, levelPct: xp.available ? xp.pct : 84 };
       }
     } catch (_) {}
-    return <TechShell name={name} shells={shells} activeJob={activeJob} wmId={wmId} game={game}>{children}</TechShell>;
+    return <TechShell name={name} photoUrl={profile.photoUrl} shells={shells} activeJob={activeJob} wmId={wmId} game={game}>{children}</TechShell>;
   }
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', minHeight: 'calc(100vh - 58px)' }}>

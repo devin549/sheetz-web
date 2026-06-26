@@ -6,6 +6,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { setRoastLevel, unlockRoastLevel, savePrefs, reportLostDevice, setCommandCenterPin, setIpadPin, lockIpad } from './actions';
+import { setMyPhoto } from './photoActions';
 import { ROAST_LEVELS } from '@/lib/roast';
 import { createClient } from '@/lib/supabase/client';
 import ChangePassword from './ChangePassword';
@@ -55,6 +56,59 @@ const RESOURCES = [
   ['Training videos', '/training'],
   ["Plumber's Brain", '/hank'],
 ];
+
+// Resize an image file to a small square-ish JPEG data URL so the upload + the customer text stay light.
+function resizeToDataUrl(file, maxDim = 512, quality = 0.85) {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      const u = URL.createObjectURL(file);
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w >= h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
+        else if (h > w && h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(u);
+        resolve(c.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => { URL.revokeObjectURL(u); resolve(null); };
+      img.src = u;
+    } catch (e) { resolve(null); }
+  });
+}
+
+function PhotoUploader({ initialUrl, name }) {
+  const [url, setUrl] = useState(initialUrl || null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const initials = String(name || 'Tech').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  const onFile = async (file) => {
+    if (!file) return;
+    setBusy(true); setMsg(null);
+    const dataUrl = await resizeToDataUrl(file, 512, 0.85);
+    if (!dataUrl) { setBusy(false); setMsg({ ok: false, t: 'Could not read that image.' }); return; }
+    const r = await setMyPhoto(dataUrl);
+    if (r && r.ok) { setUrl(r.url); setMsg({ ok: true, t: 'Saved — that’s the face customers see.' }); }
+    else setMsg({ ok: false, t: (r && r.msg) || 'Upload failed.' });
+    setBusy(false);
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '4px 0 12px' }}>
+      {url
+        ? <img src={url} alt={name} style={{ width: 64, height: 64, borderRadius: 999, objectFit: 'cover', border: '2px solid var(--amber)' }} />
+        : <div style={{ width: 64, height: 64, borderRadius: 999, background: 'var(--amber)', color: '#1a1206', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 22 }}>{initials}</div>}
+      <div>
+        <label className="btn" style={{ cursor: 'pointer', fontSize: 13 }}>
+          {busy ? 'Uploading…' : url ? '📷 Change photo' : '📷 Add your photo'}
+          <input type="file" accept="image/*" capture="user" style={{ display: 'none' }} disabled={busy} onChange={(e) => onFile(e.target.files && e.target.files[0])} />
+        </label>
+        <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Shows on your iPad + rides in the customer’s “on my way” text.</div>
+        {msg && <div style={{ fontSize: 11, marginTop: 4, color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.t}</div>}
+      </div>
+    </div>
+  );
+}
 
 export default function AccountSettings({ user, profile, isManager, ccGated, ccPinSet, ipadPinReady, ipadPinSet, theme: initialTheme }) {
   const router = useRouter();
@@ -135,6 +189,7 @@ export default function AccountSettings({ user, profile, isManager, ccGated, ccP
 
       {/* 👤 PROFILE */}
       <Section title="👤 Profile">
+        <PhotoUploader initialUrl={profile.photoUrl} name={profile.name} />
         <Row label="Name">{profile.name || '—'}</Row>
         <Row label="Email">{user.email}</Row>
         <Row label="Role"><span style={{ color: profile.roleColor, fontWeight: 700 }}>{profile.roleLabel}</span></Row>

@@ -46,7 +46,7 @@ function switchShell(s) {
 
 const GAME = { rank: 2, rankDelta: 1, streak: 6, powerHour: 47, level: 7, levelPct: 84 };
 
-export default function TechShell({ name, shells = ['tech'], activeJob = null, game = GAME, wmId = '', children }) {
+export default function TechShell({ name, photoUrl = null, shells = ['tech'], activeJob = null, game = GAME, wmId = '', children }) {
   const path = usePathname();
   const [cust, setCust] = useState(false);
   const [peek, setPeek] = useState(false);
@@ -136,7 +136,11 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
           <button onClick={() => setCust((v) => !v)} title="Hand the iPad to the customer — hides pay/races/rank" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, color: '#fff', background: cust ? 'var(--surface-2)' : 'linear-gradient(135deg, #4caf50 0%, #1b5e20 100%)', border: cust ? '1px solid var(--green)' : 'none', borderRadius: 14, padding: '6px 12px', cursor: 'pointer' }}>
             🔒 {cust ? 'Exit customer view' : 'Hand to Customer'}
           </button>
-          <div className="av" style={{ width: 30, height: 30, borderRadius: 999, background: 'var(--amber)', color: '#1a1206', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>{initials}</div>
+          {photoUrl ? (
+            <img src={photoUrl} alt={name} className="av" style={{ width: 30, height: 30, borderRadius: 999, objectFit: 'cover', border: '1px solid var(--amber)' }} />
+          ) : (
+            <div className="av" style={{ width: 30, height: 30, borderRadius: 999, background: 'var(--amber)', color: '#1a1206', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>{initials}</div>
+          )}
           <form action="/auth/signout" method="post" style={{ display: 'inline' }}>
             <button type="submit" title="Sign out" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, color: 'var(--fg-3)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 14, padding: '5px 10px', cursor: 'pointer' }}>🚪 Out</button>
           </form>

@@ -20,7 +20,7 @@ export default async function Account() {
     <AccountSettings
       user={{ email: user.email, id: user.id }}
       profile={{
-        name: profile.name, email: profile.email, role: profile.role, roleLabel: meta.label, roleColor: meta.color,
+        name: profile.name, email: profile.email, role: profile.role, roleLabel: meta.label, roleColor: meta.color, photoUrl: profile.photoUrl,
         tech_id: profile.tech_id, payType: profile.prefs?.pay_type || null, phone: profile.phone,
         roastLevel: profile.roastLevel, roastLocked: profile.roastLocked, prefs: profile.prefs || {},
         licenseReady: profile.licenseReady, licenseOnFile: profile.licenseOnFile, licenseExpiry: profile.licenseExpiry, licenseState: profile.licenseState,
