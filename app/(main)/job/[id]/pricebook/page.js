@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { loadCockpit } from '../cockpit';
 import JobHeader from '../JobHeader';
 import { canSeeCost, buildTiers, shapeItem } from '@/lib/pricebookEngine';
@@ -48,6 +49,7 @@ export default async function JobPricebook({ params }) {
   return (
     <div className="wrap" style={{ maxWidth: 980 }}>
       <JobHeader job={c.job} customer={c.customer} tab="Pricebook" />
+      <Link href="/catalog" className="pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, margin: '8px 0 2px', color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>📖 Browse the full catalog (drill-down) →</Link>
       {needsMigration ? (
         <div className="notice" style={{ marginTop: 10 }}>Run <code>supabase/104_pricebook.sql</code> + <code>105_pricebook_seed.sql</code> to load the Sheetz Pricebook.</div>
       ) : (
