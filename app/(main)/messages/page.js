@@ -1,25 +1,39 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { requireHref } from '@/lib/guard';
+import { requireRole } from '@/lib/guard';
 import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { discordConfigured, discordReadConfigured } from '@/lib/discord';
 import CommsDeskClient from './CommsDeskClient';
+import TechChat from './TechChat';
 
 export const dynamic = 'force-dynamic';
 const DELETE = ['owner', 'admin', 'gm', 'om'];
+const FIELD = ['tech', 'helper', 'foreman', 'fs'];
+const OFFICE = ['owner', 'admin', 'gm', 'om', 'csr', 'dispatcher', 'marketing', 'sales', 'accounting', 'shop'];
 
 export default async function CommsDesk() {
-  await requireHref('/messages');
+  // Field roles reach Chat too — but they get the simple Team Chat (the HTML pane), not the office desk.
+  const { user, role, profile } = await requireRole([...OFFICE, ...FIELD]);
+  const isField = FIELD.includes(String(role || '').toLowerCase()) && !OFFICE.includes(String(role || '').toLowerCase());
 
   if (!isAdminConfigured) {
-    return <div className="wrap"><div className="h1">Comms Desk</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel.</div></div>;
+    return <div className="wrap"><div className="h1">{isField ? 'Team Chat' : 'Comms Desk'}</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel.</div></div>;
   }
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  const profile = user ? await loadProfile(user) : null;
-  const canDelete = !!profile && DELETE.includes(String(profile.role || '').toLowerCase());
-
   const sb = getSupabaseAdmin();
+
+  // ── TECH-SIDE: simple Team Chat (the #sheetz feed + a post box) ──
+  if (isField) {
+    let feed = [];
+    try {
+      let r = await sb.from('cb_comms').select('id, from_name, body, created_at, channel, direction').is('deleted_at', null).order('created_at', { ascending: false }).limit(60);
+      if (r.error) r = await sb.from('cb_comms').select('id, from_name, body, created_at, channel').order('created_at', { ascending: false }).limit(60);
+      // team feed only — the #sheetz/internal posts, not customer SMS/email threads
+      feed = (r.data || []).filter((m) => /discord|internal|team|sheetz/i.test(String(m.channel || '')) || !m.channel).reverse();
+    } catch (_) {}
+    return <TechChat messages={feed} me={profile.name || user.email} />;
+  }
+
+  const canDelete = DELETE.includes(String(role || '').toLowerCase());
   let comms = [];
   // New columns (attachments/resolved) come with migration 61 — fall back gracefully.
   let res = await sb.from('cb_comms').select('id, channel, direction, to_addr, from_name, body, status, sent_by, created_at, resolved_at, attachments').is('deleted_at', null).order('created_at', { ascending: false }).limit(150);

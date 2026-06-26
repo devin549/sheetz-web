@@ -39,6 +39,24 @@ export async function postTeamMessage(formData) {
   return r.ok ? { ok: true, msg: 'Posted to #sheetz.' } : { ok: false, msg: 'Discord: ' + r.error };
 }
 
+// Tech-side team chat post — ANY active employee (incl. field techs/helpers) can post to #sheetz.
+// (Deleting from the shared feed stays senior-only via gate(); posting is open to the whole team.)
+export async function postChat(formData) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const profile = user ? await loadProfile(user) : null;
+  if (!user || !profile || profile.active === false) return { ok: false, msg: 'Sign in required.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const who = profile.name || user.email;
+  const text = String(formData.get('text') || '').trim().slice(0, 1500);
+  if (!text) return { ok: false, msg: 'Write a message.' };
+  const r = await postToDiscord(`💬 ${who}: ${text}`);
+  try { await sb.from('cb_comms').insert({ channel: 'discord', direction: 'out', to_addr: '#sheetz', body: text, status: r.ok ? 'sent' : 'failed', error: r.ok ? null : r.error, sent_by: who, from_name: who }); } catch (_) {}
+  revalidatePath('/messages');
+  return r.ok ? { ok: true, msg: 'Posted to the team.' } : { ok: true, msg: 'Posted (Discord offline — saved to the feed).' };
+}
+
 // Pull #sheetz chatter into the feed (the read-back the webhook alone can't do). Button-triggered;
 // the core lives in lib/discordSync so the cron route can share it without crossing the action boundary.
 export async function syncDiscordNow() {
