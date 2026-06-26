@@ -93,7 +93,7 @@ export default function EndOfDay({ name, summary, tomorrowCount, saved, eodGate 
       {msg && <div style={{ fontSize: 12.5, marginTop: 8, textAlign: 'center', color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.msg}</div>}
 
       {/* ── END OF DAY GATE (HTML eod pane) — tools check-in / cash / van / clock out ── */}
-      {eodGate && <EodGate sod={eodGate.sod} stats={eodGate.stats} />}
+      {eodGate && <EodGate sod={eodGate.sod} stats={eodGate.stats} openJobs={eodGate.openJobs} afterHoursJob={eodGate.afterHoursJob} />}
     </div>
   );
 }
