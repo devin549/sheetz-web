@@ -7,6 +7,7 @@ import { loadProfile } from '@/lib/profile';
 import { canAny } from '@/lib/roles';
 import { postToDiscord } from '@/lib/discord';
 import { marginPct, priceForTargetMargin } from '@/lib/pricebookEngine';
+import { vendorPrices } from '@/lib/serpVendor';
 
 // Owner pricebook editor — add/customize items, and let Flush Gordon hype new drops to the team.
 const FLUSH = { username: 'Flush Gordon 🚀' };
@@ -120,6 +121,49 @@ export async function rejectPriceChange(id) {
   if (error) return { ok: false, msg: error.message };
   revalidatePath('/pricebook-admin');
   return { ok: true, msg: 'Rejected — price left unchanged.' };
+}
+
+// ── Learning BOM + SerpAPI vendor pricing (#4) ───────────────────────────────────────────────────
+// Record (or increment) a "this service uses this part" link. Called by the owner classifying, or by a
+// learner that mines what techs actually used on jobs. Increments times_seen on repeat — that's the signal.
+export async function recordPartLink(serviceItemId, partName, quantity = 1) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const sid = clean(serviceItemId, 60); const name = clean(partName, 160);
+  if (!sid || !name) return { ok: false, msg: 'Service + part name required.' };
+  try {
+    const { data: existing } = await c.sb.from('pricebook_learned_links').select('id, times_seen').eq('service_item_id', sid).ilike('part_name', name).maybeSingle();
+    if (existing) {
+      await c.sb.from('pricebook_learned_links').update({ times_seen: (existing.times_seen || 1) + 1, quantity: num(quantity) || 1, updated_at: new Date().toISOString() }).eq('id', existing.id);
+      return { ok: true, msg: 'Updated.' };
+    }
+    const { error } = await c.sb.from('pricebook_learned_links').insert({ service_item_id: sid, part_name: name, quantity: num(quantity) || 1, status: 'suggested' });
+    if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/119_pricebook_learned_links.sql first.' : error.message };
+    revalidatePath('/pricebook-admin');
+    return { ok: true, msg: `Linked "${name}" to the service.` };
+  } catch (e) { return { ok: false, msg: String(e?.message || e) }; }
+}
+
+// Owner classifies a learned link: confirm (counts toward the BOM) or reject (won't suggest again).
+export async function setLinkStatus(id, status) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  if (!['confirmed', 'rejected', 'suggested'].includes(status)) return { ok: false, msg: 'Bad status.' };
+  const { error } = await c.sb.from('pricebook_learned_links').update({ status, classified_by: c.user.id, classified_at: new Date().toISOString() }).eq('id', id);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/pricebook-admin');
+  return { ok: true, msg: status === 'confirmed' ? 'Confirmed — it counts toward this service’s parts cost.' : status === 'rejected' ? 'Rejected.' : 'Reset.' };
+}
+
+// Pull a live vendor price for the linked part via SerpAPI and cache it on the link.
+export async function refreshVendorPrice(id) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const { data: link } = await c.sb.from('pricebook_learned_links').select('id, part_name').eq('id', id).maybeSingle();
+  if (!link) return { ok: false, msg: 'Link not found.' };
+  const r = await vendorPrices(link.part_name);
+  if (!r.ok) return { ok: false, msg: r.msg || 'Lookup failed.' };
+  const best = r.sellers[0] || null;
+  await c.sb.from('pricebook_learned_links').update({ vendor_seller: best?.seller || null, vendor_price: r.cheapest ?? best?.price ?? null, vendor_url: best?.link || null, vendor_checked_at: new Date().toISOString() }).eq('id', id);
+  revalidatePath('/pricebook-admin');
+  return { ok: true, msg: best ? `${best.seller || 'Vendor'}: $${r.cheapest ?? best.price}` : 'No price found.', cheapest: r.cheapest, sellers: r.sellers };
 }
 
 // 🚀 Flush Gordon hypes the items added in the last `sinceHours` to the team Discord.
