@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { requirePerm } from '@/lib/guard';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
+import { bookingLink } from '@/lib/company';
 import ReferralShare from './ReferralShare';
+import BookingPromo from './BookingPromo';
 
 export const dynamic = 'force-dynamic';
 
@@ -75,6 +77,9 @@ export default async function Mkt() {
         {!ready && <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>Run <code>supabase/101_profile_referral_code.sql</code> + ensure bookings capture the code to see live history.</div>}
         {ready && !profile.referral_code && <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>This is your auto code. The office can set a custom one on the Referral Rewards board.</div>}
       </div>
+
+      {/* Promote online booking — share the new-site booking link with the ref code baked in. */}
+      <BookingPromo url={bookingLink(code)} code={code} />
 
       {/* qualify rules */}
       <div className="card" style={{ marginTop: 10 }}>
