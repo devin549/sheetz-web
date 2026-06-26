@@ -61,6 +61,9 @@ function jobTypesFor(text) {
     catDefs.push({ stId, name, parentStId: depth > 0 ? (stack[depth - 1] || null) : null, depth, sort: i * 10, active: row.Active == 1 });
   });
   const cats = catDefs.map((c) => ({ name: c.name, slug: (slugify(c.name).slice(0, 40) + '-' + c.stId).slice(0, 60), sort_order: c.sort, active: c.active }));
+  // Clean slate — we rebuild the real ST tree each import (items.category_id is FK on-delete-set-null,
+  // and re-mapped below). Clears stale flat categories from earlier imports.
+  await sb.from('pricebook_categories').delete().not('id', 'is', null);
   let r = await sb.from('pricebook_categories').upsert(cats, { onConflict: 'slug' });
   if (r.error) { console.error('categories FAIL', r.error.message); process.exit(1); }
   const { data: catRows } = await sb.from('pricebook_categories').select('id, slug');
