@@ -36,7 +36,7 @@ function RankRow({ label, chip }) {
   );
 }
 
-export default function StartOfDay({ name, lastWorked, scorecard, rankings, fieldSize, overallRank, fx, jobs = [], win, onCall, saved, roastLevel = 'PG', sodGate = null, bounties = [] }) {
+export default function StartOfDay({ name, lastWorked, scorecard, rankings, fieldSize, overallRank, fx, jobs = [], win, onCall, saved, roastLevel = 'PG', sodGate = null, bounties = [], leaveBy = null }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const allowedTones = tonesForLevel(roastLevel);
@@ -109,6 +109,26 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
           {sub && <span style={{ fontSize: 12, color: 'var(--fg-2)', fontWeight: 600 }}>{sub}</span>}
         </div>
       </div>
+
+      {/* 1.5 · 🚗 LEAVE-BY — the most time-sensitive number of the morning */}
+      {leaveBy && (
+        <div className="card" style={{ marginTop: 12, border: `2px solid ${leaveBy.late ? 'var(--red)' : 'var(--green)'}`,
+          background: `linear-gradient(135deg, color-mix(in oklab, ${leaveBy.late ? 'var(--red)' : 'var(--green)'} 16%, var(--surface-1)) 0%, var(--surface-1) 100%)` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 32 }}>🚗</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 800, color: leaveBy.late ? 'var(--red)' : 'var(--green)' }}>
+                {leaveBy.late ? '⚠ Leave NOW to make it' : `Leave by`}
+              </div>
+              <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1.1 }}>
+                {leaveBy.leaveTime}
+                {!leaveBy.late && Number.isFinite(leaveBy.minsUntil) && <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--fg-3)', marginLeft: 8 }}>· in {leaveBy.minsUntil} min</span>}
+              </div>
+              <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>to make <strong>{leaveBy.customer}</strong>’s {leaveBy.window} window · {leaveBy.driveMin} min drive + {leaveBy.buffer} min buffer</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2 · LAST SHIFT SCORECARD */}
       <div style={{ marginTop: 12 }}>

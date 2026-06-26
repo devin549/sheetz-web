@@ -7,6 +7,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { setRoastLevel, unlockRoastLevel, savePrefs, reportLostDevice, setCommandCenterPin, setIpadPin, lockIpad } from './actions';
 import { setMyPhoto } from './photoActions';
+import { setMyHome } from './homeActions';
 import { ROAST_LEVELS } from '@/lib/roast';
 import { createClient } from '@/lib/supabase/client';
 import ChangePassword from './ChangePassword';
@@ -76,6 +77,31 @@ function resizeToDataUrl(file, maxDim = 512, quality = 0.85) {
       img.src = u;
     } catch (e) { resolve(null); }
   });
+}
+
+function HomeAddress({ initial }) {
+  const [addr, setAddr] = useState(initial || '');
+  const [saved, setSaved] = useState(initial || '');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const save = async () => {
+    setBusy(true); setMsg(null);
+    const r = await setMyHome(addr);
+    if (r?.ok) { setSaved(r.formatted || addr); if (r.formatted) setAddr(r.formatted); setMsg({ ok: true, t: r.msg }); }
+    else setMsg({ ok: false, t: (r && r.msg) || 'Could not save.' });
+    setBusy(false);
+  };
+  return (
+    <div style={{ padding: '6px 0 12px' }}>
+      <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 4 }}>🏠 Home address <span style={{ opacity: 0.7 }}>— so Start of Day tells you when to leave</span></div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="123 Main St, Richmond KY" style={{ flex: 1, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 14 }} />
+        <button onClick={save} disabled={busy} className="btn" style={{ opacity: busy ? 0.6 : 1, whiteSpace: 'nowrap' }}>{busy ? 'Saving…' : 'Save'}</button>
+      </div>
+      {msg && <div style={{ fontSize: 11, marginTop: 4, color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.t}</div>}
+      {!msg && saved && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>✓ {saved} (private — only used for your leave-by time)</div>}
+    </div>
+  );
 }
 
 function PhotoUploader({ initialUrl, name }) {
@@ -190,6 +216,7 @@ export default function AccountSettings({ user, profile, isManager, ccGated, ccP
       {/* 👤 PROFILE */}
       <Section title="👤 Profile">
         <PhotoUploader initialUrl={profile.photoUrl} name={profile.name} />
+        <HomeAddress initial={profile.homeAddress} />
         <Row label="Name">{profile.name || '—'}</Row>
         <Row label="Email">{user.email}</Row>
         <Row label="Role"><span style={{ color: profile.roleColor, fontWeight: 700 }}>{profile.roleLabel}</span></Row>

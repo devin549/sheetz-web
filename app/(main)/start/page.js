@@ -3,6 +3,8 @@ import { requirePerm } from '@/lib/guard';
 import { scopeToTech, techIdentity } from '@/lib/techJobScope';
 import { lastWorkedDay, lastShiftScorecard, companyRankings, enrichTodayJob, winCondition } from '@/lib/techBriefing';
 import { rankEffect } from '@/lib/rankFx';
+import { driveMatrix } from '@/lib/maps';
+import { haversineMiles, etaMinutes } from '@/lib/geo';
 import StartOfDay from './StartOfDay';
 
 export const dynamic = 'force-dynamic';
@@ -30,7 +32,7 @@ export default async function Start() {
 
   // Today's jobs (rich fields for the briefing), with name/email fallback for unlinked techs.
   const jr = await scopeToTech(
-    sb.from('jobs').select('id, status, priority, scheduled_at, tech_id, job_number, job_type, amount, customer_id, job_class, warranty_provider, notes, access_notes, started_at, enroute_at, estimate_outcome, converted_to_job_id, customers(name, address, phone)')
+    sb.from('jobs').select('id, status, priority, scheduled_at, tech_id, job_number, job_type, amount, customer_id, job_class, warranty_provider, notes, access_notes, started_at, enroute_at, estimate_outcome, converted_to_job_id, lat, lng, arrival_window, customers(name, address, phone)')
       .gte('scheduled_at', startISO).lt('scheduled_at', endISO).order('scheduled_at', { ascending: true }),
     { profile, user }
   );
@@ -53,6 +55,24 @@ export default async function Start() {
       opportunity: enr.opportunity, flags: enr.flags, risks: enr.risks, tools: enr.tools, bestAction: enr.bestAction,
     };
   });
+
+  // 🚗 LEAVE-BY — home → first job drive time (Google), backed off the promised window. Needs a saved home.
+  let leaveBy = null;
+  const firstJob = rawJobs.find((j) => j.scheduled_at && j.lat != null && j.lng != null) || null;
+  if (firstJob && profile.homeLat != null && profile.homeLng != null) {
+    const targetMs = new Date(firstJob.scheduled_at).getTime();
+    if (Number.isFinite(targetMs)) {
+      let driveMin = null;
+      try { const dm = await driveMatrix({ lat: profile.homeLat, lng: profile.homeLng }, [{ lat: firstJob.lat, lng: firstJob.lng }]); if (dm && dm[0] && dm[0].etaMin != null) driveMin = dm[0].etaMin; } catch (_) {}
+      if (driveMin == null) driveMin = etaMinutes(haversineMiles(profile.homeLat, profile.homeLng, firstJob.lat, firstJob.lng));
+      if (driveMin != null) {
+        const BUFFER = 10;
+        const leaveMs = targetMs - (driveMin + BUFFER) * 60000;
+        const c = firstJob.customers || {};
+        leaveBy = { leaveTime: fmtTime(new Date(leaveMs).toISOString()), driveMin, buffer: BUFFER, customer: c.name || 'your first stop', window: firstJob.arrival_window || fmtTime(firstJob.scheduled_at), late: leaveMs <= nowMs, minsUntil: Math.round((leaveMs - nowMs) / 60000) };
+      }
+    }
+  }
 
   // Last-shift scorecard + company rankings + movement vs last acknowledged shift.
   const lw = await lastWorkedDay(sb, ident, nowMs);
@@ -104,6 +124,7 @@ export default async function Start() {
   return (
     <StartOfDay
       bounties={bounties}
+      leaveBy={leaveBy}
       sodGate={{ sod: sodRow || {}, tools: sodTools, handbook: sodHandbook, helper: sodHelper }}
       name={name}
       lastWorked={{ ...lw, pretty: prettyDay(lw.dayKey) }}
