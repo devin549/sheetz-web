@@ -56,11 +56,14 @@ export async function POST(request) {
   } catch (_) {}
 
   // Notify the FloodBusterz salesperson directly — INTERNAL staff only. Customer is not contacted.
-  const SALES_EMAIL = process.env.FLOODBUSTERZ_SALES_EMAIL || '';
+  const SALES_EMAILS = (process.env.FLOODBUSTERZ_SALES_EMAIL || '').split(',').map((s) => s.trim()).filter(Boolean);
   const SALES_PHONE = process.env.FLOODBUSTERZ_SALES_PHONE || '';
   const summary = `New FloodBusterz dry-out lead from the website. ${name || 'Customer'} ${phone}${where ? ` · ${where}` : ''}${unit ? ` · ${unit}` : ''}. Call them to scope the restoration.`;
-  if (SALES_EMAIL && isEmailConfigured) {
-    try { await sendOne({ to: SALES_EMAIL, subject: `🌊 FloodBusterz web lead — ${name || phone}`, html: renderEmailHtml({ subject: 'FloodBusterz web lead', body: summary + (notes ? `\n\nNotes: ${notes}` : '') }) }); } catch (_) {}
+  if (SALES_EMAILS.length && isEmailConfigured) {
+    const html = renderEmailHtml({ subject: 'FloodBusterz web lead', body: summary + (notes ? `\n\nNotes: ${notes}` : '') });
+    for (const to of SALES_EMAILS) {
+      try { await sendOne({ to, subject: `🌊 FloodBusterz web lead — ${name || phone}`, html }); } catch (_) {}
+    }
   }
   if (SALES_PHONE && smsConfigured()) {
     try { await sendSms(SALES_PHONE, summary); } catch (_) {}
