@@ -84,9 +84,14 @@ async function gatherSnapshot() {
     safeQuery(
       'topPastDue',
       sb
+        // invoices is the ServiceTitan AR table (supabase/04_invoices_ar_columns.sql):
+        // real columns are customer_id / invoice_number / total / balance / invoice_date / status.
+        // There is no customer_name / total_due / due_date / aging_bucket here — selecting them
+        // errored and the metric came back empty every run. Use the real shape; balance is the past-due number.
         .from('invoices')
-        .select('customer_name, invoice_number, total_due, balance, due_date, aging_bucket, status')
-        .order('total_due', { ascending: false })
+        .select('customer_id, invoice_number, total, balance, invoice_date, status')
+        .gt('balance', 0)
+        .order('balance', { ascending: false })
         .limit(75)
     ),
     safeQuery(
@@ -101,8 +106,10 @@ async function gatherSnapshot() {
     safeQuery(
       'recentMoves',
       sb
+        // job_moves (supabase/17_job_moves.sql) stamps the actor in `by_email`, not `moved_by`.
+        // The old column errored → recent_job_moves was always empty with a warning.
         .from('job_moves')
-        .select('job_id, action, from_tech_name, to_tech_name, moved_by, created_at')
+        .select('job_id, action, from_tech_name, to_tech_name, by_email, created_at')
         .gte('created_at', sevenDaysAgo.toISOString())
         .order('created_at', { ascending: false })
         .limit(100)
