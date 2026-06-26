@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 import ToolCard from './ToolCard';
 import AddTool from './AddTool';
 import LocateInventory from './LocateInventory';
+import ToolAccountability from './ToolAccountability';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,6 +52,8 @@ export default async function Tools({ searchParams }) {
         {tools.map((t) => <ToolCard key={t.id} tool={t} isMgr={isMgr} />)}
       </div>
       {!q && tools.length === 0 && available && <div className="card"><span className="muted">No tools in the registry yet{isMgr ? ' — add your first one above.' : '.'}</span></div>}
+
+      {isMgr && <ToolAccountability />}
     </div>
   );
 }

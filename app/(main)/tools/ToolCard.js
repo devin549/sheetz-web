@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { addAlias, requestTool, setHolder } from './actions';
+import { logToolEvent } from './ledgerActions';
 
 const STATUS = { on_van: { c: 'var(--green)', l: 'On a van' }, shop: { c: 'var(--amber)', l: 'In the shop' }, lost: { c: 'var(--red)', l: 'Lost' }, assigned: { c: 'var(--blue)', l: 'Assigned' } };
 
@@ -13,11 +14,19 @@ export default function ToolCard({ tool, isMgr }) {
   const [msg, setMsg] = useState(null);
   const [holderEdit, setHolderEdit] = useState(false);
   const [holder, setHolderV] = useState(tool.assigned_to || '');
+  const [logOpen, setLogOpen] = useState(false);
+  const [cost, setCost] = useState('');
+  const [note, setNote] = useState('');
   const st = STATUS[tool.status] || { c: 'var(--fg-3)', l: tool.status || '—' };
 
   const teach = () => { if (!alias.trim()) return; start(async () => { const r = await addAlias(tool.id, alias); setMsg(r.msg); if (r.ok) { setAlias(''); router.refresh(); } }); };
   const request = () => start(async () => { const r = await requestTool(tool.id, tool.name, tool.assigned_to); setMsg(r.msg); });
   const reassign = (status) => start(async () => { const r = await setHolder(tool.id, holder, status); setMsg(r.ok ? 'Updated.' : r.msg); if (r.ok) { setHolderEdit(false); router.refresh(); } });
+  // Log a lifecycle event (broke/lost/returned/repaired/retired) — stamps who had it + the $ on the ledger.
+  const logEvt = (event) => start(async () => {
+    const r = await logToolEvent(tool.id, event, { holderName: tool.assigned_to || '', costDollars: cost, note });
+    setMsg(r.msg); if (r.ok) { setCost(''); setNote(''); setLogOpen(false); router.refresh(); }
+  });
 
   const inp = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 7, padding: '7px 9px', fontSize: 12.5 };
 
@@ -46,7 +55,28 @@ export default function ToolCard({ tool, isMgr }) {
           <button onClick={teach} disabled={pending} className="pill" style={{ cursor: 'pointer' }}>＋ alias</button>
         </div>
         {isMgr && !holderEdit && <button onClick={() => setHolderEdit(true)} className="pill" style={{ cursor: 'pointer', color: 'var(--blue)' }}>reassign</button>}
+        {isMgr && <button onClick={() => setLogOpen((v) => !v)} className="pill" style={{ cursor: 'pointer', color: 'var(--fg-3)' }}>🧾 log</button>}
       </div>
+
+      {isMgr && logOpen && (
+        <div style={{ marginTop: 8, padding: 10, background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 8 }}>
+          <div className="muted" style={{ fontSize: 11.5, marginBottom: 6 }}>
+            Log an event{tool.assigned_to ? <> for <strong style={{ color: 'var(--fg-2)' }}>{tool.assigned_to}</strong></> : ''} — kept forever on this tool's history.
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 7 }}>
+            <input value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$ cost / value" inputMode="decimal" style={{ ...inp, width: 110 }} />
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" style={{ ...inp, flex: 1 }} />
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button onClick={() => logEvt('issued')} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--blue)' }}>📦 issued</button>
+            <button onClick={() => logEvt('returned')} disabled={pending} className="pill" style={{ cursor: 'pointer' }}>↩️ returned</button>
+            <button onClick={() => logEvt('broke')} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--red)' }}>💥 broke</button>
+            <button onClick={() => logEvt('repaired')} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--green)' }}>🔧 repaired</button>
+            <button onClick={() => logEvt('lost')} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--red)' }}>❓ lost</button>
+            <button onClick={() => logEvt('retired')} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--fg-3)' }}>🪦 retired</button>
+          </div>
+        </div>
+      )}
 
       {isMgr && holderEdit && (
         <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
