@@ -34,6 +34,20 @@ const btn = (active, done) => ({
   opacity: done ? 0.5 : 1, whiteSpace: 'nowrap',
 });
 
+// Per-card launchpad — the audit's quick actions on EVERY card (Call · Text · Directions · Photos · Job).
+const qb = { flex: 1, textAlign: 'center', padding: '9px 4px', borderRadius: 9, border: '1px solid var(--border-strong)', background: 'var(--surface-2)', color: 'var(--fg-1)', fontWeight: 700, fontSize: 11.5, textDecoration: 'none', display: 'block', whiteSpace: 'nowrap' };
+function QuickBar({ tel, mapHref, jobId }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      {tel && <a href={`tel:${tel}`} style={qb}>📞 Call</a>}
+      {tel && <a href={`sms:${tel}`} style={qb}>💬 Text</a>}
+      {mapHref && <a href={mapHref} target="_blank" rel="noopener" style={qb}>🧭 Go</a>}
+      <Link href={`/job/${jobId}/photos`} style={qb}>📸 Photos</Link>
+      <Link href={`/job/${jobId}`} style={{ ...qb, color: 'var(--amber)', borderColor: 'var(--amber-dim)' }}>🧰 Job</Link>
+    </div>
+  );
+}
+
 // Max 4 high-signal tags, then "+N more"; tap a tag to learn why it matters. Color-coded by type.
 function TagRow({ tags = [] }) {
   const [expanded, setExpanded] = useState(false);
@@ -130,9 +144,7 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
           {typeBits && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>🔧 {typeBits}</div>}
           {seeAll && t.name && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}><PersonCard name={t.name}><span style={{ cursor: 'pointer' }}>👷 {t.name}</span></PersonCard></div>}
           <TagRow tags={tags} />
-          <div style={{ marginTop: 8 }}>
-            <Link href={`/job/${job.id}`} className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>{compact ? '➡ Open job' : '📷 Job file / photos'}</Link>
-          </div>
+          <QuickBar tel={tel} mapHref={mapHref} jobId={job.id} />
         </div>
         <span className={pill.cls} style={pill.color ? { color: pill.color } : undefined}>{pill.label}</span>
       </div>
@@ -151,14 +163,6 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
         </div>
       )}
 
-      {/* quick links — active card only */}
-      {variant === 'active' && (mapHref || tel) && !cancelled && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-          {mapHref && <a href={mapHref} target="_blank" rel="noopener" style={{ flex: 1, textAlign: 'center', padding: '10px', borderRadius: 10, border: '1px solid var(--border-strong)', background: 'var(--surface-2)', color: 'var(--fg-1)', fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>🧭 Navigate</a>}
-          {tel && <a href={`tel:${tel}`} style={{ flex: 1, textAlign: 'center', padding: '10px', borderRadius: 10, border: '1px solid var(--border-strong)', background: 'var(--surface-2)', color: 'var(--fg-1)', fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>📞 Call</a>}
-        </div>
-      )}
-
       {/* status workflow — active card only */}
       {variant === 'active' && canAct && !cancelled && (
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -171,8 +175,8 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
       )}
       {err && <div style={{ color: 'var(--red)', fontSize: 11, marginTop: 6 }}>{err}</div>}
 
-      {/* Collect payment — active card only */}
-      {variant === 'active' && canAct && !cancelled && (
+      {/* Collect payment — only after arrival/diagnosis (on-site or done), never before. */}
+      {variant === 'active' && canAct && !cancelled && (cur === 'on_site' || done) && (
         <div style={{ marginTop: 8 }}>
           {!payOpen ? (
             <button onClick={() => { setPayOpen(true); setPayLink(null); setPayErr(null); }}
