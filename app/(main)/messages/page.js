@@ -30,6 +30,18 @@ export default async function CommsDesk() {
       // team feed only — the #sheetz/internal posts, not customer SMS/email threads
       feed = (r.data || []).filter((m) => /discord|internal|team|sheetz/i.test(String(m.channel || '')) || !m.channel).reverse();
     } catch (_) {}
+    // Tag each message so the chat blinks by importance: 📌 personal (your name's in it = address this) >
+    // 🏢 office (a heads-up from the office) > general crew chatter.
+    const myFirst = String(profile.name || '').trim().split(/\s+/)[0].toLowerCase();
+    let officeFirsts = new Set();
+    try { const { data } = await sb.from('profiles').select('name, role').in('role', ['owner', 'admin', 'gm', 'om', 'csr', 'dispatcher', 'accounting', 'marketing', 'sales']); (data || []).forEach((p) => { if (p.name) officeFirsts.add(String(p.name).trim().split(/\s+/)[0].toLowerCase()); }); } catch (_) {}
+    feed = feed.map((m) => {
+      const fromFirst = String(m.from_name || '').trim().split(/\s+/)[0].toLowerCase();
+      const isHank = /hank/i.test(m.from_name || '');
+      const personal = !isHank && myFirst.length >= 2 && new RegExp(`\\b${myFirst.replace(/[^a-z0-9]/g, '')}\\b`, 'i').test(String(m.body || ''));
+      const office = !isHank && fromFirst && officeFirsts.has(fromFirst);
+      return { ...m, tag: personal ? 'personal' : office ? 'office' : 'general' };
+    });
     return <TechChat messages={feed} me={profile.name || user.email} />;
   }
 

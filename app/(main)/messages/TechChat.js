@@ -41,11 +41,19 @@ export default function TechChat({ messages = [], me = '' }) {
         {messages.map((m) => {
           const mine = String(m.from_name || '').trim().toLowerCase() === String(me).trim().toLowerCase();
           const isHank = /hank/i.test(m.from_name || '');
+          const fresh = isNew(m.id) && !mine;
+          // Blink color by importance: red = personal (address this), blue = office, amber = general.
+          const blinkClass = !fresh ? '' : m.tag === 'personal' ? 'cb-blink-red' : m.tag === 'office' ? 'cb-blink-blue' : 'cb-blink';
+          const tagBadge = !fresh ? null : m.tag === 'personal'
+            ? <span style={{ color: 'var(--red)', fontSize: 9, fontWeight: 800 }}> · 📌 FOR YOU</span>
+            : m.tag === 'office' ? <span style={{ color: 'var(--blue)', fontSize: 9, fontWeight: 800 }}> · 🏢 OFFICE</span>
+            : <span style={{ color: 'var(--amber)', fontSize: 9, fontWeight: 800 }}> · NEW</span>;
+          const bubbleBorder = m.tag === 'personal' && fresh ? 'var(--red)' : m.tag === 'office' && fresh ? 'var(--blue)' : isHank ? 'var(--purple, #9c64f4)' : 'var(--border)';
           return (
             <div key={m.id} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', flexDirection: mine ? 'row-reverse' : 'row' }}>
               <div style={{ width: 30, height: 30, borderRadius: 999, flexShrink: 0, background: isHank ? 'var(--purple, #9c64f4)' : mine ? 'var(--amber)' : 'var(--surface-3)', color: isHank ? '#fff' : mine ? '#1a1206' : 'var(--fg-1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 11 }}>{isHank ? '🪠' : initials(m.from_name)}</div>
-              <div className={isNew(m.id) && !mine ? 'cb-blink' : ''} style={{ maxWidth: '80%', padding: '8px 11px', borderRadius: 12, background: mine ? 'rgba(255,179,0,0.12)' : 'var(--surface-2)', border: `1px solid ${isHank ? 'var(--purple, #9c64f4)' : 'var(--border)'}` }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: isHank ? 'var(--purple, #9c64f4)' : 'var(--fg-2)' }}>{m.from_name || 'Someone'}{isNew(m.id) && !mine ? <span style={{ color: 'var(--amber)', fontSize: 9, fontWeight: 800 }}> · NEW</span> : ''} <span className="muted" style={{ fontWeight: 400 }}>· {fmt(m.created_at)}</span></div>
+              <div className={blinkClass} style={{ maxWidth: '80%', padding: '8px 11px', borderRadius: 12, background: mine ? 'rgba(255,179,0,0.12)' : 'var(--surface-2)', border: `1px solid ${bubbleBorder}` }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: isHank ? 'var(--purple, #9c64f4)' : 'var(--fg-2)' }}>{m.from_name || 'Someone'}{tagBadge} <span className="muted" style={{ fontWeight: 400 }}>· {fmt(m.created_at)}</span></div>
                 <div style={{ fontSize: 13.5, marginTop: 2, whiteSpace: 'pre-wrap' }}>{m.body}</div>
               </div>
             </div>
