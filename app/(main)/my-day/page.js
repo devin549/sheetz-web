@@ -125,6 +125,32 @@ export default async function MyDay({ searchParams }) {
 
   const dateLabel = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
+  // ── Tabs (HTML My Day): 🔥 Today · 📜 My Jobs (30d) · 💰 Today $ ──
+  const tab = ['jobs', 'money'].includes(searchParams?.tab) ? searchParams.tab : 'today';
+  const isDone = (j) => /done|complete|closed/.test(String(j.status || '').toLowerCase());
+  const isLive = (j) => /on_site|onsite|enroute|rolling/.test(String(j.status || '').toLowerCase());
+  // Today $ — tech-only earnings sub-view.
+  const doneToday = list.filter(isDone);
+  const moneyStats = {
+    revenue: list.filter((j) => isDone(j) || isLive(j)).reduce((s, j) => s + (Number(j.amount) || 0), 0),
+    booked: doneToday.reduce((s, j) => s + (Number(j.amount) || 0), 0),
+    count: doneToday.length,
+    avg: doneToday.length ? Math.round(doneToday.reduce((s, j) => s + (Number(j.amount) || 0), 0) / doneToday.length) : 0,
+    members: list.filter((j) => memberByCust[j.customer_id]).length,
+    breakdown: list.filter((j) => isDone(j) || isLive(j)),
+  };
+  // My Jobs (last 30d) — loaded only on that tab.
+  let jobs30 = [];
+  if (tab === 'jobs' && !note) {
+    try {
+      const since = new Date(Date.now() - 30 * 864e5).toISOString();
+      let q = supabase.from('jobs').select('id, job_number, job_type, amount, status, scheduled_at, customers(name)').gte('scheduled_at', since).order('scheduled_at', { ascending: false }).limit(60);
+      if (scopeTechId) q = q.eq('tech_id', scopeTechId); else if (scopeName) q = q.ilike('tech_name', '%' + scopeName + '%');
+      const r = await q; jobs30 = r.error ? [] : (r.data || []);
+    } catch (_) {}
+  }
+  const tabHref = (t) => `/my-day${t === 'today' ? '' : `?tab=${t}`}`;
+
   return (
     <div className="wrap">
       <div className="h1">📋 My Day{scopeLabel}</div>
@@ -148,22 +174,30 @@ export default async function MyDay({ searchParams }) {
 
       {!note && (
         <>
-          {/* tabs — Today is live; the others port next */}
+          {/* tabs — 🔥 Today · 📜 My Jobs (30d) · 💰 Today $ (all live) */}
           <div style={{ display: 'flex', gap: 8, margin: '6px 0 12px', flexWrap: 'wrap' }}>
-            <span className="pill" style={{ background: 'var(--amber)', color: '#1a1206', fontWeight: 800 }}>🔥 Today · {list.length}</span>
-            <span className="pill" style={{ color: 'var(--fg-3)' }}>📋 My Jobs · soon</span>
-            <span className="pill" style={{ color: 'var(--fg-3)' }}>💵 Today $ · soon</span>
+            {[['today', `🔥 Today · ${list.length}`], ['jobs', '📜 My Jobs · 30d'], ['money', '💰 Today $']].map(([t, label]) => (
+              <Link key={t} href={tabHref(t)} className="pill" style={{ textDecoration: 'none', fontWeight: tab === t ? 800 : 600, background: tab === t ? 'var(--amber)' : 'var(--surface-2)', color: tab === t ? '#1a1206' : 'var(--fg-2)', border: '1px solid var(--border)' }}>{label}</Link>
+            ))}
           </div>
 
-          {/* date summary bar (onsite / upcoming / target) */}
-          <div className="card card-amber" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-            <div><div style={{ fontWeight: 800, fontSize: 15 }}>{dateLabel}</div><div className="muted" style={{ fontSize: 11 }}>Today</div></div>
-            <div style={{ display: 'flex', gap: 22 }}>
-              <div style={{ textAlign: 'center' }}><div style={{ fontSize: 20, fontWeight: 800, color: stats.onsite ? 'var(--amber)' : 'var(--fg-2)' }}>{stats.onsite}</div><div className="muted" style={{ fontSize: 10 }}>onsite</div></div>
-              <div style={{ textAlign: 'center' }}><div style={{ fontSize: 20, fontWeight: 800 }}>{stats.upcoming}</div><div className="muted" style={{ fontSize: 10 }}>upcoming</div></div>
-              <div style={{ textAlign: 'center' }}><div style={{ fontSize: 20, fontWeight: 800, color: 'var(--green-bright)' }}>{money(stats.target)}</div><div className="muted" style={{ fontSize: 10 }}>target</div></div>
+          {tab === 'today' && (<>
+            {/* date summary bar (onsite / upcoming / target) */}
+            <div className="card card-amber" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+              <div><div style={{ fontWeight: 800, fontSize: 15 }}>{dateLabel}</div><div className="muted" style={{ fontSize: 11 }}>Today</div></div>
+              <div style={{ display: 'flex', gap: 22 }}>
+                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 20, fontWeight: 800, color: stats.onsite ? 'var(--amber)' : 'var(--fg-2)' }}>{stats.onsite}</div><div className="muted" style={{ fontSize: 10 }}>onsite</div></div>
+                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 20, fontWeight: 800 }}>{stats.upcoming}</div><div className="muted" style={{ fontSize: 10 }}>upcoming</div></div>
+                <div style={{ textAlign: 'center' }}><div style={{ fontSize: 20, fontWeight: 800, color: 'var(--green-bright)' }}>{money(stats.target)}</div><div className="muted" style={{ fontSize: 10 }}>target</div></div>
+              </div>
             </div>
-          </div>
+            {/* 🧠 Ask Hank (HTML My Day) — Hank knows the tech's numbers */}
+            <Link href="/hank" className="card" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit', marginTop: 10, borderLeft: '3px solid var(--purple, #9c64f4)' }}>
+              <span style={{ fontSize: 22 }}>🧠</span>
+              <div style={{ flex: 1 }}><div style={{ fontWeight: 800, fontSize: 13 }}>Ask Hank</div><div className="muted" style={{ fontSize: 12 }}>“What’s my most profitable job this month?” · Hank knows your numbers</div></div>
+              <span style={{ color: 'var(--amber)', fontWeight: 800 }}>›</span>
+            </Link>
+          </>)}
         </>
       )}
 
@@ -171,16 +205,64 @@ export default async function MyDay({ searchParams }) {
         <div className="notice"><strong>Couldn&apos;t load jobs.</strong> {error.message}</div>
       )}
 
-      {!note && !error && list.length === 0 && (
+      {/* ── 🔥 TODAY — the live job list ── */}
+      {!note && !error && tab === 'today' && list.length === 0 && (
         <div className="card"><span className="muted">{seeAll ? 'No jobs yet. Run supabase/seed.sql to add samples.' : 'Nothing on your schedule today. 🎉'}</span></div>
       )}
-
-      {!note && !error && list.map((j) => {
+      {!note && !error && tab === 'today' && list.map((j) => {
         const s = String(j.status || '').toLowerCase();
         const variant = j.id === activeJobId ? 'active' : /done|complete|closed|cancel/.test(s) ? 'done' : 'upcoming';
         const tags = deriveTags(j, { member: memberByCust[j.customer_id], vip: vipByCust[j.customer_id], pastDue: pastDueByCust[j.customer_id] });
         return <JobCard key={j.id} job={j} seeAll={seeAll} canAct={can(role, 'changeStatus')} variant={variant} tags={tags} pastDue={pastDueByCust[j.customer_id] || 0} />;
       })}
+
+      {/* ── 💰 TODAY $ — tech-only earnings (HTML "Today's Money") ── */}
+      {!note && !error && tab === 'money' && (
+        <>
+          <div className="muted" style={{ fontSize: 12, margin: '2px 0 10px' }}>Your day so far · only you see this — hidden when you hand the iPad to a customer.</div>
+          <div className="card card-amber" style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
+            <div><div className="muted" style={{ fontSize: 10, textTransform: 'uppercase' }}>Revenue today</div><div style={{ fontSize: 26, fontWeight: 800, color: 'var(--green-bright)' }}>{money(moneyStats.revenue)}</div></div>
+            <div><div className="muted" style={{ fontSize: 10, textTransform: 'uppercase' }}>Jobs done</div><div style={{ fontSize: 26, fontWeight: 800 }}>{moneyStats.count}</div></div>
+            <div><div className="muted" style={{ fontSize: 10, textTransform: 'uppercase' }}>Avg ticket</div><div style={{ fontSize: 26, fontWeight: 800 }}>{money(moneyStats.avg)}</div></div>
+            <div><div className="muted" style={{ fontSize: 10, textTransform: 'uppercase' }}>Memberships</div><div style={{ fontSize: 26, fontWeight: 800, color: 'var(--amber)' }}>{moneyStats.members}</div></div>
+          </div>
+          <Link href="/pay" className="pill" style={{ display: 'inline-block', marginTop: 10, color: 'var(--green-bright)', border: '1px solid var(--green-bright)' }}>💵 See your pay + advance →</Link>
+          <div className="h2" style={{ marginTop: 16 }}>Where it came from</div>
+          {moneyStats.breakdown.length === 0 ? <div className="card muted" style={{ fontSize: 13 }}>Nothing closed yet today.</div> : (
+            <div style={{ display: 'grid', gap: 6 }}>
+              {moneyStats.breakdown.map((j) => {
+                const c = j.customers || {}; const done = isDone(j);
+                return (
+                  <div key={j.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                    <span className="pill" style={{ fontSize: 9.5, color: done ? 'var(--green)' : 'var(--amber)' }}>{done ? '✓ DONE' : '🏠 ON-SITE'}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13 }}>{c.name || 'Customer'}{j.job_type ? ` · ${j.job_type}` : ''}</span>
+                    <span style={{ fontWeight: 800 }}>{money(j.amount)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── 📜 MY JOBS — last 30 days ── */}
+      {!note && !error && tab === 'jobs' && (
+        jobs30.length === 0 ? <div className="card muted" style={{ fontSize: 13 }}>No jobs in the last 30 days.</div> : (
+          <div style={{ display: 'grid', gap: 6 }}>
+            {jobs30.map((j) => {
+              const c = j.customers || {}; const done = isDone(j);
+              return (
+                <Link key={j.id} href={`/job/${j.id}`} className="card" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit' }}>
+                  <span className="muted" style={{ fontSize: 11, minWidth: 56 }}>{j.scheduled_at ? new Date(j.scheduled_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : ''}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 700 }}>{c.name || 'Customer'}</div><div className="muted" style={{ fontSize: 11.5 }}>{j.job_type || 'Job'}{j.job_number ? ` · #${j.job_number}` : ''}</div></div>
+                  {j.amount ? <span style={{ fontWeight: 700, color: 'var(--green-bright)' }}>{money(j.amount)}</span> : null}
+                  <span className="pill" style={{ fontSize: 9, color: done ? 'var(--green)' : 'var(--fg-3)' }}>{(j.status || '').toUpperCase()}</span>
+                </Link>
+              );
+            })}
+          </div>
+        )
+      )}
     </div>
   );
 }
