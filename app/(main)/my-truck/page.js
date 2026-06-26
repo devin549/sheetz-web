@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireRole } from '@/lib/guard';
+import Maintenance from './Maintenance';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,6 +83,16 @@ export default async function MyTruck({ searchParams }) {
   const toolList = tools || [];
   const toolVal = toolList.reduce((a, t) => a + (Number(t.value) || 0), 0);
 
+  // 🔧 Maintenance (HTML van pane) — oil tracker / health / docs / service log. Fail-soft pre-96.
+  let maint = {}, serviceLog = [], oil = { known: false }, health = {};
+  try { const { data } = await sb.from('van_maintenance').select('*').ilike('tech_name', detailTech).maybeSingle(); maint = data || {}; } catch (_) {}
+  try { const { data } = await sb.from('van_service_log').select('id, service_date, item, vendor, cost_cents, mileage').ilike('tech_name', detailTech).order('service_date', { ascending: false }).limit(20); serviceLog = data || []; } catch (_) {}
+  { const { oilStatus, vanHealth } = await import('@/lib/vanHealth');
+    oil = oilStatus(maint);
+    const yearAgo = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+    const repair12mo = serviceLog.filter((s) => s.service_date >= yearAgo).reduce((a, s) => a + (Number(s.cost_cents) || 0), 0);
+    health = vanHealth({ repair12moCents: repair12mo, year: maint.year }); }
+
   return (
     <div className="wrap">
       <div className="h1">🚐 {role === 'tech' ? 'My Truck' : detailTech + '’s Truck'}</div>
@@ -100,6 +111,9 @@ export default async function MyTruck({ searchParams }) {
         <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>Find a tool or part</div><div className="muted" style={{ fontSize: 12 }}>Search every van, shop &amp; vendor — nearest first, route + reserve.</div></div>
         <span style={{ color: 'var(--amber)', fontWeight: 800 }}>›</span>
       </Link>
+
+      {/* 🔧 Maintenance — oil / health / docs / service log (HTML van pane). */}
+      <Maintenance maint={maint} serviceLog={serviceLog} oil={oil} health={health} tech={role === 'tech' ? '' : detailTech} />
 
       <Section title="🧰 Parts on the van">
         {!parts.length && <div className="card"><span className="muted">No parts stocked yet.</span></div>}
