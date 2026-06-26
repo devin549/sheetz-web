@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { addPricebookItem, updateItemPrice, announceDrop, runMarginWatch, approvePriceChange, rejectPriceChange } from './actions';
+import PartsClassify from './PartsClassify';
 
 const emptyForm = { name: '', customerName: '', categoryId: '', retailPrice: '', materialCost: '', customerDescription: '', customerVisible: true };
 const inp = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 7, padding: '9px 11px', fontSize: 14, width: '100%' };
@@ -128,6 +129,9 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
           </div>
         )}
       </div>
+
+      {/* 🧩 Parts & live vendor cost (learn → classify → SerpAPI price) */}
+      {!needsMig && <PartsClassify items={list} />}
 
       {/* List + inline price edit */}
       <input placeholder={`Search ${list.length} items…`} value={q} onChange={(e) => setQ(e.target.value)} style={{ ...inp, marginBottom: 10 }} />

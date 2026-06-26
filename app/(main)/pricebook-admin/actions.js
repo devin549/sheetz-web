@@ -166,6 +166,45 @@ export async function refreshVendorPrice(id) {
   return { ok: true, msg: best ? `${best.seller || 'Vendor'}: $${r.cheapest ?? best.price}` : 'No price found.', cheapest: r.cheapest, sellers: r.sellers };
 }
 
+// Load a service's parts (learned links) + barcodes + the live-cost rollup vs the baked material cost.
+export async function loadServiceParts(serviceId) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err, links: [], barcodes: [] };
+  const sid = clean(serviceId, 60); if (!sid) return { ok: false, msg: 'No service.', links: [], barcodes: [] };
+  try {
+    const { data: svc } = await c.sb.from('pricebook_items').select('id, customer_name, name, retail_price, estimated_material_cost').eq('id', sid).maybeSingle();
+    let links = [];
+    try { const { data } = await c.sb.from('pricebook_learned_links').select('id, part_name, part_item_id, quantity, times_seen, status, vendor_seller, vendor_price, vendor_url, vendor_checked_at').eq('service_item_id', sid).order('times_seen', { ascending: false }); links = data || []; } catch (e) { if (/relation|schema cache|does not exist/i.test(e?.message || '')) return { ok: false, msg: 'Run supabase/119_pricebook_learned_links.sql first.', links: [], barcodes: [] }; }
+    let barcodes = [];
+    const itemIds = [sid, ...links.map((l) => l.part_item_id).filter(Boolean)];
+    try { const { data } = await c.sb.from('pricebook_barcodes').select('id, item_id, barcode, vendor_seller, label').in('item_id', itemIds); barcodes = data || []; } catch (_) {}
+    const confirmedCost = links.filter((l) => l.status === 'confirmed' && l.vendor_price > 0).reduce((s, l) => s + Number(l.vendor_price) * (Number(l.quantity) || 1), 0);
+    return {
+      ok: true,
+      service: svc ? { id: svc.id, name: svc.customer_name || svc.name, retail: Number(svc.retail_price) || 0, bakedCost: Number(svc.estimated_material_cost) || 0 } : null,
+      links, barcodes, confirmedCost: Math.round(confirmedCost * 100) / 100,
+    };
+  } catch (e) { return { ok: false, msg: String(e?.message || e), links: [], barcodes: [] }; }
+}
+
+// Add a barcode to an item — ONE item, MANY barcodes (Everbilt@HD, Oatey@Lowe's, … all one part).
+export async function addBarcode(itemId, barcode, vendorSeller, label) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const iid = clean(itemId, 60); const code = clean(barcode, 80);
+  if (!iid || !code) return { ok: false, msg: 'Item + barcode required.' };
+  const { error } = await c.sb.from('pricebook_barcodes').insert({ item_id: iid, barcode: code, vendor_seller: clean(vendorSeller, 80) || null, label: clean(label, 120) || null });
+  if (error) return { ok: false, msg: /duplicate|unique/i.test(error.message || '') ? 'That barcode is already on file.' : (/relation|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/120_pricebook_barcodes.sql first.' : error.message) };
+  revalidatePath('/pricebook-admin');
+  return { ok: true, msg: `Barcode ${code} added.` };
+}
+
+export async function removeBarcode(id) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const { error } = await c.sb.from('pricebook_barcodes').delete().eq('id', id);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/pricebook-admin');
+  return { ok: true, msg: 'Barcode removed.' };
+}
+
 // 🚀 Flush Gordon hypes the items added in the last `sinceHours` to the team Discord.
 export async function announceDrop(sinceHours = 168) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
