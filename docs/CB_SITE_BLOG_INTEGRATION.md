@@ -123,6 +123,44 @@ export default function BookForm() {
 > The data-plate photo is OCR'd server-side (brand/model/fuel/age) and rides onto the job + the customer's
 > equipment record — your office knows the exact unit before dispatch.
 
+## Pick-a-time slot picker (OpenTable-style)
+Show real open arrival windows from `GET /api/availability` so customers reserve a slot you can actually
+staff. Add this above the form and pass the chosen `date` + `window` into the booking `body`.
+```jsx
+'use client';
+import { useEffect, useState } from 'react';
+const CMS = process.env.NEXT_PUBLIC_CMS_URL || 'https://tech.sheetzz.com';
+
+export function SlotPicker({ onPick }) {
+  const [data, setData] = useState(null); const [sel, setSel] = useState(null);
+  useEffect(() => { fetch(`${CMS}/api/availability`).then(r => r.json()).then(setData).catch(() => {}); }, []);
+  if (!data) return <p>Loading times…</p>;
+  if (!data.anyOpen) return <p>We're fully booked online right now — call <a href={`tel:${data.phone}`}>{data.phone}</a>. For emergencies we'll always make room.</p>;
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8 }}>
+        {data.days.map((d) => (
+          <button key={d.date} onClick={() => setSel(d.date)} style={{ padding: 10, borderRadius: 8, border: sel === d.date ? '2px solid #c47f17' : '1px solid #ddd', minWidth: 90 }}>
+            {d.label}{d.emergency && <div style={{ fontSize: 11, color: '#c00' }}>Emergency</div>}
+          </button>
+        ))}
+      </div>
+      {sel && (() => { const day = data.days.find((x) => x.date === sel);
+        if (day.emergency) return <p>Sunday is emergency-only — call <a href={`tel:${data.phone}`}>{data.phone}</a>.</p>;
+        return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 8 }}>
+          {day.windows.map((w) => (
+            <button key={w.label} disabled={!w.open} onClick={() => onPick({ date: sel, window: w.label })} style={{ padding: 10, borderRadius: 8, opacity: w.open ? 1 : 0.4 }}>
+              {w.label}{!w.open && ' (full)'}
+            </button>
+          ))}
+        </div>; })()}
+    </div>
+  );
+}
+```
+Wire it: `<SlotPicker onPick={(s) => setSlot(s)} />`, then add `date: slot?.date, window: slot?.window` to the
+booking `body`. The server re-checks the slot at submit (returns a friendly "that time just filled" if so).
+
 ## "Ask Clog Busterz" assistant (customer brain)
 A chat box powered by your real pricebook (prices shown as **"starting at"**, never a hard quote):
 ```jsx
