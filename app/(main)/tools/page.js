@@ -8,6 +8,7 @@ import ToolCard from './ToolCard';
 import AddTool from './AddTool';
 import LocateInventory from './LocateInventory';
 import ToolAccountability from './ToolAccountability';
+import ToolPurchases from './ToolPurchases';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +54,7 @@ export default async function Tools({ searchParams }) {
       </div>
       {!q && tools.length === 0 && available && <div className="card"><span className="muted">No tools in the registry yet{isMgr ? ' — add your first one above.' : '.'}</span></div>}
 
+      {isMgr && <ToolPurchases />}
       {isMgr && <ToolAccountability />}
     </div>
   );

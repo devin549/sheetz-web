@@ -3,6 +3,7 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { computeWeeklyPay, CB_STRUCTURE, dollars } from '@/lib/pay';
 import { nyWeekWindow, weeklyLeaderboard } from '@/lib/leaderboard';
 import { marginVerdict, MARGIN_TARGET } from '@/lib/marginCoach';
+import { centsToStr, remainingCents, pctPaid, weeksLeft, summarize } from '@/lib/toolPurchase';
 import RequestAdvance from './RequestAdvance';
 
 export const dynamic = 'force-dynamic';
@@ -16,8 +17,12 @@ export default async function Pay() {
 
   // Compute the tech's REAL week from jobs + their pay profile + the CB structure. Commission techs
   // are commission-only (hourly = PTO/holiday). Award grants this week feed bonuses/deductions.
-  let pay = null, structure = CB_STRUCTURE, rank = null, weekLabel = '', margins = [];
+  let pay = null, structure = CB_STRUCTURE, rank = null, weekLabel = '', margins = [], toolPlans = [];
   const roastLevel = profile.roastLevel || 'PG';
+  // The tech's own tool purchase plans (company-bought tools they're paying off weekly). Read-only here.
+  if (isAdminConfigured) {
+    try { const { data } = await getSupabaseAdmin().from('tool_purchases').select('id, tool_name, purchase_cents, weekly_cents, weekly_pct, paid_cents, status').ilike('tech_name', name).order('status', { ascending: true }).limit(20); toolPlans = data || []; } catch (_) {}
+  }
   if (isAdminConfigured && profile.tech_id) {
     const sb = getSupabaseAdmin();
     const { startISO, endISO } = nyWeekWindow(new Date());
@@ -178,6 +183,38 @@ export default async function Pay() {
           })()}
         </>
       )}
+
+      {/* 🧰 MY TOOL PAYMENTS — company-bought tools being paid off via weekly deduction (read-only). */}
+      {toolPlans.length > 0 && (() => {
+        const active = toolPlans.filter((p) => p.status === 'active');
+        const s = summarize(toolPlans);
+        return (
+          <div className="card" style={{ marginTop: 12 }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 13, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '.05em' }}>🧰 My tool payments</h3>
+            <div className="muted" style={{ fontSize: 11, marginBottom: 10 }}>
+              Company-bought tools you’re paying off. {active.length > 0 ? `${centsToStr(s.weeklyCents)} comes out this week · ${centsToStr(s.owedCents)} left.` : 'All paid off — these are yours. 🎉'}
+            </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {toolPlans.map((p) => {
+                const done = p.status !== 'active'; const pc = pctPaid(p); const wl = weeksLeft(p);
+                return (
+                  <div key={p.id} style={{ padding: '9px 11px', borderRadius: 9, background: 'var(--surface-2)', borderLeft: `3px solid ${done ? 'var(--green)' : 'var(--amber)'}` }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: 12.5 }}>{p.tool_name}</span>
+                      <span className="pill" style={{ fontSize: 9.5, marginLeft: 'auto', color: done ? 'var(--green)' : 'var(--amber)' }}>{done ? (p.status === 'paid_off' ? 'Paid off · yours' : 'Closed') : `${centsToStr(p.weekly_cents)}/wk`}</span>
+                    </div>
+                    <div style={{ height: 6, background: 'var(--surface-1)', borderRadius: 4, overflow: 'hidden', margin: '7px 0 4px' }}>
+                      <div style={{ width: `${pc}%`, height: '100%', background: 'var(--green)' }} />
+                    </div>
+                    <div className="muted" style={{ fontSize: 11 }}>{centsToStr(p.paid_cents)} of {centsToStr(p.purchase_cents)} paid{!done ? ` · ${centsToStr(remainingCents(p))} left${wl != null ? ` · ~${wl} wk${wl === 1 ? '' : 's'}` : ''}` : ''}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="muted" style={{ fontSize: 10, marginTop: 9 }}>If you leave Clog Busterz before a tool’s paid off, you get back everything you’ve paid and the company keeps the tool.</div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
