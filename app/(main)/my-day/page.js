@@ -3,8 +3,12 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
 import JobCard from './JobCard';
+import TodayMoney from './TodayMoney';
 import { deriveTags } from '@/lib/jobTags';
 import ShareLocation from './ShareLocation';
+import { computeJobPay } from '@/lib/pay';
+
+const DAILY_REVENUE_GOAL = 1500; // default tech daily revenue goal for "vs goal" until per-tech goals land
 
 // Always read fresh (no static caching) — this is live job data.
 export const dynamic = 'force-dynamic';
@@ -139,6 +143,33 @@ export default async function MyDay({ searchParams }) {
     members: list.filter((j) => memberByCust[j.customer_id]).length,
     breakdown: list.filter((j) => isDone(j) || isLive(j)),
   };
+  // 💰 Today $ — compute per-job commission via the real pay engine when the tech is linked to a pay
+  // profile. Falls back gracefully (revenue/jobs/avg still show) when there's no link.
+  let moneyProps = null;
+  if (tab === 'money' && !note) {
+    let commissionPct = 0, payKnown = false;
+    if (profile.tech_id) {
+      try {
+        const { data } = await supabase.from('pay_profiles').select('commission_pct, pay_type').eq('tech_id', profile.tech_id).maybeSingle();
+        if (data && (data.pay_type === 'commission' || data.pay_type === 'hourly_comm')) { commissionPct = Number(data.commission_pct) || 0; payKnown = commissionPct > 0; }
+      } catch (_) {}
+    }
+    const costById = {};
+    const ids = list.map((j) => j.id);
+    if (ids.length) { try { const { data } = await supabase.from('jobs').select('id, material_cost_cents, dispatch_fee_cents, sub_cost_cents, sub_verified').in('id', ids); (data || []).forEach((x) => { costById[x.id] = x; }); } catch (_) {} }
+    const payDollars = (j) => { const c = costById[j.id] || {}; const p = computeJobPay({ revenue_cents: Math.round((Number(j.amount) || 0) * 100), material_cost_cents: c.material_cost_cents, dispatch_fee_cents: c.dispatch_fee_cents, sub_cost_cents: c.sub_cost_cents, sub_verified: c.sub_verified }, commissionPct); return p.jobPay / 100; };
+    const breakdown = moneyStats.breakdown.map((j) => ({ id: j.id, name: (j.customers || {}).name || 'Customer', jobType: j.job_type || '', jobNumber: j.job_number ? `#${j.job_number}` : '', time: j.scheduled_at, amount: Number(j.amount) || 0, commission: payDollars(j), live: isLive(j) }));
+    const paySoFar = doneToday.reduce((s, j) => s + payDollars(j), 0);
+    const justJob = moneyStats.breakdown.find((j) => isLive(j)) || doneToday[doneToday.length - 1] || null;
+    const justNow = justJob ? { amount: Number(justJob.amount) || 0, name: (justJob.customers || {}).name || 'Customer', jobNumber: justJob.job_number ? `#${justJob.job_number}` : '' } : null;
+    const vsGoalPct = DAILY_REVENUE_GOAL > 0 ? Math.round((moneyStats.revenue / DAILY_REVENUE_GOAL - 1) * 100) : null;
+    moneyProps = {
+      revenue: moneyStats.revenue, justNow, paySoFar, payKnown,
+      jobsDone: moneyStats.count, avgTicket: moneyStats.avg, vsGoalPct, memberships: moneyStats.members,
+      breakdown, opportunity: stats.target, dailyRevenue: moneyStats.revenue, payHref: '/pay',
+    };
+  }
+
   // My Jobs (last 30d) — loaded only on that tab.
   let jobs30 = [];
   if (tab === 'jobs' && !note) {
@@ -216,34 +247,8 @@ export default async function MyDay({ searchParams }) {
         return <JobCard key={j.id} job={j} seeAll={seeAll} canAct={can(role, 'changeStatus')} variant={variant} tags={tags} pastDue={pastDueByCust[j.customer_id] || 0} />;
       })}
 
-      {/* ── 💰 TODAY $ — tech-only earnings (HTML "Today's Money") ── */}
-      {!note && !error && tab === 'money' && (
-        <>
-          <div className="muted" style={{ fontSize: 12, margin: '2px 0 10px' }}>Your day so far · only you see this — hidden when you hand the iPad to a customer.</div>
-          <div className="card card-amber" style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
-            <div><div className="muted" style={{ fontSize: 10, textTransform: 'uppercase' }}>Revenue today</div><div style={{ fontSize: 26, fontWeight: 800, color: 'var(--green-bright)' }}>{money(moneyStats.revenue)}</div></div>
-            <div><div className="muted" style={{ fontSize: 10, textTransform: 'uppercase' }}>Jobs done</div><div style={{ fontSize: 26, fontWeight: 800 }}>{moneyStats.count}</div></div>
-            <div><div className="muted" style={{ fontSize: 10, textTransform: 'uppercase' }}>Avg ticket</div><div style={{ fontSize: 26, fontWeight: 800 }}>{money(moneyStats.avg)}</div></div>
-            <div><div className="muted" style={{ fontSize: 10, textTransform: 'uppercase' }}>Memberships</div><div style={{ fontSize: 26, fontWeight: 800, color: 'var(--amber)' }}>{moneyStats.members}</div></div>
-          </div>
-          <Link href="/pay" className="pill" style={{ display: 'inline-block', marginTop: 10, color: 'var(--green-bright)', border: '1px solid var(--green-bright)' }}>💵 See your pay + advance →</Link>
-          <div className="h2" style={{ marginTop: 16 }}>Where it came from</div>
-          {moneyStats.breakdown.length === 0 ? <div className="card muted" style={{ fontSize: 13 }}>Nothing closed yet today.</div> : (
-            <div style={{ display: 'grid', gap: 6 }}>
-              {moneyStats.breakdown.map((j) => {
-                const c = j.customers || {}; const done = isDone(j);
-                return (
-                  <div key={j.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                    <span className="pill" style={{ fontSize: 9.5, color: done ? 'var(--green)' : 'var(--amber)' }}>{done ? '✓ DONE' : '🏠 ON-SITE'}</span>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 13 }}>{c.name || 'Customer'}{j.job_type ? ` · ${j.job_type}` : ''}</span>
-                    <span style={{ fontWeight: 800 }}>{money(j.amount)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
+      {/* ── 💰 TODAY $ — tech-only earnings (ported from HTML "Today's Money") ── */}
+      {!note && !error && tab === 'money' && moneyProps && <TodayMoney {...moneyProps} />}
 
       {/* ── 📜 MY JOBS — last 30 days ── */}
       {!note && !error && tab === 'jobs' && (

@@ -171,7 +171,7 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
           {onSite && peek && (
             <button onClick={() => setPeek(false)} title="Hide again (you're on-site)" style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(76,175,80,0.18)', border: '1px solid #4caf50', color: '#a5d6a7', borderRadius: 12, padding: '3px 9px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>🤫 Hide</button>
           )}
-          <Link href="/pay" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(105,240,174,0.12)', border: '1px solid #2ee6a0', borderRadius: 14, padding: '4px 11px' }}>
+          <Link href="/my-day?tab=money" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(105,240,174,0.12)', border: '1px solid #2ee6a0', borderRadius: 14, padding: '4px 11px' }}>
             💰 <span style={{ color: '#69f0ae', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 800 }}>My Day $</span><span style={{ color: '#a5d6a7', fontWeight: 800 }}>›</span>
           </Link>
           <span style={{ color: 'rgba(255,196,60,0.5)' }}>│</span>
