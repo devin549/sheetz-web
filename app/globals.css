@@ -215,6 +215,9 @@ html.cb-tech .topbar { display: none; }
 }
 @keyframes cbBob   { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-3px) rotate(4deg); } }
 @keyframes cbWobble{ 0%,100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
+/* Open-bid follow-up nudge (HTML magnet): a soft amber pulse until the tech follows up. */
+@keyframes cbBlink { 0%,100% { box-shadow: 0 0 0 0 rgba(255,179,0,0); } 50% { box-shadow: 0 0 0 2px rgba(255,179,0,.35); } }
+.cb-blink { animation: cbBlink 1.6s ease-in-out infinite; }
 
 .cb-fx-layer { position: absolute; inset: 0; overflow: visible; pointer-events: none; z-index: 5; }
 .cb-spark { position: absolute; top: 18px; left: 50%; width: 8px; height: 8px; border-radius: 50%;
