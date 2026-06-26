@@ -14,7 +14,10 @@ export async function GET(request) {
   const sb = getSupabaseAdmin();
   if (!sb) return NextResponse.json({ days: [], phone: COMPANY.phone }, { headers: CORS });
   const n = Math.min(21, Math.max(3, Number(new URL(request.url).searchParams.get('days')) || 14));
-  const days = await computeAvailability(sb, n);
+  // Capacity = the techs we can field. Count active field roles.
+  let techCount = 0;
+  try { const { count } = await sb.from('profiles').select('id', { count: 'exact', head: true }).in('role', ['tech', 'foreman', 'fs']); techCount = count || 0; } catch (_) {}
+  const days = await computeAvailability(sb, n, techCount);
   const anyOpen = days.some((d) => d.windows.some((w) => w.open));
   return NextResponse.json({ days, anyOpen, capacity: CAPACITY, phone: COMPANY.phone }, { headers: CORS });
 }

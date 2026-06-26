@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { postToDiscord } from '@/lib/discord';
 import { readDataPlate } from '@/lib/aiVision';
-import { windowOpen, windowByLabel } from '@/lib/availability';
+import { windowOpen, windowByLabel, BOOKING_BETA } from '@/lib/availability';
+import { rankTechs } from '@/lib/dispatch';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -62,11 +63,33 @@ export async function POST(request) {
     else { const { data: c } = await sb.from('customers').insert({ name, phone, email: email || null, address: address || null }).select('id').maybeSingle(); customerId = c?.id || null; }
   } catch (_) {}
 
+  // 🧠 Best-tech recommendation for the chosen slot (skill + nearby + lightest load among free techs).
+  let recommended = null;
+  if (date && arrivalWindow) {
+    try {
+      let techs = [];
+      let tq = await sb.from('profiles').select('id, name, tech_id, role, skills, service_area').in('role', ['tech', 'foreman', 'fs']);
+      if (tq.error) tq = await sb.from('profiles').select('id, name, tech_id, role').in('role', ['tech', 'foreman', 'fs']);
+      techs = (tq.data || []).map((t) => ({ id: t.tech_id || t.id, name: t.name, skills: t.skills || [], area: t.service_area || '' }));
+      const { data: dayJobs } = await sb.from('jobs').select('tech_id, arrival_window, status').gte('scheduled_at', date + 'T00:00:00').lt('scheduled_at', date + 'T23:59:59').not('status', 'eq', 'cancelled');
+      const techLoad = {}; const busy = new Set();
+      (dayJobs || []).forEach((j) => { if (!j.tech_id) return; techLoad[j.tech_id] = (techLoad[j.tech_id] || 0) + 1; if (j.arrival_window === arrivalWindow) busy.add(j.tech_id); });
+      const ranked = rankTechs(techs, { jobType: service, city: where || address, busyTechIds: busy, techLoad });
+      recommended = ranked[0] || null;
+    } catch (_) {}
+  }
+
+  // BETA: every web booking holds for office approval (no auto-assign). Flip BOOKING_BETA off once proven.
+  if (BOOKING_BETA) status = 'hold';
+  const recoLine = recommended ? `${BOOKING_BETA ? 'BETA · pending office approval · ' : 'Auto-assigned '}suggested tech: ${recommended.tech.name}${recommended.reasons.length ? ` (${recommended.reasons.join(', ')})` : ''}` : (BOOKING_BETA && arrivalWindow ? 'BETA · pending office approval' : '');
+
   // Create the job. A picked slot → 'scheduled' with the arrival window; otherwise 'hold' for the office.
   const header = arrivalWindow ? `🌐 WEB BOOKING — ${date} · ${arrivalWindow}${emergency ? ' · 🚨 EMERGENCY' : ''}` : `🌐 WEB BOOKING — ${emergency ? '🚨 EMERGENCY · ' : ''}confirm a time.`;
-  const fullNotes = [header, qa, plateLine, notes].filter(Boolean).join('\n');
+  const fullNotes = [header, recoLine, qa, plateLine, notes].filter(Boolean).join('\n');
   const base = { customer_id: customerId, job_type: service, status, notes: fullNotes };
   const extra = { referral_code: ref || null, how_heard: 'website', address: address || null, scheduled_at: scheduledAt, arrival_window: arrivalWindow };
+  // Only auto-assign the tech when out of beta; in beta the office approves + assigns.
+  if (!BOOKING_BETA && recommended && recommended.tech.id) extra.tech_id = recommended.tech.id;
   let jobId = null;
   let { data: job, error } = await sb.from('jobs').insert({ ...base, ...extra }).select('id').maybeSingle();
   if (error && /column|schema cache|does not exist/i.test(error.message || '')) ({ data: job, error } = await sb.from('jobs').insert(base).select('id').maybeSingle());
@@ -78,10 +101,12 @@ export async function POST(request) {
     try { await sb.from('customer_equipment').insert({ customer_id: customerId, job_id: jobId, type: service, brand: plate.brand || null, model: plate.model || null, serial: plate.serial || null, fuel_type: plate.fuelType || null, capacity_gallons: Number(plate.capacityGallons) || null, year: Number(plate.year) || null, notes: 'From customer booking photo', created_by_name: 'Website' }); } catch (_) {}
   }
   try { await sb.from('audit_log').insert({ actor_name: 'Website', role: 'public', action: 'booking.web', entity: 'job', entity_id: String(jobId || ''), detail: { name, service, ref, plate: !!plate } }); } catch (_) {}
-  try { await postToDiscord(`🌐 **New web booking**\n${name} · ${phone}${address ? ` · ${address}` : ''}\nService: ${service}${ref ? `\nReferral: ${ref}` : ''}${qa ? `\n${qa}` : ''}${plateLine ? `\n🔧 ${plateLine}` : ''}${notes ? `\n📝 ${notes.slice(0, 200)}` : ''}\nConfirm a time on the board.`); } catch (_) {}
+  try { await postToDiscord(`🌐 **New web booking**${BOOKING_BETA ? ' · ⏳ BETA — approve on the board' : ''}\n${name} · ${phone}${address ? ` · ${address}` : ''}\nService: ${service}${arrivalWindow ? `\n🗓 ${date} · ${arrivalWindow}` : ''}${recoLine ? `\n🧠 ${recoLine}` : ''}${ref ? `\nReferral: ${ref}` : ''}${qa ? `\n${qa}` : ''}${plateLine ? `\n🔧 ${plateLine}` : ''}${notes ? `\n📝 ${notes.slice(0, 200)}` : ''}`); } catch (_) {}
 
   const message = arrivalWindow
-    ? `You're booked for ${date}, ${arrivalWindow}! We'll text a confirmation${plate ? ' — and thanks for the photo, it helps us come prepared' : ''}.`
+    ? (BOOKING_BETA
+        ? `Got it! We've reserved ${date}, ${arrivalWindow} — our office will text you shortly to confirm.`
+        : `You're booked for ${date}, ${arrivalWindow}! We'll text a confirmation${plate ? ' — and thanks for the photo, it helps us come prepared' : ''}.`)
     : "Thanks! We've got your request — we'll text you to confirm a time.";
-  return NextResponse.json({ ok: true, jobId, scheduled: !!arrivalWindow, message }, { headers: CORS });
+  return NextResponse.json({ ok: true, jobId, scheduled: !BOOKING_BETA && !!arrivalWindow, message }, { headers: CORS });
 }
