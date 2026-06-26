@@ -101,11 +101,9 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
         { icon: '🔧', label: 'Equipment', href: `/job/${curId}/equipment` },
         { icon: '🕑', label: 'History', href: `/job/${curId}/history` },
       ] }]
-    : [{ group: 'Job', items: [
-        { icon: '🧰', label: 'Job', href: activeJob ? `/job/${activeJob.id}` : '/my-day' },
-        { icon: '🧾', label: 'Proof', href: pick('/photos') },
-        // Tools folded into My Truck (matches the HTML — no standalone Tools on the rail).
-      ] }, ...RAIL];
+    : [...RAIL, ...(canOffice ? [{ group: 'Owner', items: [{ icon: '🔐', label: 'Command Center', href: '/?cc=1' }] }] : [])];
+  // global rail — Job/Proof removed (reach jobs via My Day; proof photos live inside the job).
+  // Command Center is an owner-only PIN-gated side tab (no longer the default landing).
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%' }}>

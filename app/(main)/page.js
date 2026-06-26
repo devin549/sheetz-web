@@ -1,5 +1,7 @@
 import Link from 'next/link';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { resolveShell } from '@/lib/shells';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { roleOf, canSee } from '@/lib/nav';
@@ -159,11 +161,19 @@ function commandTiles(role) {
   ].filter((t) => t.show(role));
 }
 
-export default async function Home() {
+export default async function Home({ searchParams }) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const role = roleOf(user);
   const meta = roleMeta(role);
+
+  // 🏠 In the field/tech shell, land on My Day — the Command Center is a PIN-gated side tab opened via ?cc=1.
+  // The office/shop shells keep the Command Center as their home (untouched).
+  if (user) {
+    const prof = await loadProfile(user);
+    const shell = resolveShell({ host: headers().get('host') || '', cookieShell: cookies().get('cb_shell')?.value || '', role, fieldMode: prof.fieldMode, shopMode: prof.shopMode });
+    if (shell === 'tech' && !(searchParams && searchParams.cc)) redirect('/my-day');
+  }
   const fullName = (user && user.user_metadata && user.user_metadata.name) || (user && user.email) || '';
   const first = String(fullName).split(/[\s@]/)[0] || 'there';
 
