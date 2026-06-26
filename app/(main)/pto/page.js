@@ -3,6 +3,8 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { can } from '@/lib/roles';
 import RequestVacation from './RequestVacation';
 import PtoApprovals from './PtoApprovals';
+import AbsenceReport from './AbsenceReport';
+import AbsenceOverride from './AbsenceOverride';
 
 const fmtD = (s) => { if (!s) return ''; try { return new Date(s + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }); } catch { return s; } };
 const KIND_ICON = { vacation: '🏖', sick: '🤒', personal: '🙋', unpaid: '💸' };
@@ -74,16 +76,20 @@ function HolidayRow({ h, paid }) {
 
 export default async function Pto() {
   const { user, role } = await requirePerm('seeOwnPayOnly', 'seeOwnOnly', 'changeStatus', 'seeReports');
-  const pct = Math.min(100, (pto.unexcused / pto.unexcusedMax) * 100);
 
   // Real time-off requests: the tech's own + (for approvers) the pending queue. Fail-soft.
   const isApprover = can(role, 'manageUsers') || can(role, 'assignJobs') || can(role, 'seeCrew');
-  let myReqs = [], pendingReqs = [];
+  let myReqs = [], pendingReqs = [], myUnexcused = 0, recentAbsences = [];
+  const yearStart = new Date().getFullYear() + '-01-01';
   if (isAdminConfigured) {
     const sb = getSupabaseAdmin();
     try { const { data } = await sb.from('time_off_requests').select('id, kind, start_date, end_date, status, reason, decided_by_name, decision_note').eq('user_id', user.id).order('created_at', { ascending: false }).limit(12); myReqs = data || []; } catch (_) {}
     if (isApprover) { try { const { data } = await sb.from('time_off_requests').select('id, tech_name, kind, start_date, end_date, reason').eq('status', 'pending').order('start_date', { ascending: true }).limit(40); pendingReqs = data || []; } catch (_) {} }
+    // Real unexcused-this-year count (policy: 2 = forfeit holidays). Manager sees recent absences to override.
+    try { const { count } = await sb.from('absences').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'unexcused').gte('absence_date', yearStart); myUnexcused = count || 0; } catch (_) {}
+    if (isApprover) { try { const { data } = await sb.from('absences').select('id, tech_name, absence_date, status, reason, doc_path, decided_by_name').gte('absence_date', yearStart).order('absence_date', { ascending: false }).limit(30); recentAbsences = data || []; } catch (_) {} }
   }
+  const pct = Math.min(100, (myUnexcused / pto.unexcusedMax) * 100);
 
   return (
     <div className="wrap" style={{ maxWidth: 760 }}>
@@ -106,8 +112,8 @@ export default async function Pto() {
             <div style={{ fontSize: 11, color: 'var(--fg-2)', marginTop: 2 }}>Rule: <strong style={{ color: '#ffb74d' }}>2 unexcused = ALL 5 holidays FORFEITED</strong> for the year. No exceptions, no humor.</div>
           </div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 30, fontWeight: 900, color: '#4caf50', lineHeight: 1 }}>{pto.unexcused} / {pto.unexcusedMax}</div>
-            <div style={{ fontSize: 9, color: '#a5d6a7', textTransform: 'uppercase', fontWeight: 800 }}>{pto.unexcused === 0 ? 'CLEAR ✓' : pto.unexcused === 1 ? 'WARNING' : 'FORFEITED'}</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 30, fontWeight: 900, color: '#4caf50', lineHeight: 1 }}>{myUnexcused} / {pto.unexcusedMax}</div>
+            <div style={{ fontSize: 9, color: '#a5d6a7', textTransform: 'uppercase', fontWeight: 800 }}>{myUnexcused === 0 ? 'CLEAR ✓' : myUnexcused === 1 ? 'WARNING' : 'FORFEITED'}</div>
           </div>
         </div>
         <div style={{ position: 'relative', height: 10, background: 'rgba(0,0,0,0.3)', borderRadius: 5, overflow: 'hidden', border: '1px solid var(--border)' }}>
@@ -119,7 +125,36 @@ export default async function Pto() {
         </div>
       </div>
 
-      <div style={{ marginTop: 14 }}><RequestVacation /></div>
+      <div style={{ marginTop: 14 }}><RequestVacation /><AbsenceReport /></div>
+
+      {/* Pay-type rules (ported from the Tech Sheet sandbox — they differ by pay type) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 10, marginTop: 14 }}>
+        <div className="card" style={{ borderLeft: '3px solid var(--amber)' }}>
+          <div style={{ fontWeight: 800, fontSize: 12.5, color: 'var(--amber)' }}>🔧 Commission techs</div>
+          <ul className="muted" style={{ fontSize: 11.5, lineHeight: 1.6, margin: '6px 0 0', paddingLeft: 18 }}>
+            <li>Commission-only on jobs. Vacation + holidays paid at <strong>$15/hr</strong> — never job time.</li>
+            <li>1 week vacation (40 hrs) + 5 paid holidays (8 hrs hourly each). <strong>No sick PTO.</strong></li>
+            <li><strong style={{ color: '#ffb74d' }}>2 unexcused absences = forfeit all 5 holidays</strong> for the year.</li>
+          </ul>
+        </div>
+        <div className="card" style={{ borderLeft: '3px solid var(--blue)' }}>
+          <div style={{ fontWeight: 800, fontSize: 12.5, color: 'var(--blue)' }}>📘 Salary techs</div>
+          <ul className="muted" style={{ fontSize: 11.5, lineHeight: 1.6, margin: '6px 0 0', paddingLeft: 18 }}>
+            <li>Missed time burns down in order: <strong>holidays → vacation → pro-rated</strong> (salary docked once both are used).</li>
+            <li>Same 2-unexcused holiday-forfeit rule applies.</li>
+            <li>Higher Crown/Turd thresholds ($7,500 / $11,000).</li>
+          </ul>
+        </div>
+      </div>
+
+      {/* Manager: recent absences — policy already decided; override is logged */}
+      {isApprover && recentAbsences.length > 0 && (
+        <div className="card" style={{ marginTop: 14, borderLeft: '3px solid var(--blue)' }}>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 2 }}>📋 Absences · this year</div>
+          <div className="muted" style={{ fontSize: 11, marginBottom: 8 }}>Policy decided each one. Override only on a real exception — it’s logged against your name.</div>
+          <AbsenceOverride items={recentAbsences.map((a) => ({ id: a.id, status: a.status, label: `${a.tech_name || 'Tech'} · ${fmtD(a.absence_date)}${a.reason ? ` — ${a.reason}` : ''}${a.doc_path ? ' · 📄 note on file' : ''}` }))} />
+        </div>
+      )}
 
       {/* Manager: pending approvals */}
       {isApprover && pendingReqs.length > 0 && (

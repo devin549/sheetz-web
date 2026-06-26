@@ -5,7 +5,9 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { requestTimeOff } from './actions';
 
-const KINDS = [['vacation', '🏖 Vacation'], ['sick', '🤒 Sick'], ['personal', '🙋 Personal'], ['unpaid', '💸 Unpaid']];
+// CB offers no sick PTO — sick days are handled as excused absences (with a doctor's note). Planned
+// time off is vacation / personal / unpaid only.
+const KINDS = [['vacation', '🏖 Vacation'], ['personal', '🙋 Personal'], ['unpaid', '💸 Unpaid']];
 const inp = { width: '100%', boxSizing: 'border-box', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '10px 12px', fontSize: 14 };
 
 export default function RequestVacation() {
