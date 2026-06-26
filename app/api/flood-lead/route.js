@@ -27,6 +27,12 @@ export async function POST(request) {
   const where = clean(body.location || body.address, 200);
   const unit = clean(body.unit, 200);     // e.g. "gas 40-gal Rheem (leaking)"
   const notes = clean(body.notes, 1000);
+  // Damage photos (data URLs, already downscaled client-side) → email attachments for the FloodBusterz crew.
+  const photos = Array.isArray(body.photos) ? body.photos.filter((p) => /^data:image\//.test(String(p))).slice(0, 4) : [];
+  const attachments = photos.map((p, i) => {
+    const m = String(p).match(/^data:(image\/[a-z]+);base64,(.+)$/i);
+    return m ? { filename: `damage-${i + 1}.${m[1].split('/')[1]}`, content: m[2] } : null;
+  }).filter(Boolean);
 
   const sb = getSupabaseAdmin();
   const note = [
@@ -52,7 +58,7 @@ export async function POST(request) {
 
   // Office ping (Discord / Captain Hook).
   try {
-    await postToDiscord(`🌊 **FloodBusterz lead** (web) · 🚨 dry-out\n${name || 'Customer'} · ${phone}${where ? ` · ${where}` : ''}${unit ? `\nUnit: ${unit}` : ''}${notes ? `\n📝 ${notes.slice(0, 200)}` : ''}\nReview in Sales → Referrals. (Customer not auto-contacted.)`);
+    await postToDiscord(`🌊 **FloodBusterz lead** (web) · 🚨 dry-out\n${name || 'Customer'} · ${phone}${where ? ` · ${where}` : ''}${unit ? `\nUnit: ${unit}` : ''}${attachments.length ? `\n📸 ${attachments.length} damage photo${attachments.length > 1 ? 's' : ''} emailed to FloodBusterz` : ''}${notes ? `\n📝 ${notes.slice(0, 200)}` : ''}\nReview in Sales → Referrals. (Customer not auto-contacted.)`);
   } catch (_) {}
 
   // Notify the FloodBusterz salesperson directly — INTERNAL staff only. Customer is not contacted.
@@ -60,9 +66,9 @@ export async function POST(request) {
   const SALES_PHONE = process.env.FLOODBUSTERZ_SALES_PHONE || '';
   const summary = `New FloodBusterz dry-out lead from the website. ${name || 'Customer'} ${phone}${where ? ` · ${where}` : ''}${unit ? ` · ${unit}` : ''}. Call them to scope the restoration.`;
   if (SALES_EMAILS.length && isEmailConfigured) {
-    const html = renderEmailHtml({ subject: 'FloodBusterz web lead', body: summary + (notes ? `\n\nNotes: ${notes}` : '') });
+    const html = renderEmailHtml({ subject: 'FloodBusterz web lead', body: summary + (notes ? `\n\nNotes: ${notes}` : '') + (attachments.length ? `\n\n${attachments.length} damage photo${attachments.length > 1 ? 's' : ''} attached.` : '') });
     for (const to of SALES_EMAILS) {
-      try { await sendOne({ to, subject: `🌊 FloodBusterz web lead — ${name || phone}`, html }); } catch (_) {}
+      try { await sendOne({ to, subject: `🌊 FloodBusterz web lead — ${name || phone}`, html, attachments: attachments.length ? attachments : undefined }); } catch (_) {}
     }
   }
   if (SALES_PHONE && smsConfigured()) {
