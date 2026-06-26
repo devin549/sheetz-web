@@ -47,14 +47,27 @@ function jobTypesFor(text) {
   };
   const real = svc.filter(isReal);
 
-  // Categories from the leaf names the items actually use.
-  const catSet = new Map(); // slug -> name
-  real.forEach((s) => { const name = cleanCat(s['Category.Name']); catSet.set(slugify(name), name); });
-  const cats = [...catSet.entries()].map(([slug, name], i) => ({ name, slug, sort_order: (i + 1) * 10, active: true }));
+  // Build the FULL category tree from the Categories sheet (Category1..7 nesting → parent_id), keyed by the
+  // ST category Id so items map exactly (leaf names collide; ids don't). Slug = name + '-' + stId (unique).
+  const catSheet = XLSX.utils.sheet_to_json(wb.Sheets['Categories'], { defval: '' });
+  const LEVELS = ['Category1', 'Category2', 'Category3', 'Category4', 'Category5', 'Category6', 'Category7'];
+  const stack = {}; const catDefs = [];
+  catSheet.forEach((row, i) => {
+    let depth = -1, name = '';
+    for (let d = 0; d < LEVELS.length; d++) { const v = cleanCat(row[LEVELS[d]]); if (v && v !== 'Uncategorized' && row[LEVELS[d]]) { depth = d; name = v; break; } }
+    if (depth < 0) return;
+    const stId = String(row.Id);
+    stack[depth] = stId; for (let d = depth + 1; d < LEVELS.length; d++) delete stack[d];
+    catDefs.push({ stId, name, parentStId: depth > 0 ? (stack[depth - 1] || null) : null, depth, sort: i * 10, active: row.Active == 1 });
+  });
+  const cats = catDefs.map((c) => ({ name: c.name, slug: (slugify(c.name).slice(0, 40) + '-' + c.stId).slice(0, 60), sort_order: c.sort, active: c.active }));
   let r = await sb.from('pricebook_categories').upsert(cats, { onConflict: 'slug' });
   if (r.error) { console.error('categories FAIL', r.error.message); process.exit(1); }
   const { data: catRows } = await sb.from('pricebook_categories').select('id, slug');
-  const catId = Object.fromEntries(catRows.map((c) => [c.slug, c.id]));
+  const slugUuid = Object.fromEntries(catRows.map((c) => [c.slug, c.id]));
+  const stUuid = {}; catDefs.forEach((c, i) => { stUuid[c.stId] = slugUuid[cats[i].slug]; });
+  // 2nd pass: set parent_id from the tree.
+  for (const c of catDefs) { if (c.parentStId && stUuid[c.parentStId] && stUuid[c.stId]) { try { await sb.from('pricebook_categories').update({ parent_id: stUuid[c.parentStId] }).eq('id', stUuid[c.stId]); } catch (_) {} } }
 
   // Items — dedupe sku (append Id on collision).
   const seen = new Set();
@@ -66,7 +79,7 @@ function jobTypesFor(text) {
     const retail = num(s.UseStaticPrice ? s.StaticPrice : (s['DynamicPrice(ReadOnly)'] || s.StaticPrice));
     const catName = cleanCat(s['Category.Name']);
     return {
-      category_id: catId[slugify(catName)] || null,
+      category_id: stUuid[String(s['Category.Id'])] || null,
       sku, name, customer_name: name,
       short_description: stripHtml(s.Description).slice(0, 300) || null,
       customer_description: stripHtml(s.Description).slice(0, 1000) || null,
