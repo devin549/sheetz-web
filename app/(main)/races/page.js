@@ -2,7 +2,9 @@ import { requirePerm } from '@/lib/guard';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { weeklyLeaderboard, weeklyEligibility } from '@/lib/leaderboard';
 import { rankEffect } from '@/lib/rankFx';
+import { getConfig, pullsAvailable, budgetSpent } from '@/lib/powerPlunger';
 import RankFx from '../RankFx';
+import SlotMachine from './SlotMachine';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +64,20 @@ export default async function Races() {
     : r.dq;
   const eligible = elig.available ? elig.eligible : true;
   const strikes = elig.available ? (elig.late + elig.callbacks) : 0;
+
+  // ⚡ Power Plunger — pulls earned this week (5★ reviews + memberships) + budget state. Owner-configurable.
+  let ppPulls = 0, ppBudgetTapped = false, ppTopPrize = 15, ppActive = false;
+  if (isAdminConfigured) {
+    try {
+      const sb = getSupabaseAdmin();
+      const cfg = await getConfig(sb);
+      ppTopPrize = Number(cfg.top_prize) || 15; ppActive = !!cfg.active;
+      if (cfg.active) {
+        ppPulls = await pullsAvailable(sb, { techId: profile.tech_id, name }, cfg);
+        ppBudgetTapped = (await budgetSpent(sb, cfg.budget_period)) >= Number(cfg.budget_cap);
+      }
+    } catch (_) {}
+  }
   return (
     <div className="wrap" style={{ maxWidth: 640 }}>
       <div className="card" style={{ background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 18%, var(--surface-1)) 0%, var(--amber-deep) 100%)', border: '1px solid var(--amber)' }}>
@@ -83,6 +99,9 @@ export default async function Races() {
         <div className="muted" style={{ fontSize: 12 }}>{r.biggest.leaderWho}</div>
         <div style={{ fontSize: 12.5, marginTop: 6 }}>You: <strong>{r.biggest.you}</strong> · gap {r.biggest.gap} · current pace could close it <span className="pill" style={{ color: 'var(--green)' }}>🥇 {r.biggest.bonus} bonus</span></div>
       </div>
+
+      {/* ⚡ Power Plunger Hour — roll-for-a-bonus slot (real, budget-capped) */}
+      {ppActive && <SlotMachine pulls={ppPulls} budgetTapped={ppBudgetTapped} topPrize={ppTopPrize} />}
 
       {/* Weekly challenges */}
       <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
