@@ -75,14 +75,22 @@ function HolidayRow({ h, paid }) {
 }
 
 export default async function Pto() {
-  const { user, role } = await requirePerm('seeOwnPayOnly', 'seeOwnOnly', 'changeStatus', 'seeReports');
+  const { user, role, profile } = await requirePerm('seeOwnPayOnly', 'seeOwnOnly', 'changeStatus', 'seeReports');
+  const name = profile?.name || user.email;
 
   // Real time-off requests: the tech's own + (for approvers) the pending queue. Fail-soft.
   const isApprover = can(role, 'manageUsers') || can(role, 'assignJobs') || can(role, 'seeCrew');
   let myReqs = [], pendingReqs = [], myUnexcused = 0, recentAbsences = [];
+  // Calendar side (merged Cal+PTO): on-call status this week + today's job count.
+  let onCall = '', todayJobs = 0;
   const yearStart = new Date().getFullYear() + '-01-01';
   if (isAdminConfigured) {
     const sb = getSupabaseAdmin();
+    try {
+      const { data: oc } = await sb.from('on_call_schedule').select('*').eq('slot', 'current').maybeSingle();
+      if (oc && name) { const n = String(name).toLowerCase().split(/\s+/)[0]; const hit = ['mon', 'tue', 'wed', 'thu', 'weekend', 'helper_week', 'supervisor'].find((k) => String(oc[k] || '').toLowerCase().includes(n)); if (hit) onCall = hit === 'weekend' ? 'on-call this weekend' : hit === 'helper_week' ? 'helper on-call this week' : 'on-call this week'; }
+    } catch (_) {}
+    try { if (profile?.tech_id) { const s = new Date(); s.setHours(0, 0, 0, 0); const e = new Date(); e.setHours(23, 59, 59, 999); const { count } = await sb.from('jobs').select('id', { count: 'exact', head: true }).eq('tech_id', profile.tech_id).gte('scheduled_at', s.toISOString()).lte('scheduled_at', e.toISOString()); todayJobs = count || 0; } } catch (_) {}
     try { const { data } = await sb.from('time_off_requests').select('id, kind, start_date, end_date, status, reason, decided_by_name, decision_note').eq('user_id', user.id).order('created_at', { ascending: false }).limit(12); myReqs = data || []; } catch (_) {}
     if (isApprover) { try { const { data } = await sb.from('time_off_requests').select('id, tech_name, kind, start_date, end_date, reason').eq('status', 'pending').order('start_date', { ascending: true }).limit(40); pendingReqs = data || []; } catch (_) {} }
     // Real unexcused-this-year count (policy: 2 = forfeit holidays). Manager sees recent absences to override.
@@ -93,8 +101,22 @@ export default async function Pto() {
 
   return (
     <div className="wrap" style={{ maxWidth: 760 }}>
-      <div className="h1" style={{ marginBottom: 2 }}>📅 Time Off &amp; Holidays</div>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>CB benefit: 1 week vacation (40 hrs) + 5 paid holidays · all paid at HOURLY rate (no commission) · routes through Field Supervisor. <em>Sample — live time-off/roster feed wires next.</em></div>
+      <div className="h1" style={{ marginBottom: 2 }}>📆 Calendar &amp; Time Off</div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Your schedule, on-call, and time off in one place.</div>
+
+      {/* ── 📅 CALENDAR ── */}
+      <div className="card card-amber" style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>📅 {new Date().toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })}</div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{todayJobs} job{todayJobs === 1 ? '' : 's'} today{onCall ? ` · ☎️ ${onCall}` : ''}</div>
+        </div>
+        {onCall && <span className="pill cb-blink" style={{ color: 'var(--amber)', border: '1px solid var(--amber)' }}>☎️ {onCall}</span>}
+        <a href="/my-day" className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>Open My Day →</a>
+      </div>
+      <div className="muted" style={{ fontSize: 11, margin: '6px 0 16px' }}>Jobs, callbacks, inspections, training &amp; meetings show on My Day; on-call is set by the office. Google Calendar sync wires next.</div>
+
+      <h3 style={{ fontSize: 13, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '.05em', margin: '0 0 8px' }}>🏖 Time Off &amp; Holidays</h3>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>CB benefit: 1 week vacation (40 hrs) + 5 paid holidays · all paid at HOURLY rate (no commission) · routes through Field Supervisor.</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         <StatCard h="Vacation Balance" v={pto.vacationBalance} d="1 full week · resets Jan 1" dc="var(--green)" />
