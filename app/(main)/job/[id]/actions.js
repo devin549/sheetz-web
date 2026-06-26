@@ -470,6 +470,33 @@ export async function setJobCosts(jobId, materialDollars, dispatchDollars) {
   return { ok: true, msg: 'Job costs saved — feeds pay.' };
 }
 
+// Set a SUBCONTRACTOR cost on a job — passed AT COST (no markup). Setting/changing it resets verification,
+// so it stays "pending" until Accounting confirms it again.
+export async function setJobSub(jobId, subDollars, vendor) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'changeStatus') || can(ctx.role, 'collectPayment') || can(ctx.role, 'seeFinancials') || canUploadPhotos(ctx.role))) return { ok: false, msg: 'Your role can’t set job costs.' };
+  const sc = Math.max(0, Math.round(Number(subDollars) * 100)) || 0;
+  const vend = cleanText(vendor, 120);
+  const { error } = await ctx.sb.from('jobs').update({ sub_cost_cents: sc, sub_vendor: vend || null, sub_verified: false, sub_verified_by: null, sub_verified_at: null }).eq('id', ctx.job.id);
+  if (error) return { ok: false, msg: /sub_cost|sub_vendor|column|schema cache/i.test(error.message || '') ? 'Run supabase/115_job_subcontractor.sql first.' : error.message };
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'job.sub', entity: 'job', entity_id: String(ctx.job.id), detail: { sub_cents: sc, vendor: vend } }); } catch (_) {}
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/pay'); revalidatePath('/payroll');
+  return { ok: true, msg: sc > 0 ? 'Sub cost saved — pending Accounting verification.' : 'Sub cost cleared.' };
+}
+
+// Accounting (or owner) verifies a job's subcontractor cost → it finalizes in pay.
+export async function verifyJobSub(jobId) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'seeFinancials') || can(ctx.role, 'manageUsers'))) return { ok: false, msg: 'Accounting / owner only.' };
+  const { error } = await ctx.sb.from('jobs').update({ sub_verified: true, sub_verified_by: ctx.profile?.name || ctx.user.email, sub_verified_at: new Date().toISOString() }).eq('id', ctx.job.id);
+  if (error) return { ok: false, msg: error.message };
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'job.sub.verify', entity: 'job', entity_id: String(ctx.job.id), detail: {} }); } catch (_) {}
+  revalidatePath('/pay'); revalidatePath('/payroll'); revalidatePath(`/job/${ctx.job.id}`);
+  return { ok: true, msg: 'Verified — it finalizes in pay.' };
+}
+
 // Reserve / request a tool for this job — logged so the holder + office see it (internal, no auto-text).
 export async function requestTool(toolId, jobId, toolName, holder) {
   const ctx = await getActionContext(cleanText(jobId, 80));

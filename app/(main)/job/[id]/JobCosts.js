@@ -4,15 +4,18 @@
 // (subtotal = revenue − dispatch(capped) − material×markup). Without them, /pay overstates commission.
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { setJobCosts } from './actions';
+import { setJobCosts, setJobSub } from './actions';
 import { marginVerdict } from '@/lib/marginCoach';
 
-export default function JobCosts({ jobId, materialCents, dispatchCents, canEdit, revenue = 0, roastLevel = 'PG', name = '' }) {
+export default function JobCosts({ jobId, materialCents, dispatchCents, subCents = 0, subVendor = '', subVerified = false, canEdit, revenue = 0, roastLevel = 'PG', name = '' }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
   const [mat, setMat] = useState(materialCents ? (materialCents / 100).toString() : '');
   const [disp, setDisp] = useState(dispatchCents ? (dispatchCents / 100).toString() : '');
+  const [sub, setSub] = useState(subCents ? (subCents / 100).toString() : '');
+  const [vend, setVend] = useState(subVendor || '');
+  const saveSub = () => { setMsg(null); start(async () => { const r = await setJobSub(jobId, Number(sub) || 0, vend); setMsg(r); if (r?.ok) router.refresh(); }); };
   // 🌽👑 / 💩 live margin verdict — recomputed as the tech types costs.
   const verdict = useMemo(() => marginVerdict({ revenue, materialCost: Number(mat) || 0, dispatchFee: Number(disp) || 0, level: roastLevel, name }), [revenue, mat, disp, roastLevel, name]);
   if (!canEdit) return null;
@@ -53,6 +56,23 @@ export default function JobCosts({ jobId, materialCents, dispatchCents, canEdit,
       )}
 
       <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>Material cost drives the markup tier (2× ≤$399 · 1.5× &gt;$399) + your premium. Dispatch fee is capped at $125/job.</div>
+
+      {/* 👷 SUBCONTRACTOR — passed at cost, no markup; pending until Accounting verifies */}
+      <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <span style={{ fontSize: 16 }}>👷</span>
+          <div style={{ fontWeight: 800 }}>Subcontractor <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>— at cost, no markup</span></div>
+          {subCents > 0 && <span className="pill" style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 800, color: subVerified ? 'var(--green)' : '#ff8a3d', border: '1px solid ' + (subVerified ? 'var(--green)' : '#ff8a3d') }}>{subVerified ? '✓ Verified' : '⏳ Pending Accounting'}</span>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <label style={{ fontSize: 11, color: 'var(--fg-3)' }}>Sub cost ($)
+            <input type="number" inputMode="decimal" value={sub} onChange={(e) => setSub(e.target.value)} placeholder="0" style={{ ...input, marginTop: 3 }} /></label>
+          <label style={{ fontSize: 11, color: 'var(--fg-3)' }}>Vendor
+            <input value={vend} onChange={(e) => setVend(e.target.value)} placeholder="e.g. Joe's Excavation" style={{ ...input, marginTop: 3 }} /></label>
+        </div>
+        <button onClick={saveSub} disabled={pending} className="btn" style={{ marginTop: 10, opacity: pending ? 0.6 : 1 }}>{pending ? 'Saving…' : 'Save sub'}</button>
+        <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>Subs are taken off at cost (not marked up) and stay <strong>pending</strong> until Accounting verifies the invoice.</div>
+      </div>
     </div>
   );
 }

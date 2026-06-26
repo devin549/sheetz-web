@@ -28,10 +28,11 @@ export default async function Pay() {
     const { startISO, endISO } = nyWeekWindow(new Date());
     weekLabel = new Date(startISO).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' – ' + new Date(Date.parse(endISO) - 86400000).toLocaleDateString([], { month: 'short', day: 'numeric' });
     let jobs = [], jobDetails = [];
-    let jq = await sb.from('jobs').select('id, amount, status, material_cost_cents, dispatch_fee_cents, job_type, customers(name)')
+    let jq = await sb.from('jobs').select('id, amount, status, material_cost_cents, dispatch_fee_cents, sub_cost_cents, sub_verified, job_type, customers(name)')
       .eq('tech_id', profile.tech_id).in('status', DONE).gte('scheduled_at', startISO).lt('scheduled_at', endISO);
+    if (jq.error) jq = await sb.from('jobs').select('id, amount, status, material_cost_cents, dispatch_fee_cents, job_type, customers(name)').eq('tech_id', profile.tech_id).in('status', DONE).gte('scheduled_at', startISO).lt('scheduled_at', endISO); // pre-115 (no sub cols)
     if (jq.error) jq = await sb.from('jobs').select('id, amount, status, job_type, customers(name)').eq('tech_id', profile.tech_id).in('status', DONE).gte('scheduled_at', startISO).lt('scheduled_at', endISO); // pre-73
-    jobs = (jq.data || []).map((j) => ({ revenue_cents: Math.round(Number(j.amount || 0) * 100), material_cost_cents: j.material_cost_cents || 0, dispatch_fee_cents: j.dispatch_fee_cents || 0 }));
+    jobs = (jq.data || []).map((j) => ({ revenue_cents: Math.round(Number(j.amount || 0) * 100), material_cost_cents: j.material_cost_cents || 0, dispatch_fee_cents: j.dispatch_fee_cents || 0, sub_cost_cents: j.sub_cost_cents || 0, sub_verified: j.sub_verified === true }));
     jobDetails = (jq.data || []).map((j) => ({ id: j.id, customer: (j.customers && j.customers.name) || 'Customer', type: j.job_type || 'Job', amount: Number(j.amount) || 0, materialCost: (j.material_cost_cents || 0) / 100, dispatchFee: (j.dispatch_fee_cents || 0) / 100 }));
     // Per-job margin verdict (🌽 Corn ≥target / 💩 Turd below + $ to hit it). Roast heat = the tech's level.
     margins = jobDetails.map((j) => ({ ...j, verdict: marginVerdict({ revenue: j.amount, materialCost: j.materialCost, dispatchFee: j.dispatchFee, level: roastLevel, name }) })).filter((j) => j.amount > 0);
@@ -107,6 +108,7 @@ export default async function Pay() {
             {row('📈', `Revenue collected (${pay.jobsCount} jobs)`, dollars(pay.revenue), { strong: true, top: true })}
             {pay.dispatchFees > 0 && row('🏷', 'Less dispatch fees ($125/job cap)', '−' + dollars(pay.dispatchFees), { neg: true })}
             {pay.materialDeduction > 0 && row('🔧', 'Less material at markup (2× ≤$399 · 1.5× >$399)', '−' + dollars(pay.materialDeduction), { neg: true })}
+            {pay.subDeduction > 0 && row('👷', `Less subcontractor at cost${pay.subPending ? ' · ⏳ pending Accounting verify' : ''}`, '−' + dollars(pay.subDeduction), { neg: true })}
             {['commission', 'hourly_comm'].includes(pay.payType) && row('💪', `Commission (${pay.rate}% of subtotal)`, dollars(pay.commission), { strong: true })}
             {pay.premium > 0 && row('🎁', 'Material premium (10% ≤$399 · 5% >$399)', dollars(pay.premium), { pos: true })}
             {pay.hourlyJobPay > 0 && row('⏱', 'Hourly (hours × rate)', dollars(pay.hourlyJobPay))}

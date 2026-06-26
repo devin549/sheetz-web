@@ -313,7 +313,7 @@ export default async function JobDetail({ params }) {
 
       <JobParts jobId={id} parts={parts} canReturn={canReturnRentals} />
 
-      {!isEstimate && <JobCosts jobId={id} materialCents={job.material_cost_cents} dispatchCents={job.dispatch_fee_cents} canEdit={canAct || can(role, 'collectPayment') || can(role, 'seeFinancials')} revenue={Number(job.amount) || 0} roastLevel={profile.roastLevel || 'PG'} name={profile.name || ''} />}
+      {!isEstimate && <JobCosts jobId={id} materialCents={job.material_cost_cents} dispatchCents={job.dispatch_fee_cents} subCents={job.sub_cost_cents} subVendor={job.sub_vendor} subVerified={job.sub_verified} canEdit={canAct || can(role, 'collectPayment') || can(role, 'seeFinancials')} revenue={Number(job.amount) || 0} roastLevel={profile.roastLevel || 'PG'} name={profile.name || ''} />}
 
       <div id="photos" style={{ scrollMarginTop: 70 }} />
 

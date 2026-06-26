@@ -2,6 +2,7 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireRole } from '@/lib/guard';
 import { nyTodayStr } from '@/lib/day';
 import PayrollClient from './PayrollClient';
+import PendingSubs from './PendingSubs';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,12 +33,23 @@ export default async function Payroll({ searchParams }) {
   const { data: pays } = await sb.from('pay_profiles').select('tech_id, pay_type, commission_pct, hourly_rate, weekly_salary');
   const payByTech = {}; (pays || []).forEach((p) => { payByTech[p.tech_id] = p; });
 
+  // 👷 Subcontractor costs awaiting Accounting verification (any open pending sub) — verify here → finalizes in pay.
+  let pendingSubs = [];
+  try {
+    const { data } = await sb.from('jobs').select('id, job_number, sub_cost_cents, sub_vendor, tech_name, customers(name)')
+      .gt('sub_cost_cents', 0).eq('sub_verified', false).order('scheduled_at', { ascending: false }).limit(50);
+    pendingSubs = data || [];
+  } catch (_) {}
+
   return (
+    <>
+      {pendingSubs.length > 0 && <div className="wrap" style={{ paddingBottom: 0 }}><PendingSubs subs={pendingSubs} /></div>}
     <PayrollClient
       week={week} weekEnd={weekEnd} today={sundayOf(nyTodayStr())}
       prevWeek={addDays(week, -7)} nextWeek={addDays(week, 7)}
       run={run} lines={lines} techs={techs} payByTech={payByTech}
       canApprove={['owner', 'admin', 'gm', 'om'].includes(String(role).toLowerCase())}
     />
+    </>
   );
 }
