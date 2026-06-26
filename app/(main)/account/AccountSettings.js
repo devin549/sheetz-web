@@ -10,6 +10,7 @@ import { ROAST_LEVELS } from '@/lib/roast';
 import { createClient } from '@/lib/supabase/client';
 import ChangePassword from './ChangePassword';
 import RoastRConsent from '../RoastRConsent';
+import LicenseScanner from './LicenseScanner';
 
 function Section({ title, children }) {
   return (
@@ -137,9 +138,25 @@ export default function AccountSettings({ user, profile, isManager, ccGated, ccP
         <Row label="Name">{profile.name || '—'}</Row>
         <Row label="Email">{user.email}</Row>
         <Row label="Role"><span style={{ color: profile.roleColor, fontWeight: 700 }}>{profile.roleLabel}</span></Row>
+        {profile.phone && <Row label="Phone">{profile.phone}</Row>}
         {profile.tech_id && <Row label="Tech ID">{profile.tech_id}</Row>}
         {profile.payType && <Row label="Pay type">{profile.payType}</Row>}
       </Section>
+
+      {/* 🪪 IDENTITY — license on file (AI-verified), so the office/AI knows the device is this tech's */}
+      {profile.licenseReady && (
+        <Section title="🪪 Identity">
+          <Row label="Driver's License">
+            {profile.licenseOnFile
+              ? <span style={{ color: 'var(--green-bright)', fontWeight: 700 }}>✓ on file{profile.licenseState ? ` · ${profile.licenseState}` : ''}{profile.licenseExpiry ? ` · exp ${profile.licenseExpiry}` : ''}</span>
+              : <span className="muted">Not on file yet</span>}
+          </Row>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 8 }}>
+            <div className="muted" style={{ fontSize: 10.5, flex: 1, lineHeight: 1.5 }}>Scan once so AI/office can confirm the iPad belongs to you. Only your name, state, and expiry are stored — never the license number or DOB.</div>
+            <LicenseScanner />
+          </div>
+        </Section>
+      )}
 
       {/* 🎨 APPEARANCE */}
       <Section title="🎨 Appearance">

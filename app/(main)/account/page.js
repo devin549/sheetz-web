@@ -21,8 +21,9 @@ export default async function Account() {
       user={{ email: user.email, id: user.id }}
       profile={{
         name: profile.name, email: profile.email, role: profile.role, roleLabel: meta.label, roleColor: meta.color,
-        tech_id: profile.tech_id, payType: profile.prefs?.pay_type || null,
+        tech_id: profile.tech_id, payType: profile.prefs?.pay_type || null, phone: profile.phone,
         roastLevel: profile.roastLevel, roastLocked: profile.roastLocked, prefs: profile.prefs || {},
+        licenseReady: profile.licenseReady, licenseOnFile: profile.licenseOnFile, licenseExpiry: profile.licenseExpiry, licenseState: profile.licenseState,
       }}
       isManager={can(profile.role, 'manageUsers')}
       ccGated={ccGated(profile.role) && profile.ccPinReady}

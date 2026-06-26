@@ -8,6 +8,7 @@ import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { hashPin, validPin, signUnlock, CC_COOKIE, IPAD_COOKIE, IPAD_TTL_MS, ccGated } from '@/lib/ccPin';
 import { sendOne } from '@/lib/email';
+import { readLicense } from '@/lib/aiVision';
 
 const LEVELS = ['PG', 'PG-13', 'R'];
 
@@ -219,6 +220,36 @@ export async function lockCommandCenter() {
   cookies().set(CC_COOKIE, '', { httpOnly: true, path: '/', maxAge: 0 });
   revalidatePath('/');
   return { ok: true };
+}
+
+// 🪪 Scan a driver's license with Claude Vision → confirm it belongs to this tech. Stores ONLY name/expiry/
+// state + the image in a private bucket; checks the name against the profile. Never stores the DL number/DOB.
+const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim();
+export async function scanLicense(dataUrl) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Sign in required.' };
+  const profile = await loadProfile(user);
+  const lic = await readLicense(dataUrl, profile.role);
+  if (!lic) return { ok: false, msg: 'Couldn’t read the license — try a flat, glare-free shot. (AI may be off.)' };
+  if (!lic.isLicense) return { ok: false, msg: 'That doesn’t look like a driver’s license — try again.' };
+
+  // Name match against the profile (first + last appearing in either order).
+  const pn = normName(profile.name).split(' ').filter(Boolean);
+  const ln = normName(lic.name);
+  const matches = pn.length > 0 && pn.every((part) => ln.includes(part));
+
+  const sb = getSupabaseAdmin();
+  let stored = null;
+  try {
+    const img = String(dataUrl).match(/^data:image\/[a-z.+-]+;base64,(.+)$/i);
+    if (img) { const up = await sb.storage.from('tech-ids').upload(`${user.id}/license.jpg`, Buffer.from(img[1], 'base64'), { contentType: 'image/jpeg', upsert: true }); if (!up.error) stored = true; }
+  } catch (_) {}
+  const { error } = await sb.from('profiles').update({ license_on_file: true, license_name: lic.name, license_expiry: lic.expiry, license_state: lic.state, license_scanned_at: new Date().toISOString() }).eq('user_id', user.id);
+  if (error) return { ok: false, msg: /column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/79_license_identity.sql first.' : error.message };
+  try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'identity.license_scanned', entity: 'tech', entity_id: user.id, detail: { matches, expiry: lic.expiry, state: lic.state } }); } catch (_) {}
+  revalidatePath('/account');
+  return { ok: true, license: { name: lic.name, expiry: lic.expiry, state: lic.state, confidence: lic.confidence }, matches, stored };
 }
 
 // Merge a small UI preference patch (notifications, reduce-motion, big-text) into profiles.prefs.
