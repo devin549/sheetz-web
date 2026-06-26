@@ -6,6 +6,7 @@
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { uploadJobPhoto, createVideoUploadUrl, recordVideoUpload } from './actions';
+import InAppCamera from './InAppCamera';
 
 const TILES = [
   { kind: 'before',      label: 'Before',           icon: '📷' },
@@ -38,6 +39,7 @@ export default function ProofTiles({ jobId, photos = [], segments = [], required
   const router = useRouter();
   const [pending, start] = useTransition();
   const [busyKind, setBusyKind] = useState(null);
+  const [camKind, setCamKind] = useState(null); // open in-app camera for this tile
   const [segId, setSegId] = useState('');
   const [msg, setMsg] = useState(null);
   const fallbackRef = useRef(null);
@@ -93,16 +95,25 @@ export default function ProofTiles({ jobId, photos = [], segments = [], required
           const done = n > 0;
           const busy = busyKind === t.kind || (pending && busyKind === t.kind);
           const border = done ? 'var(--green)' : need ? 'var(--amber)' : 'var(--border-strong)';
-          return (
-            <label key={t.kind} style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 116, padding: 12, borderRadius: 14, cursor: 'pointer', textAlign: 'center', background: done ? 'color-mix(in oklab, var(--green) 10%, var(--surface-1))' : 'var(--surface-1)', border: `2px solid ${border}` }}>
-              <input type="file" accept={t.video ? 'video/*' : 'image/*'} capture="environment" style={{ display: 'none' }}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) start(() => shoot(f, t.kind, 'camera')); e.target.value = ''; }} />
+          const tileInner = (
+            <>
               <span style={{ fontSize: 30 }}>{busy ? '⏳' : t.icon}</span>
               <span style={{ fontSize: 13, fontWeight: 800 }}>{t.label}</span>
               <span style={{ fontSize: 11, color: done ? 'var(--green)' : need ? 'var(--amber)' : 'var(--fg-3)', fontWeight: 700 }}>
                 {busy ? 'Saving…' : done ? `✓ ${n}${need ? ' · tap to add' : ''}` : need ? '⚠ Required — tap to shoot' : 'Tap to shoot'}
               </span>
+            </>
+          );
+          const tileStyle = { position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 116, padding: 12, borderRadius: 14, cursor: 'pointer', textAlign: 'center', background: done ? 'color-mix(in oklab, var(--green) 10%, var(--surface-1))' : 'var(--surface-1)', border: `2px solid ${border}`, font: 'inherit', color: 'var(--fg-1)' };
+          // Video tile → native capture input (records straight from the camera). Photo tiles → in-app live camera.
+          return t.video ? (
+            <label key={t.kind} style={tileStyle}>
+              <input type="file" accept="video/*" capture="environment" style={{ display: 'none' }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) start(() => shoot(f, t.kind, 'camera')); e.target.value = ''; }} />
+              {tileInner}
             </label>
+          ) : (
+            <button type="button" key={t.kind} onClick={() => setCamKind(t.kind)} style={tileStyle}>{tileInner}</button>
           );
         })}
       </div>
@@ -118,6 +129,15 @@ export default function ProofTiles({ jobId, photos = [], segments = [], required
       </div>
 
       {msg && <div style={{ fontSize: 12.5, marginTop: 8, color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.msg || (msg.ok ? 'Saved.' : '')}</div>}
+
+      {/* Live in-app camera — opens on a photo tile tap, never the Files app. */}
+      {camKind && (
+        <InAppCamera
+          label={(TILES.find((t) => t.kind === camKind) || {}).label || 'Proof'}
+          onClose={() => setCamKind(null)}
+          onCapture={(file) => { const k = camKind; setCamKind(null); start(() => shoot(file, k, 'camera')); }}
+        />
+      )}
     </div>
   );
 }
