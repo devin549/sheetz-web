@@ -15,6 +15,7 @@ import DispatchMeRef from './DispatchMeRef';
 import JobCosts from './JobCosts';
 import JobVideo from './JobVideo';
 import CustomerMemory from './CustomerMemory';
+import LinkToProject from './LinkToProject';
 import { loadCustomerMemory } from '@/lib/customerMemory';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
@@ -134,6 +135,12 @@ export default async function JobDetail({ params }) {
   const parts = await getParts(sb, id);
   const forms = await getForms(sb, id, job.job_type);
   const memory = await loadCustomerMemory(sb, job);
+  // Project linkage (if this job is a visit on a project) — name + unit label for the cockpit control.
+  let projName = null, unitLabel = null;
+  if (job.project_id) {
+    try { const { data: pj } = await sb.from('projects').select('name').eq('id', job.project_id).maybeSingle(); projName = pj?.name || null; } catch (_) {}
+    if (job.project_unit_id) { try { const { data: un } = await sb.from('project_units').select('label').eq('id', job.project_unit_id).maybeSingle(); unitLabel = un?.label || null; } catch (_) {} }
+  }
   const needWarranty = ['warranty', 'insurance'].includes(String(job.job_class || '').toLowerCase()) || !!job.warranty_provider;
 
   const customer = job.customers || {};
@@ -246,6 +253,8 @@ export default async function JobDetail({ params }) {
       <div id="customer" style={{ scrollMarginTop: 70 }}><CustomerMemory mem={memory} customer={customer} job={job} /></div>
 
       <JobFlow jobId={id} status={st} reached={reached} gateReady={gateReady} gateMissing={gateMissing} nextHint={gateMissing[0] || ''} canAct={canAct} />
+
+      {(canAct || job.project_id) && <LinkToProject jobId={id} currentProjectId={job.project_id} currentProjectName={projName} currentUnitLabel={unitLabel} />}
 
       {canAct && <div style={{ marginTop: 8 }}><MessageOffice jobId={id} /></div>}
 

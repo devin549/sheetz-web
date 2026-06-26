@@ -28,7 +28,7 @@ export async function loadJob(sb, jobId) {
   const relations = ', customers(name, address, phone, email), techs(name)';
   // Tier 1: everything. Tier 2: drop the newest cost columns (migration 73 may not be live yet)
   // but keep all the rich dispatch fields. Tier 3: bare base — last resort so the page still renders.
-  const richFields = ', job_number, job_type, amount, tech_name, tech_email, enroute_at, started_at, completed_at, notes, access_notes, job_class, estimate_outcome, dispatchme_job_id, converted_to_job_id, converted_from_job_id, lat, lng';
+  const richFields = ', job_number, job_type, amount, tech_name, tech_email, enroute_at, started_at, completed_at, notes, access_notes, job_class, estimate_outcome, dispatchme_job_id, converted_to_job_id, converted_from_job_id, project_id, project_unit_id, lat, lng';
   const costFields = ', material_cost_cents, dispatch_fee_cents';
   const tiers = [
     `${base}${richFields}${costFields}${relations}`,
