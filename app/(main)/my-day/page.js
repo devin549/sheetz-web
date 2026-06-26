@@ -4,6 +4,7 @@ import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
 import JobCard from './JobCard';
 import TodayMoney from './TodayMoney';
+import WeekView from './WeekView';
 import { deriveTags } from '@/lib/jobTags';
 import ShareLocation from './ShareLocation';
 import { computeJobPay } from '@/lib/pay';
@@ -130,7 +131,7 @@ export default async function MyDay({ searchParams }) {
   const dateLabel = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
   // ── Tabs (HTML My Day): 🔥 Today · 📜 My Jobs (30d) · 💰 Today $ ──
-  const tab = ['jobs', 'money'].includes(searchParams?.tab) ? searchParams.tab : 'today';
+  const tab = ['jobs', 'money', 'week'].includes(searchParams?.tab) ? searchParams.tab : 'today';
   const isDone = (j) => /done|complete|closed/.test(String(j.status || '').toLowerCase());
   const isLive = (j) => /on_site|onsite|enroute|rolling/.test(String(j.status || '').toLowerCase());
   // Today $ — tech-only earnings sub-view.
@@ -170,6 +171,46 @@ export default async function MyDay({ searchParams }) {
     };
   }
 
+  // 📅 Week — this CB week (Sun 00:00 → Sat 23:59), the tech's jobs grouped by day + weekly totals.
+  let weekProps = null;
+  if (tab === 'week' && !note) {
+    const now = new Date();
+    const weekStart = new Date(now); weekStart.setHours(0, 0, 0, 0); weekStart.setDate(now.getDate() - now.getDay()); // back to Sunday
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 7);
+    const todayK = todayKey();
+    let commissionPct = 0, payKnown = false;
+    if (profile.tech_id) {
+      try { const { data } = await supabase.from('pay_profiles').select('commission_pct, pay_type').eq('tech_id', profile.tech_id).maybeSingle(); if (data && (data.pay_type === 'commission' || data.pay_type === 'hourly_comm')) { commissionPct = Number(data.commission_pct) || 0; payKnown = commissionPct > 0; } } catch (_) {}
+    }
+    let wjobs = [];
+    const wsel = (extra) => 'id, job_number, job_type, amount, status, scheduled_at, started_at, completed_at' + extra + ', customers(name)';
+    const wrun = (extra) => { let q = supabase.from('jobs').select(wsel(extra)).gte('scheduled_at', weekStart.toISOString()).lt('scheduled_at', weekEnd.toISOString()).order('scheduled_at', { ascending: true }); if (scopeTechId) q = q.eq('tech_id', scopeTechId); else if (scopeName) q = q.ilike('tech_name', '%' + scopeName + '%'); return q; };
+    let wr = await wrun(', material_cost_cents, dispatch_fee_cents, sub_cost_cents, sub_verified');
+    if (wr.error) wr = await wrun(''); // pre-cost-cols fallback
+    wjobs = wr.error ? [] : (wr.data || []);
+    const isDoneJ = (j) => /done|complete|closed/.test(String(j.status || '').toLowerCase());
+    const isLiveJ = (j) => /on_site|onsite|enroute|rolling/.test(String(j.status || '').toLowerCase());
+    const payOf = (j) => { const p = computeJobPay({ revenue_cents: Math.round((Number(j.amount) || 0) * 100), material_cost_cents: j.material_cost_cents, dispatch_fee_cents: j.dispatch_fee_cents, sub_cost_cents: j.sub_cost_cents, sub_verified: j.sub_verified }, commissionPct); return p.jobPay / 100; };
+    // group by local day
+    const byDay = new Map();
+    let hours = 0;
+    for (const j of wjobs) {
+      const d = j.scheduled_at ? new Date(j.scheduled_at) : new Date();
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const done = isDoneJ(j), live = isLiveJ(j);
+      const row = { id: j.id, time: j.scheduled_at, jobNumber: j.job_number ? `#${j.job_number}` : '', name: (j.customers || {}).name || 'Customer', jobType: j.job_type || '', amount: Number(j.amount) || 0, commission: payOf(j), live, done, statusLabel: String(j.status || 'scheduled').toUpperCase() };
+      if (j.started_at && j.completed_at) { const h = (Date.parse(j.completed_at) - Date.parse(j.started_at)) / 3.6e6; if (h > 0 && h < 24) hours += h; }
+      if (!byDay.has(key)) byDay.set(key, { key, label: d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }), isToday: key === todayK, jobs: [], total: 0 });
+      const g = byDay.get(key); g.jobs.push(row); if (done || live) g.total += row.amount;
+    }
+    const days = [...byDay.values()];
+    const doneW = wjobs.filter(isDoneJ);
+    const revenue = wjobs.filter((j) => isDoneJ(j) || isLiveJ(j)).reduce((s, j) => s + (Number(j.amount) || 0), 0);
+    const stats = { jobs: wjobs.length, hours: hours ? Math.round(hours) : 0, revenue, pay: doneW.reduce((s, j) => s + payOf(j), 0), avg: doneW.length ? Math.round(revenue / doneW.length) : 0, rating: 0 };
+    const weekLabel = `Week of ${weekStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} — ${new Date(weekEnd.getTime() - 864e5).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+    weekProps = { weekLabel, stats, days, payKnown };
+  }
+
   // My Jobs (last 30d) — loaded only on that tab.
   let jobs30 = [];
   if (tab === 'jobs' && !note) {
@@ -207,7 +248,7 @@ export default async function MyDay({ searchParams }) {
         <>
           {/* tabs — 🔥 Today · 📜 My Jobs (30d) · 💰 Today $ (all live) */}
           <div style={{ display: 'flex', gap: 8, margin: '6px 0 12px', flexWrap: 'wrap' }}>
-            {[['today', `🔥 Today · ${list.length}`], ['jobs', '📜 My Jobs · 30d'], ['money', '💰 Today $']].map(([t, label]) => (
+            {[['today', `🔥 Today · ${list.length}`], ['week', '📅 Week'], ['jobs', '📜 My Jobs · 30d'], ['money', '💰 Today $']].map(([t, label]) => (
               <Link key={t} href={tabHref(t)} className="pill" style={{ textDecoration: 'none', fontWeight: tab === t ? 800 : 600, background: tab === t ? 'var(--amber)' : 'var(--surface-2)', color: tab === t ? '#1a1206' : 'var(--fg-2)', border: '1px solid var(--border)' }}>{label}</Link>
             ))}
           </div>
@@ -246,6 +287,9 @@ export default async function MyDay({ searchParams }) {
         const tags = deriveTags(j, { member: memberByCust[j.customer_id], vip: vipByCust[j.customer_id], pastDue: pastDueByCust[j.customer_id] });
         return <JobCard key={j.id} job={j} seeAll={seeAll} canAct={can(role, 'changeStatus')} variant={variant} tags={tags} pastDue={pastDueByCust[j.customer_id] || 0} />;
       })}
+
+      {/* ── 📅 WEEK — this week's jobs grouped by day (ported from HTML "My Jobs" weekly view) ── */}
+      {!note && !error && tab === 'week' && weekProps && <WeekView {...weekProps} />}
 
       {/* ── 💰 TODAY $ — tech-only earnings (ported from HTML "Today's Money") ── */}
       {!note && !error && tab === 'money' && moneyProps && <TodayMoney {...moneyProps} />}
