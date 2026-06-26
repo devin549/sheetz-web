@@ -1,5 +1,6 @@
 'use server';
 
+import { randomUUID } from 'crypto';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
@@ -54,4 +55,23 @@ export async function logToolEvent(toolId, event, opts = {}) {
   try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'tool.' + event, entity: 'tool', entity_id: String(toolId), detail: { holder, cost_cents: row.cost_cents } }); } catch (_) {}
   revalidatePath('/tools');
   return { ok: true, msg: `${TOOL_EVENTS[event].label}${holder ? ` · ${holder}` : ''}.` };
+}
+
+const BUCKET = 'job-photos';
+
+// Snap a condition photo for a tool event (the damage on a 💥 broke, who took it on a 🤝 loan). Uploads to
+// the private job-photos bucket under tools/ and returns the storage path to stash on the event.
+export async function uploadToolPhoto(formData) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const toolId = clean(formData.get('toolId'), 80) || 'misc';
+  const file = formData.get('photo');
+  if (!file || typeof file.arrayBuffer !== 'function') return { ok: false, msg: 'Take a photo first.' };
+  if (!/^image\//.test(file.type || '')) return { ok: false, msg: 'Photos only.' };
+  if (file.size > 10 * 1024 * 1024) return { ok: false, msg: 'Photo is over 10 MB.' };
+  const ext = (file.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  const path = `tools/${toolId}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.${ext}`;
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const { error } = await c.sb.storage.from(BUCKET).upload(path, bytes, { contentType: file.type, upsert: false });
+  if (error) return { ok: false, msg: error.message };
+  return { ok: true, path };
 }

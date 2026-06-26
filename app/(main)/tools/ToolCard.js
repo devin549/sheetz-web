@@ -3,7 +3,8 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { addAlias, requestTool, setHolder } from './actions';
-import { logToolEvent } from './ledgerActions';
+import { logToolEvent, uploadToolPhoto } from './ledgerActions';
+import InAppCamera from '../job/[id]/InAppCamera';
 
 const STATUS = { on_van: { c: 'var(--green)', l: 'On a van' }, shop: { c: 'var(--amber)', l: 'In the shop' }, lost: { c: 'var(--red)', l: 'Lost' }, assigned: { c: 'var(--blue)', l: 'Assigned' } };
 
@@ -17,16 +18,20 @@ export default function ToolCard({ tool, isMgr }) {
   const [logOpen, setLogOpen] = useState(false);
   const [cost, setCost] = useState('');
   const [note, setNote] = useState('');
+  const [photoPath, setPhotoPath] = useState(null); // condition photo for the next event
+  const [cam, setCam] = useState(false);
   const st = STATUS[tool.status] || { c: 'var(--fg-3)', l: tool.status || '—' };
 
   const teach = () => { if (!alias.trim()) return; start(async () => { const r = await addAlias(tool.id, alias); setMsg(r.msg); if (r.ok) { setAlias(''); router.refresh(); } }); };
   const request = () => start(async () => { const r = await requestTool(tool.id, tool.name, tool.assigned_to); setMsg(r.msg); });
   const reassign = (status) => start(async () => { const r = await setHolder(tool.id, holder, status); setMsg(r.ok ? 'Updated.' : r.msg); if (r.ok) { setHolderEdit(false); router.refresh(); } });
-  // Log a lifecycle event (broke/lost/returned/repaired/retired) — stamps who had it + the $ on the ledger.
+  // Log a lifecycle event (broke/lost/returned/repaired/retired) — stamps who had it + $ + the condition photo.
   const logEvt = (event) => start(async () => {
-    const r = await logToolEvent(tool.id, event, { holderName: tool.assigned_to || '', costDollars: cost, note });
-    setMsg(r.msg); if (r.ok) { setCost(''); setNote(''); setLogOpen(false); router.refresh(); }
+    const r = await logToolEvent(tool.id, event, { holderName: tool.assigned_to || '', costDollars: cost, note, conditionPhoto: photoPath });
+    setMsg(r.msg); if (r.ok) { setCost(''); setNote(''); setPhotoPath(null); setLogOpen(false); router.refresh(); }
   });
+  // Snap the damage / hand-off before logging — uploads, then attaches to whatever event you tap next.
+  const onPhoto = (file) => { setCam(false); start(async () => { const fd = new FormData(); fd.set('toolId', tool.id); fd.set('photo', file); const r = await uploadToolPhoto(fd); if (r.ok) { setPhotoPath(r.path); setMsg('📷 Photo attached — now tap the event.'); } else setMsg(r.msg); }); };
 
   const inp = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 7, padding: '7px 9px', fontSize: 12.5 };
 
@@ -66,6 +71,7 @@ export default function ToolCard({ tool, isMgr }) {
           <div style={{ display: 'flex', gap: 6, marginBottom: 7 }}>
             <input value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$ cost / value" inputMode="decimal" style={{ ...inp, width: 110 }} />
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="note (optional)" style={{ ...inp, flex: 1 }} />
+            <button onClick={() => setCam(true)} disabled={pending} className="pill" style={{ cursor: 'pointer', color: photoPath ? 'var(--green)' : 'var(--fg-2)', whiteSpace: 'nowrap' }}>{photoPath ? '✓ photo' : '📷 photo'}</button>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button onClick={() => logEvt('issued')} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--blue)' }}>📦 issued</button>
@@ -88,6 +94,7 @@ export default function ToolCard({ tool, isMgr }) {
         </div>
       )}
       {msg && <div style={{ fontSize: 11.5, marginTop: 6, color: 'var(--green)' }}>{msg}</div>}
+      {cam && <InAppCamera label={`${tool.name} — condition`} onCapture={onPhoto} onClose={() => setCam(false)} />}
     </div>
   );
 }
