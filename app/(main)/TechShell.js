@@ -105,7 +105,7 @@ export default function TechShell({ name, shells = ['tech'], activeJob = null, g
     : [{ group: 'Job', items: [
         { icon: '🧰', label: 'Job', href: activeJob ? `/job/${activeJob.id}` : '/my-day' },
         { icon: '🧾', label: 'Proof', href: pick('/photos') },
-        { icon: '🔧', label: 'Tools', href: pick('/tools') },
+        // Tools folded into My Truck (matches the HTML — no standalone Tools on the rail).
       ] }, ...RAIL];
 
   return (

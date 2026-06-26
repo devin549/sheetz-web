@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { requireHref } from '@/lib/guard';
+import { requireRole } from '@/lib/guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,8 +17,10 @@ function Section({ title, children }) {
 }
 
 export default async function MyTruck({ searchParams }) {
-  const { user, role } = await requireHref('/my-truck');
-  const myName = (user.user_metadata && user.user_metadata.name) || '';
+  // Field crew see their OWN truck; owner/manager/shop see the fleet. (Was requireHref, which checks the
+  // office nav and silently bounced techs even though My Truck is in their rail.)
+  const { user, role, profile } = await requireRole(['owner', 'admin', 'gm', 'om', 'tech', 'helper', 'foreman', 'fs', 'shop', 'dispatcher']);
+  const myName = (profile && profile.name) || (user.user_metadata && user.user_metadata.name) || '';
   const techParam = (searchParams && searchParams.tech ? String(searchParams.tech) : '').trim();
   // a tech only ever sees their own truck; an owner sees the fleet, or one tech via ?tech=
   const detailTech = role === 'tech' ? myName : techParam;
@@ -91,6 +93,13 @@ export default async function MyTruck({ searchParams }) {
         <div><div style={{ fontSize: 22, fontWeight: 800 }}>{toolList.length}</div><div className="muted" style={{ fontSize: 11 }}>tools issued</div></div>
         <div><div style={{ fontSize: 22, fontWeight: 800, color: 'var(--green-bright)' }}>{money(toolVal)}</div><div className="muted" style={{ fontSize: 11 }}>tools value</div></div>
       </div>
+
+      {/* Tools lives under My Truck (matches the HTML rail). The full find-a-tool/part locator opens here. */}
+      <Link href="/tools" className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: 'inherit', marginTop: 10, borderLeft: '3px solid var(--amber)' }}>
+        <span style={{ fontSize: 26 }}>🔧</span>
+        <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>Find a tool or part</div><div className="muted" style={{ fontSize: 12 }}>Search every van, shop &amp; vendor — nearest first, route + reserve.</div></div>
+        <span style={{ color: 'var(--amber)', fontWeight: 800 }}>›</span>
+      </Link>
 
       <Section title="🧰 Parts on the van">
         {!parts.length && <div className="card"><span className="muted">No parts stocked yet.</span></div>}
