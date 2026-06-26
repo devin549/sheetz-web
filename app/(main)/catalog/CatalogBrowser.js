@@ -2,12 +2,13 @@
 
 // Immersive drill-down over Devin's REAL category tree (any depth): category tiles → subcategories → items
 // → item detail with the 🧠 "commonly sold with" learner. Tap-friendly for the iPad.
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState, useTransition } from 'react';
+import { findItemPhotos, setItemPhotoUrl, uploadItemPhoto } from './photoActions';
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 const HEALTH = { healthy: ['Healthy', 'var(--green)'], thin: ['Thin', 'var(--amber)'], danger: ['Danger', 'var(--red)'], missing_price: ['No price', 'var(--fg-3)'] };
 
-export default function CatalogBrowser({ roots = [], related = {}, showCost, total }) {
+export default function CatalogBrowser({ roots = [], related = {}, showCost, canEdit, total }) {
   const [stack, setStack] = useState([]);   // array of nodes (the drill path)
   const [sel, setSel] = useState(null);
   const [q, setQ] = useState('');
@@ -83,7 +84,7 @@ export default function CatalogBrowser({ roots = [], related = {}, showCost, tot
         </>
       )}
 
-      {sel && <ItemSheet it={sel} showCost={showCost} crossSell={crossSell} onClose={() => setSel(null)} onPick={setSel} />}
+      {sel && <ItemSheet it={sel} showCost={showCost} canEdit={canEdit} crossSell={crossSell} onClose={() => setSel(null)} onPick={setSel} />}
     </div>
   );
 }
@@ -122,7 +123,17 @@ function ItemCard({ it, showCost, onClick }) {
   );
 }
 
-function ItemSheet({ it, showCost, crossSell, onClose, onPick }) {
+function ItemSheet({ it, showCost, canEdit, crossSell, onClose, onPick }) {
+  const [pending, start] = useTransition();
+  const [photo, setPhoto] = useState(it.photo || null);
+  const [cands, setCands] = useState(null);   // SerpAPI candidates
+  const [msg, setMsg] = useState(null);
+  const fileRef = useRef();
+
+  const find = () => start(async () => { setMsg('Searching…'); const r = await findItemPhotos(it.id); setMsg(r.ok ? (r.photos.length ? `Found ${r.photos.length} for “${r.query}”` : 'No photos found — try Upload.') : r.msg); setCands(r.photos || []); });
+  const pick = (url) => start(async () => { setMsg('Saving…'); const r = await setItemPhotoUrl(it.id, url); setMsg(r.msg); if (r.ok) { setPhoto(r.url); setCands(null); } });
+  const upload = (e) => { const f = e.target.files?.[0]; if (!f) return; start(async () => { setMsg('Uploading…'); const fd = new FormData(); fd.set('itemId', it.id); fd.set('photo', f); const r = await uploadItemPhoto(fd); setMsg(r.msg); if (r.ok) { setPhoto(r.url); setCands(null); } }); };
+
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 60, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--surface-1)', borderTop: '2px solid var(--amber)', borderRadius: '18px 18px 0 0', width: '100%', maxWidth: 560, maxHeight: '88vh', overflowY: 'auto', padding: 20 }}>
@@ -134,7 +145,23 @@ function ItemSheet({ it, showCost, crossSell, onClose, onPick }) {
           <div style={{ fontWeight: 800, fontSize: 24, color: 'var(--amber)' }}>{money(it.price)}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--fg-2)', fontSize: 24, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
-        {it.photo && <img src={it.photo} alt="" style={{ width: '100%', maxHeight: 220, objectFit: 'cover', borderRadius: 12, margin: '12px 0', background: 'var(--surface-2)' }} />}
+        {photo && <img src={photo} alt="" style={{ width: '100%', maxHeight: 220, objectFit: 'contain', borderRadius: 12, margin: '12px 0', background: 'var(--surface-2)' }} />}
+
+        {/* Manager photo tools — find a real product photo (SerpAPI) or upload a custom one. */}
+        {canEdit && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '4px 0 10px', alignItems: 'center' }}>
+            <button onClick={find} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>🔎 Find real photo</button>
+            <button onClick={() => fileRef.current?.click()} disabled={pending} className="pill" style={{ cursor: 'pointer' }}>⬆ Upload custom</button>
+            <input ref={fileRef} type="file" accept="image/*" onChange={upload} style={{ display: 'none' }} />
+            {msg && <span className="muted" style={{ fontSize: 11 }}>{msg}</span>}
+          </div>
+        )}
+        {canEdit && cands && cands.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))', gap: 6, marginBottom: 10 }}>
+            {cands.map((p, i) => <img key={i} src={p.url} title={p.title || ''} onClick={() => pick(p.url)} alt="" style={{ width: '100%', height: 78, objectFit: 'cover', borderRadius: 8, cursor: 'pointer', border: '1px solid var(--border)', background: '#fff' }} />)}
+          </div>
+        )}
+
         {it.description && <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--fg-2)' }}>{it.description}</p>}
         {it.warranty && <div style={{ fontSize: 12.5, color: 'var(--fg-3)', marginTop: 6 }}>🛡 {it.warranty}</div>}
         {showCost && (

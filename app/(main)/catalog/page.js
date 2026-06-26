@@ -1,6 +1,7 @@
 import { requirePerm } from '@/lib/guard';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { canSeeCost, marginPct, marginHealth } from '@/lib/pricebookEngine';
+import { canAny } from '@/lib/roles';
 import { artFor } from '@/lib/catalogArt';
 import CatalogBrowser from './CatalogBrowser';
 
@@ -55,5 +56,6 @@ export default async function Catalog() {
   } catch (_) {}
   const topRelated = {}; Object.entries(related).forEach(([id, m]) => { topRelated[id] = Object.entries(m).sort((x, y) => y[1] - x[1]).slice(0, 4).map(([rid]) => rid); });
 
-  return <CatalogBrowser roots={roots} related={topRelated} showCost={showCost} total={shaped.length} />;
+  const canEdit = canAny(role, ['manageInventory', 'manageUsers', 'seeReports', 'seeFinancials', 'assignJobs']);
+  return <CatalogBrowser roots={roots} related={topRelated} showCost={showCost} canEdit={canEdit} total={shaped.length} />;
 }
