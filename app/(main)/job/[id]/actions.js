@@ -353,6 +353,16 @@ export async function stepAway(jobId, reason, note) {
   return { ok: true, msg: key === 'help' ? 'Office pinged — help is on the way.' : `Office knows you're on ${label.toLowerCase()} — job stays open.` };
 }
 
+// "Back on site" — clears the step-away state, office sees the tech is back working the job.
+export async function backOnSite(jobId) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'changeStatus') || can(ctx.role, 'seeOwnOnly'))) return { ok: false, msg: 'Not allowed.' };
+  await pingOffice(ctx, 'job.back_onsite', `🔧 **${ctx.profile?.name || 'Tech'} back on site** — ${custName(ctx.job)}${ctx.job.job_number ? ` · job ${ctx.job.job_number}` : ''}.`, {});
+  revalidatePath(`/job/${ctx.job.id}`);
+  return { ok: true, msg: 'Back on site — office notified.' };
+}
+
 // "Can't finish today?" → roll the job to another day. SAME job number, parts, and history — we just move
 // the schedule and reset it to scheduled. Default +1 day at the same time.
 export async function rollOverJob(jobId, note) {
