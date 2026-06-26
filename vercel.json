@@ -8,6 +8,7 @@
     { "path": "/api/cron/triggers", "schedule": "*/10 * * * *" },
     { "path": "/api/cron/reviews", "schedule": "0 */6 * * *" },
     { "path": "/api/cron/rank", "schedule": "0 14 * * 1" },
-    { "path": "/api/cron/competitors", "schedule": "0 15 * * 1" }
+    { "path": "/api/cron/competitors", "schedule": "0 15 * * 1" },
+    { "path": "/api/cron/territory", "schedule": "0 16 * * 1" }
   ]
 }

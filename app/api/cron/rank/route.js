@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { localRank } from '@/lib/serpLocal';
 import { KEYWORDS, LOCATIONS } from '@/lib/rankConfig';
+import { learnedTowns } from '@/lib/territory';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,9 +23,11 @@ export async function GET(request) {
   const sb = getSupabaseAdmin();
   if (!sb) return NextResponse.json({ ok: false, error: 'No admin client' }, { status: 500 });
 
-  // Optional ?loc= to scan a single town (keeps each run under the time budget if needed).
+  // Scan the core towns PLUS any city we've learned we work in (≥ threshold jobs/30d).
+  const learned = await learnedTowns(sb);
+  const allTowns = [...new Set([...LOCATIONS, ...learned])];
   const onlyLoc = new URL(request.url).searchParams.get('loc');
-  const locs = onlyLoc ? LOCATIONS.filter((l) => l.toLowerCase().includes(onlyLoc.toLowerCase())) : LOCATIONS;
+  const locs = onlyLoc ? allTowns.filter((l) => l.toLowerCase().includes(onlyLoc.toLowerCase())) : allTowns;
 
   let done = 0, ranking = 0;
   for (const location of locs) {
