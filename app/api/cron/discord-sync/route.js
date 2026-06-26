@@ -19,7 +19,7 @@ async function whoAndJob(sb, fromName) {
   } catch (_) {}
   let job = null;
   if (tech?.id) {
-    try { const { data } = await sb.from('jobs').select('id, job_number, customers(name)').eq('tech_id', tech.id).in('status', ['enroute', 'on_site', 'onsite', 'rolling']).order('scheduled_at', { ascending: true }).limit(1).maybeSingle(); job = data || null; } catch (_) {}
+    try { const { data } = await sb.from('jobs').select('id, job_number, job_type, customers(name)').eq('tech_id', tech.id).in('status', ['enroute', 'on_site', 'onsite', 'rolling']).order('scheduled_at', { ascending: true }).limit(1).maybeSingle(); job = data || null; } catch (_) {}
   }
   return { tech, job, name: tech?.name || from };
 }
@@ -41,7 +41,9 @@ async function answerChatCommands(sb) {
 
       let text = '';
       if (cmd.kind === 'tool_request') {
-        const hit = await resolveItemForChat(sb, cmd.query);
+        // Pass job context so size-dependent slang ("cable machine" on a kitchen vs a main) resolves right.
+        const wj = await whoAndJob(sb, m.from_name);
+        const hit = await resolveItemForChat(sb, cmd.query, { message: m.body, jobType: wj.job?.job_type || '' });
         text = hit ? `🪠 ${hit.kind === 'tool' ? 'Tool' : 'Part'} found — **${hit.name}** is ${hit.locLabel}${hit.qty != null ? ` (qty ${hit.qty})` : ''}.${hit.mapsUrl ? ` 🗺 ${hit.mapsUrl}` : ''}`
           : `🪠 Couldn't locate "${cmd.query}" on a van, shop, or vendor — check the shop counter.`;
         if (hit) done.tool++;
