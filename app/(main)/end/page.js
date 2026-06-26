@@ -27,11 +27,15 @@ export default async function End() {
 
   let summary = { unresolved: 0, failedQa: 0, missingMedia: 0, corrections: 0 };
   let tomorrowCount = 0;
+  let eodStats = { closed: 0, earned: 0, openItems: 0 };
   {
     // tech_id link, or name/email fallback for techs not linked to a roster row (mirrors My Day).
-    const jr = await scopeToTech(sb.from('jobs').select('id, status, job_type').gte('scheduled_at', startISO).lt('scheduled_at', endISO), { profile, user });
+    const jr = await scopeToTech(sb.from('jobs').select('id, status, job_type, amount').gte('scheduled_at', startISO).lt('scheduled_at', endISO), { profile, user });
     const todays = jr.data || [];
     summary.unresolved = todays.filter((j) => !/done|complete|closed|cancel/.test(String(j.status || '').toLowerCase())).length;
+    const closedJobs = todays.filter((j) => /done|complete|closed/.test(String(j.status || '').toLowerCase()));
+    eodStats.closed = closedJobs.length;
+    eodStats.earned = closedJobs.reduce((s, j) => s + (Number(j.amount) || 0), 0);
     const co = await loadCloseoutBatch(sb, todays.map((j) => ({ id: j.id, job_type: j.job_type })));
     todays.forEach((j) => { const c = co[j.id] || {}; if ((c.openFails || 0) > 0) summary.failedQa += c.openFails; if (c.available !== false && !c.readyToClose) summary.missingMedia += 1; });
     // open corrections on today's jobs
@@ -46,5 +50,10 @@ export default async function End() {
   let saved = null;
   try { const { data } = await sb.from('tech_shift_log').select('checklist, ready, notes').eq('user_id', user.id).eq('day_key', today).eq('kind', 'eod').maybeSingle(); saved = data || null; } catch (_) {}
 
-  return <EndOfDay name={name} summary={summary} tomorrowCount={tomorrowCount} saved={saved} />;
+  // EOD gate row (shared sod_checks). Fail-soft pre-92/93.
+  let sodRow = null;
+  try { const q = profile.tech_id ? await sb.from('sod_checks').select('*').eq('tech_id', profile.tech_id).eq('day', today).maybeSingle() : await sb.from('sod_checks').select('*').eq('tech_name', name).eq('day', today).maybeSingle(); sodRow = q.data || null; } catch (_) {}
+  eodStats.openItems = summary.unresolved + summary.failedQa + summary.missingMedia + summary.corrections;
+
+  return <EndOfDay name={name} summary={summary} tomorrowCount={tomorrowCount} saved={saved} eodGate={{ sod: sodRow || {}, stats: eodStats }} />;
 }

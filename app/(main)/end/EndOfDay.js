@@ -7,9 +7,10 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { saveShift } from '../start/actions';
+import EodGate from './EodGate';
 import { CircleCheck, Circle, CircleAlert, Wrench, Receipt, PackageCheck, ClipboardList } from 'lucide-react';
 
-export default function EndOfDay({ name, summary, tomorrowCount, saved }) {
+export default function EndOfDay({ name, summary, tomorrowCount, saved, eodGate = null }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
@@ -90,6 +91,9 @@ export default function EndOfDay({ name, summary, tomorrowCount, saved }) {
       </button>
       <button onClick={() => persist(false)} disabled={pending} style={{ width: '100%', marginTop: 8, padding: '10px', borderRadius: 10, border: '1px solid var(--border-strong)', background: 'transparent', color: 'var(--fg-2)', fontSize: 13, cursor: 'pointer' }}>Save progress</button>
       {msg && <div style={{ fontSize: 12.5, marginTop: 8, textAlign: 'center', color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.msg}</div>}
+
+      {/* ── END OF DAY GATE (HTML eod pane) — tools check-in / cash / van / clock out ── */}
+      {eodGate && <EodGate sod={eodGate.sod} stats={eodGate.stats} />}
     </div>
   );
 }
