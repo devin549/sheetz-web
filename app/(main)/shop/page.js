@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import ShopCounter from './ShopCounter';
+import AddPart from './AddPart';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,6 +57,11 @@ export default async function Shop() {
     <div className="wrap">
       <div className="h1">🏪 Shop</div>
       <p className="muted">Reorder &amp; restock from one place. Low-stock rolls up here from every van.</p>
+
+      <Section title="📦 Parts &amp; nicknames">
+        <p className="muted" style={{ fontSize: 12, margin: '0 0 4px' }}>Add a part with the names the guys call it — then Hook’s locator finds it by any of them.</p>
+        <AddPart />
+      </Section>
 
       <Section title="🛒 Shop counter — issue to a job">
         <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>Parts, materials, and rentals issued to a JOB# — the cost hits the <strong>job</strong>, not tech pay.</p>

@@ -39,9 +39,9 @@ export async function addTool(form) {
   if (!name) return { ok: false, msg: 'Tool name required.' };
   const { data, error } = await c.sb.from('tools').insert({ name, category: clean(form.get('category'), 40) || null, serial: clean(form.get('serial'), 60) || null, identifier: clean(form.get('identifier'), 60) || null, status: 'on_van' }).select('id').single();
   if (error) return { ok: false, msg: /column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/81_tool_registry.sql first.' : error.message };
-  // optional first alias
-  const a = clean(form.get('alias'), 60);
-  if (a && data) { try { await c.sb.from('tool_aliases').insert({ tool_id: data.id, alias: a, created_by: c.user.id }); } catch (_) {} }
+  // aliases — comma/semicolon/newline separated, so you can enter every name the guys call it at once.
+  const aliases = [...new Set(String(form.get('alias') || '').split(/[,;\n]/).map((s) => clean(s, 60)).filter(Boolean))].slice(0, 12);
+  if (data && aliases.length) { try { await c.sb.from('tool_aliases').insert(aliases.map((a) => ({ tool_id: data.id, alias: a, created_by: c.user.id }))); } catch (_) {} }
   revalidatePath('/tools');
   return { ok: true };
 }

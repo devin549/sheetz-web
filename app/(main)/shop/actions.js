@@ -18,6 +18,27 @@ async function gate() {
 const missing = (e) => /could not find|does not exist|schema cache/i.test(e?.message || '');
 const clean = (v, n = 200) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, n);
 
+// Reid adds a part to shop stock WITH the names the guys call it — so Hook's locator finds it by any
+// alias. Writes the part to item_locations (shop) + each alias to part_aliases.
+export async function addPart(formData) {
+  const g = await gate();
+  if (!g) return { ok: false, msg: 'Your role can’t manage shop parts.' };
+  const name = clean(formData.get('name'), 120);
+  if (!name) return { ok: false, msg: 'Part name required.' };
+  const sku = clean(formData.get('sku'), 60) || null;
+  const bin = clean(formData.get('bin'), 40) || null;
+  const qty = Math.max(0, Number(formData.get('qty')) || 0);
+  const locationId = clean(formData.get('location_id'), 60) || 'richmond';
+  try {
+    const { error } = await g.sb.from('item_locations').insert({ name, sku, location_type: 'shop', location_id: locationId, qty, bin });
+    if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/89_inventory_locate.sql first.' : error.message };
+  } catch (e) { return { ok: false, msg: String(e?.message || e) }; }
+  const aliases = [...new Set(String(formData.get('alias') || '').split(/[,;\n]/).map((s) => clean(s, 60)).filter(Boolean))].slice(0, 12);
+  if (aliases.length) { try { await g.sb.from('part_aliases').insert(aliases.map((a) => ({ name, sku, alias: a, created_by: g.user.id }))); } catch (_) {} }
+  revalidatePath('/shop');
+  return { ok: true, msg: `Added ${name}${aliases.length ? ` + ${aliases.length} name${aliases.length > 1 ? 's' : ''}` : ''}.` };
+}
+
 // Issue a part/material (or a rental) to a JOB#. Cost lands on the job, not the tech.
 export async function issueToJob(formData) {
   const g = await gate();

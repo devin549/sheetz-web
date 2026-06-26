@@ -20,7 +20,7 @@ export default function AddTool() {
       <input name="category" placeholder="Category — camera" style={inp} />
       <input name="serial" placeholder="Serial (optional)" style={inp} />
       <input name="identifier" placeholder="Asset tag / barcode" style={inp} />
-      <input name="alias" placeholder="First nickname — seesnake" style={inp} />
+      <input name="alias" placeholder="Nicknames — seesnake, camera, the eye (comma-separated)" style={{ ...inp, gridColumn: '1 / -1' }} />
       <div style={{ display: 'flex', gap: 8 }}>
         <button className="btn" type="submit" disabled={pending}>{pending ? '…' : 'Add'}</button>
         <button type="button" onClick={() => setOpen(false)} className="pill" style={{ cursor: 'pointer' }}>Cancel</button>
