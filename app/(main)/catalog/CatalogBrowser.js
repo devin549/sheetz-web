@@ -38,7 +38,6 @@ export default function CatalogBrowser({ roots = [], related = {}, showCost, tot
     return { learned: false, items: sib };
   }, [sel, related, byId, allItems, catOf]);
 
-  const tile = { background: 'linear-gradient(160deg, var(--surface-1), var(--surface-2))', border: '1px solid var(--border)', borderRadius: 16, padding: '20px 16px', cursor: 'pointer', textAlign: 'center', minHeight: 124, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 };
 
   return (
     <div className="wrap" style={{ maxWidth: 1040 }}>
@@ -71,14 +70,8 @@ export default function CatalogBrowser({ roots = [], related = {}, showCost, tot
       ) : (
         <>
           {nodes.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: items.length ? 18 : 0 }}>
-              {nodes.map((n) => (
-                <div key={n.id} onClick={() => setStack([...stack, n])} style={tile}>
-                  <div style={{ fontSize: 38, lineHeight: 1 }}>{n.icon}</div>
-                  <div style={{ fontWeight: 800, fontSize: 15 }}>{n.label}</div>
-                  <div className="muted" style={{ fontSize: 11.5 }}>{n.count} item{n.count === 1 ? '' : 's'}{n.children?.length ? ` · ${n.children.length} groups` : ''}</div>
-                </div>
-              ))}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12, marginBottom: items.length ? 18 : 0 }}>
+              {nodes.map((n) => <CatTile key={n.id} n={n} onClick={() => setStack([...stack, n])} />)}
             </div>
           )}
           {items.length > 0 && (
@@ -91,6 +84,25 @@ export default function CatalogBrowser({ roots = [], related = {}, showCost, tot
       )}
 
       {sel && <ItemSheet it={sel} showCost={showCost} crossSell={crossSell} onClose={() => setSel(null)} onPick={setSel} />}
+    </div>
+  );
+}
+
+// Branded "designed" category tile — our own Clog Busterz art system (dark gradient + wordmark watermark +
+// big icon + name). Deterministic accent hue per category so the grid feels varied but on-brand.
+function CatTile({ n, onClick }) {
+  let h = 0; for (const c of n.label || '') h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const hue = 20 + (h % 40);            // amber/orange family, never neon
+  const accent = `hsl(${hue}, 85%, 55%)`;
+  return (
+    <div onClick={onClick} style={{ position: 'relative', cursor: 'pointer', borderRadius: 16, overflow: 'hidden', minHeight: 150, border: '1px solid var(--border)', background: `radial-gradient(120% 90% at 20% 0%, hsla(${hue},70%,30%,.35), transparent 60%), linear-gradient(165deg, #1b1d26, #101218)`, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', padding: 14 }}>
+      <div aria-hidden style={{ position: 'absolute', top: 10, left: 12, fontSize: 9, letterSpacing: '.18em', fontWeight: 800, color: accent, opacity: 0.55 }}>CLOG BUSTERZ</div>
+      <div aria-hidden style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-58%)', fontSize: 64, lineHeight: 1, filter: 'drop-shadow(0 4px 12px rgba(0,0,0,.5))' }}>{n.icon}</div>
+      <div style={{ position: 'relative', zIndex: 1 }}>
+        <div style={{ fontWeight: 800, fontSize: 16, color: '#fff', lineHeight: 1.15 }}>{n.label}</div>
+        <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,.6)', marginTop: 3 }}>{n.count} item{n.count === 1 ? '' : 's'}{n.children?.length ? ` · ${n.children.length} groups` : ''} ›</div>
+      </div>
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, background: accent }} />
     </div>
   );
 }
