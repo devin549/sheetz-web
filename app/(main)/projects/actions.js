@@ -54,7 +54,7 @@ export async function setProjectStatus(projectId, status, holdReason) {
 
 // Active projects + their units, for the cockpit "link this job" picker.
 export async function listProjectsWithUnits() {
-  const c = await ctx(true); if (c.err) return { ok: false, projects: [] };
+  const c = await ctx(); if (c.err) return { ok: false, projects: [] };
   try {
     const { data: projects } = await c.sb.from('projects').select('id, name').neq('status', 'cancelled').order('created_at', { ascending: false }).limit(60);
     const ids = (projects || []).map((p) => p.id);
@@ -64,11 +64,34 @@ export async function listProjectsWithUnits() {
   } catch { return { ok: false, projects: [] }; }
 }
 
-// Link an existing job (a visit) to a project + unit.
+// Link an existing job (a visit) to a project + unit. MANAGERS only — keeps every tech from moving jobs.
 export async function linkJobToUnit(projectId, unitId, jobId) {
-  const c = await ctx(true); if (c.err) return { ok: false, msg: c.err };
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
   const { error } = await c.sb.from('jobs').update({ project_id: projectId, project_unit_id: unitId || null }).eq('id', jobId);
   if (error) return { ok: false, msg: error.message };
-  revalidatePath(`/projects/${projectId}`);
+  if (projectId) revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/job/${jobId}`);
   return { ok: true };
+}
+
+// A tech FLAGS a job as likely part of a bigger project — goes to the manager radar, never a direct move.
+export async function flagProjectCandidate(jobId, note) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Sign in required.' };
+  const profile = await loadProfile(user);
+  const sb = getSupabaseAdmin();
+  try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'project.flagged', entity: 'job', entity_id: String(jobId), detail: { note: clean(note, 240) } }); } catch (_) { return { ok: false, msg: 'Couldn’t flag right now.' }; }
+  return { ok: true, msg: 'Flagged for a manager to review.' };
+}
+
+// Manager: turn a detected candidate (a site/customer with several jobs) into a project + pull the jobs in.
+export async function createProjectFromCandidate({ name, customerId, siteAddress, jobIds }) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  if (!clean(name)) return { ok: false, msg: 'Name required.' };
+  const { data, error } = await c.sb.from('projects').insert({ name: clean(name), customer_id: customerId || null, site_address: clean(siteAddress) || null, created_by: c.user.id }).select('id').single();
+  if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/80_projects.sql first.' : error.message };
+  if (Array.isArray(jobIds) && jobIds.length) { try { await c.sb.from('jobs').update({ project_id: data.id }).in('id', jobIds.map(String)); } catch (_) {} }
+  revalidatePath('/projects');
+  return { ok: true, id: data.id };
 }

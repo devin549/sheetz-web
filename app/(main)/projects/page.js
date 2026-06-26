@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requirePerm } from '@/lib/guard';
-import { loadProjects, money } from '@/lib/projects';
+import { loadProjects, detectProjectCandidates, money } from '@/lib/projects';
 import NewProject from './NewProject';
+import ProjectRadar from './ProjectRadar';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,7 @@ export default async function Projects() {
   if (!isAdminConfigured) return <div className="wrap"><div className="h1">Projects</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code>.</div></div>;
   const sb = getSupabaseAdmin();
   const { available, rows } = await loadProjects(sb);
+  const radar = available ? await detectProjectCandidates(sb) : { candidates: [], flagged: [] };
 
   return (
     <div className="wrap" style={{ maxWidth: 920 }}>
@@ -20,6 +22,8 @@ export default async function Projects() {
       <p className="muted">Multi-unit / multi-visit jobs — one site, one payer, many units. Margin rolls up across every visit.</p>
 
       {!available && <div className="notice">Run <code>supabase/80_projects.sql</code> to turn on Projects.</div>}
+
+      <ProjectRadar candidates={radar.candidates} flagged={radar.flagged} />
 
       <NewProject />
 

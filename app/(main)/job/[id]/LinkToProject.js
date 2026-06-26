@@ -4,9 +4,9 @@
 // into that project's margin and shows under the unit. Lazy-loads the project list only when opened.
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { listProjectsWithUnits, linkJobToUnit } from '../../projects/actions';
+import { listProjectsWithUnits, linkJobToUnit, flagProjectCandidate } from '../../projects/actions';
 
-export default function LinkToProject({ jobId, currentProjectId, currentProjectName, currentUnitLabel }) {
+export default function LinkToProject({ jobId, currentProjectId, currentProjectName, currentUnitLabel, canLink = false }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [open, setOpen] = useState(false);
@@ -14,6 +14,23 @@ export default function LinkToProject({ jobId, currentProjectId, currentProjectN
   const [pid, setPid] = useState(currentProjectId || '');
   const [uid, setUid] = useState('');
   const [err, setErr] = useState(null);
+  const [flagMsg, setFlagMsg] = useState(null);
+  const flag = () => start(async () => { const r = await flagProjectCandidate(jobId, ''); setFlagMsg(r.ok ? r.msg : (r.msg || 'Could not flag.')); });
+
+  // Tech view: can't move jobs — show the linkage read-only, or a "flag for a manager" nudge.
+  if (!canLink) {
+    if (currentProjectId) return (
+      <div className="card" style={{ marginTop: 8, borderLeft: '3px solid var(--purple)' }}>
+        <span style={{ fontWeight: 800, fontSize: 13 }}>🏗️ Part of <a href={`/projects/${currentProjectId}`} style={{ color: 'var(--purple)' }}>{currentProjectName || 'a project'}</a>{currentUnitLabel ? ` · ${currentUnitLabel}` : ''}</span>
+      </div>
+    );
+    return (
+      <div className="card" style={{ marginTop: 8, borderLeft: '3px solid var(--purple)' }}>
+        {flagMsg ? <span style={{ fontSize: 12.5, color: 'var(--green)' }}>✓ {flagMsg}</span>
+          : <button onClick={flag} disabled={pending} style={{ background: 'none', border: 'none', color: 'var(--purple)', cursor: 'pointer', fontSize: 13, fontWeight: 800, padding: 0 }}>{pending ? 'Flagging…' : '🏗️ Looks like part of a bigger project? Flag it for a manager'}</button>}
+      </div>
+    );
+  }
 
   const openPicker = () => {
     setOpen(true); setErr(null);
