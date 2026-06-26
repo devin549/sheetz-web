@@ -6,6 +6,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { recordSale } from './actions';
+import { createEstimate } from './estimateActions';
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString();
 const TIER_STYLE = { good: { c: 'var(--fg-2)' }, better: { c: 'var(--amber)' }, best: { c: 'var(--green)' } };
@@ -19,10 +20,13 @@ export default function PricebookClient({ job, customer, items = [], categories 
   const [cart, setCart] = useState([]);          // { id, name, price, soldPrice }
   const [msg, setMsg] = useState(null);
   const [approval, setApproval] = useState(null);
+  const [tierKey, setTierKey] = useState(null);
+  const [link, setLink] = useState(null);        // shareable estimate link once sent
+  const [copied, setCopied] = useState(false);
   const customerMode = mode === 'customer';
 
-  const add = (it) => setCart((c) => c.find((x) => x.id === it.id) ? c : [...c, { id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: it.internal?.minimum ?? null }]);
-  const addTier = (tier) => setCart(() => tier.items.map((it) => ({ id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: null })));
+  const add = (it) => { setLink(null); setCart((c) => c.find((x) => x.id === it.id) ? c : [...c, { id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: it.internal?.minimum ?? null }]); };
+  const addTier = (tier) => { setLink(null); setTierKey(tier.key); setCart(() => tier.items.map((it) => ({ id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: null }))); };
   const remove = (id) => setCart((c) => c.filter((x) => x.id !== id));
   const setPrice = (id, v) => setCart((c) => c.map((x) => x.id === id ? { ...x, soldPrice: v } : x));
 
@@ -47,6 +51,14 @@ export default function PricebookClient({ job, customer, items = [], categories 
     else if (r.needsApproval) setApproval(r.msg);
     else setMsg(r.msg);
   });
+  // Build a customer-safe estimate and get a shareable link (text it OR present on this iPad).
+  const present = () => start(async () => {
+    setMsg(null); setLink(null);
+    const r = await createEstimate(job.id, cart.map((l) => ({ itemId: l.id, soldPrice: Number(l.soldPrice) || 0, quantity: 1 })), { tierKey, bundleSlug: bundle?.slug, headline: tierKey && bundle ? bundle.name : '' });
+    if (r.ok) setLink(r.url); else setMsg(r.msg);
+  });
+  const fullLink = link && typeof window !== 'undefined' ? window.location.origin + link : link;
+  const copyLink = () => { try { navigator.clipboard.writeText(fullLink); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) {} };
 
   const input = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 14 };
 
@@ -161,8 +173,21 @@ export default function PricebookClient({ job, customer, items = [], categories 
             {!customerMode && anyBelowMin && !approval && <div className="muted" style={{ fontSize: 10.5, marginTop: 6, color: 'var(--amber)' }}>A line is below minimum — a manager must approve the discount.</div>}
 
             <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-              <button onClick={sell} disabled={pending || cart.length === 0} className="btn" style={{ background: 'var(--green)', borderColor: 'var(--green)', color: '#06210f' }}>{pending ? 'Recording…' : (bundle?.approveText || '✓ Approve & Record')}</button>
+              <button onClick={present} disabled={pending || cart.length === 0} className="btn" style={{ background: 'var(--amber)', borderColor: 'var(--amber)', color: '#1a1a1a' }}>{pending ? 'Building…' : '📲 Present / send to customer'}</button>
+              <button onClick={sell} disabled={pending || cart.length === 0} className="pill" style={{ cursor: 'pointer', justifyContent: 'center', display: 'flex', color: 'var(--green)' }}>✓ Or record sold now</button>
             </div>
+
+            {link && (
+              <div style={{ marginTop: 10, padding: 10, borderRadius: 10, background: 'var(--surface-1)', border: '1px solid var(--green)' }}>
+                <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6, color: 'var(--green)' }}>✓ Clean customer page ready</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--amber)', wordBreak: 'break-all', marginBottom: 8 }}>{fullLink}</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <a href={link} target="_blank" rel="noreferrer" className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>📱 Present here</a>
+                  <button onClick={copyLink} className="pill" style={{ cursor: 'pointer' }}>{copied ? '✓ Copied' : '🔗 Copy link'}</button>
+                  {customer.phone && <a href={`sms:${String(customer.phone).replace(/[^0-9+]/g, '')}${typeof navigator !== 'undefined' && /iPhone|iPad/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent('Here are your options from Clog Busterz: ' + fullLink)}`} className="pill" style={{ color: 'var(--blue)' }}>💬 Text it</a>}
+                </div>
+              </div>
+            )}
             {msg && <div style={{ fontSize: 11.5, marginTop: 8, color: 'var(--green)' }}>{msg}</div>}
 
             {/* Objection helpers — quick reframes when the customer hesitates (customer-safe). */}
