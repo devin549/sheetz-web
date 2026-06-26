@@ -93,6 +93,14 @@ export default async function MyTruck({ searchParams }) {
     const repair12mo = serviceLog.filter((s) => s.service_date >= yearAgo).reduce((a, s) => a + (Number(s.cost_cents) || 0), 0);
     health = vanHealth({ repair12moCents: repair12mo, year: maint.year }); }
 
+  // 🏪 Shop Inventory (HTML My Truck sub-tab) — what the shops have, read-only for the tech. Fail-soft pre-89.
+  let shopStock = {};
+  try {
+    const { data } = await sb.from('item_locations').select('name, sku, qty, bin, location_id').eq('location_type', 'shop').gt('qty', 0).order('name').limit(300);
+    (data || []).forEach((p) => { const k = p.location_id || 'shop'; (shopStock[k] = shopStock[k] || []).push(p); });
+  } catch (_) {}
+  const shopLabel = (k) => ({ richmond: 'Richmond', lexington: 'Lexington' }[k] || (k.charAt(0).toUpperCase() + k.slice(1)));
+
   return (
     <div className="wrap">
       <div className="h1">🚐 {role === 'tech' ? 'My Truck' : detailTech + '’s Truck'}</div>
@@ -114,6 +122,30 @@ export default async function MyTruck({ searchParams }) {
 
       {/* 🔧 Maintenance — oil / health / docs / service log (HTML van pane). */}
       <Maintenance maint={maint} serviceLog={serviceLog} oil={oil} health={health} tech={role === 'tech' ? '' : detailTech} />
+
+      {/* 🏪 Shop Inventory — what the shops have (read-only; the full locator does truck-wide search). */}
+      {Object.keys(shopStock).length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <h3 style={{ fontSize: 13, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '.05em', margin: 0, flex: 1 }}>🏪 Shop Inventory</h3>
+            <Link href="/tools" className="pill" style={{ fontSize: 10.5, color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>🔍 Truck-wide search →</Link>
+          </div>
+          {Object.entries(shopStock).map(([loc, items]) => (
+            <div key={loc} className="card" style={{ marginBottom: 8 }}>
+              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>📍 {shopLabel(loc)} shop · {items.length} part{items.length === 1 ? '' : 's'}</div>
+              <div style={{ display: 'grid', gap: 3 }}>
+                {items.slice(0, 30).map((p, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '4px 0', borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                    <span style={{ flex: 1, minWidth: 0 }}>{p.name}{p.bin ? <span className="muted" style={{ fontSize: 11 }}> · bin {p.bin}</span> : ''}</span>
+                    <span style={{ fontWeight: 700 }}>{Number(p.qty) || 0}</span>
+                  </div>
+                ))}
+                {items.length > 30 && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>+{items.length - 30} more — use truck-wide search.</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <Section title="🧰 Parts on the van">
         {!parts.length && <div className="card"><span className="muted">No parts stocked yet.</span></div>}
