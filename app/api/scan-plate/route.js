@@ -18,8 +18,11 @@ export async function POST(request) {
   let plate = null;
   try { plate = await readDataPlate(photo.slice(0, 12_000_000), 'office'); } catch (_) {}
   if (!plate) return NextResponse.json({ ok: true, plate: null, message: "I couldn't quite read that plate — no worries, we'll confirm the exact unit on site." }, { headers: CORS });
+  // Decode age from the manufacture year (when the plate showed it), so the estimate can flag an aging unit.
+  const yr = Number(plate.year);
+  const ageYears = Number.isFinite(yr) && yr > 1980 && yr <= new Date().getFullYear() ? new Date().getFullYear() - yr : null;
   // A short customer-friendly summary the Brain can echo back.
   const fuel = { 'NATURAL GAS': 'gas', 'LP / PROPANE': 'propane', 'ELECTRIC': 'electric' }[plate.fuelType] || '';
-  const summary = [plate.brand, plate.capacityGallons ? plate.capacityGallons + '-gal' : '', fuel, 'water heater'].filter(Boolean).join(' ');
-  return NextResponse.json({ ok: true, plate, summary }, { headers: CORS });
+  const summary = [plate.brand, plate.capacityGallons ? plate.capacityGallons + '-gal' : '', fuel, 'water heater', ageYears != null ? `(~${ageYears} yr old)` : ''].filter(Boolean).join(' ');
+  return NextResponse.json({ ok: true, plate: { ...plate, ageYears }, summary }, { headers: CORS });
 }
