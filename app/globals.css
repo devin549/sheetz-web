@@ -56,7 +56,7 @@ html[data-theme="light"] {
   --fg-1: #111418;
   --fg-2: #33383f;
   --fg-3: #565b64;
-  --accent: #B8860B;          /* light amber (HTML) */
+  --accent: #7a5800;          /* light amber — darkened so it passes AA as link/text */
   --accent-2: oklch(72% 0.12 70);
   --accent-3: oklch(60% 0.08 200);
   --danger: oklch(58% 0.20 25);
@@ -64,11 +64,11 @@ html[data-theme="light"] {
   --ok-text: #2E7D32;
   --bad-text: #c62828;
   --info-text: #1976d2;
-  --amber: #B8860B;
-  --amber-bright: #FFB300;
+  --amber: #7a5800;           /* text-safe gold — readable on cream cards (was #B8860B, failed AA) */
+  --amber-bright: #FFB300;    /* decorative fill/border/glow — stays bright */
   --amber-dim: #6b5208;
   --amber-deep: #FFE0A0;
-  --green: #2E7D32;
+  --green: #1f6e23;           /* AA on light pills (was #2E7D32) */
   --green-bright: #1B5E20;
   --red: #c62828;
   --red-bright: #b71c1c;
@@ -113,6 +113,7 @@ html.cb-tech .topbar { display: none; }
 .card {
   background: var(--surface-1); border: 1px solid var(--border);
   border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 4px 16px rgba(0,0,0,.22);
 }
 .card-amber { border-color: var(--amber-dim); }
 

@@ -58,7 +58,13 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
   const onSite = !!(activeJob && activeJob.onSite);
   const quiet = (onSite || atHouse) && !peek && !cust;
   // Hide the global office "Sheetz" topbar — the cockpit owns its own chrome (no office clutter).
-  useEffect(() => { document.documentElement.classList.add('cb-tech'); return () => document.documentElement.classList.remove('cb-tech'); }, []);
+  useEffect(() => {
+    const el = document.documentElement;
+    const prev = el.getAttribute('data-theme');
+    el.classList.add('cb-tech');
+    el.setAttribute('data-theme', 'dark'); // the field cockpit is designed dark — pin it (the neon ribbon/board only read right dark)
+    return () => { el.classList.remove('cb-tech'); if (prev) el.setAttribute('data-theme', prev); else el.removeAttribute('data-theme'); };
+  }, []);
   // Geofence: while on an active job with coords, watch device location and auto-quiet within ~150m.
   useEffect(() => {
     const lat = activeJob && activeJob.lat, lng = activeJob && activeJob.lng;
@@ -125,7 +131,6 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
         )}
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <ThemeToggle />
           {canOffice && (
             <button onClick={() => switchShell('office')} title="Switch to the office app" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: 'var(--fg-2)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 14, padding: '5px 11px', cursor: 'pointer' }}>
               💼 Office
