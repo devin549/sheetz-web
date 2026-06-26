@@ -6,6 +6,7 @@
     { "path": "/api/cron/hank", "schedule": "*/10 * * * *" },
     { "path": "/api/cron/oncall", "schedule": "30 20 * * *" },
     { "path": "/api/cron/triggers", "schedule": "*/10 * * * *" },
-    { "path": "/api/cron/reviews", "schedule": "0 */6 * * *" }
+    { "path": "/api/cron/reviews", "schedule": "0 */6 * * *" },
+    { "path": "/api/cron/rank", "schedule": "0 14 * * 1" }
   ]
 }
