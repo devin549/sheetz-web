@@ -24,8 +24,10 @@ export default async function MyTruck({ searchParams }) {
   const { user, role, profile } = await requireRole(['owner', 'admin', 'gm', 'om', 'tech', 'helper', 'foreman', 'fs', 'shop', 'dispatcher']);
   const myName = (profile && profile.name) || (user.user_metadata && user.user_metadata.name) || '';
   const techParam = (searchParams && searchParams.tech ? String(searchParams.tech) : '').trim();
-  // a tech only ever sees their own truck; an owner sees the fleet, or one tech via ?tech=
-  const detailTech = role === 'tech' ? myName : techParam;
+  // Only fleet-view roles (managers/shop/dispatch) may drill into ANY tech via ?tech=. Field roles
+  // (tech/helper/foreman/fs) are forced to their OWN truck — was leaking any tech's inventory/serials/value.
+  const FLEET_ROLES = ['owner', 'admin', 'gm', 'om', 'shop', 'dispatcher'];
+  const detailTech = FLEET_ROLES.includes(role) ? techParam : myName;
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">🚐 My Truck</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel to read truck data.</div></div>;

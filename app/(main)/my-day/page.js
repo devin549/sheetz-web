@@ -162,7 +162,8 @@ export default async function MyDay({ searchParams }) {
   const legByJobId = {};
   let driveTotMin = 0, driveTotMiles = 0, longestId = null, longestMin = 0;
   {
-    const seq = list.filter((j) => j.lat != null && j.lng != null);
+    // Postgres `numeric` lat/lng arrive as JSON STRINGS — coerce, else haversineMiles (typeof===number) skips every leg.
+    const seq = list.filter((j) => j.lat != null && j.lng != null).map((j) => ({ ...j, lat: Number(j.lat), lng: Number(j.lng) })).filter((j) => !Number.isNaN(j.lat) && !Number.isNaN(j.lng));
     for (let i = 0; i < seq.length - 1; i++) {
       const a = seq[i], b = seq[i + 1];
       const miles = haversineMiles(a.lat, a.lng, b.lat, b.lng);

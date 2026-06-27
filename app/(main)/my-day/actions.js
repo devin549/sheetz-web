@@ -18,8 +18,10 @@ export async function createJobPayLink(jobId, amountDollars) {
   if (!isStripeConfigured()) return { ok: false, msg: 'Stripe isn’t set up yet.' };
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Server not configured.' };
-  const { data: job } = await sb.from('jobs').select('id, customer_id, job_number, job_type, amount, customers(name)').eq('id', jobId).maybeSingle();
+  const { data: job } = await sb.from('jobs').select('id, tech_id, customer_id, job_number, job_type, amount, customers(name)').eq('id', jobId).maybeSingle();
   if (!job) return { ok: false, msg: 'Job not found.' };
+  // Own-job scope (IDOR fix): a field-only tech can only collect on THEIR job; office/finance roles, any job.
+  if (!can(profile.role, 'seeAllJobs') && can(profile.role, 'seeOwnOnly') && (!profile.tech_id || String(job.tech_id) !== String(profile.tech_id))) return { ok: false, msg: 'That job isn’t assigned to you.' };
   // Suggested total = what the tech priced on this job (accepted proposal) → else the job's amount.
   let suggested = Number(job.amount) || 0;
   try {
@@ -48,8 +50,10 @@ export async function searchMyJobs(query) {
   if (!user || !profile) return { ok: false, results: [] };
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, results: [] };
-  const ownOnly = !can(profile.role, 'seeAllJobs') && can(profile.role, 'seeOwnOnly');
-  if (ownOnly && !profile.tech_id) return { ok: true, results: [] }; // own-only with no roster link → nothing to scope
+  // Default-deny: ANY role without seeAllJobs is scoped to its own jobs. (Was `&& seeOwnOnly`, which left
+  // foreman/seeCrew unscoped → its search returned every customer company-wide.)
+  const ownOnly = !can(profile.role, 'seeAllJobs');
+  if (ownOnly && !profile.tech_id) return { ok: true, results: [] }; // no roster link → nothing to scope
   const like = '%' + q.replace(/[%_,]/g, '') + '%';
   const seen = new Set(), results = [];
   const scope = (sel) => (ownOnly ? sel.eq('tech_id', profile.tech_id) : sel);

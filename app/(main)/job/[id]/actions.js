@@ -406,7 +406,7 @@ export async function rollOverJob(jobId, opts = {}) {
     : `📥 **Roll — OFFICE PENDING** — ${custName(ctx.job)}${ctx.job.job_number ? ` · job ${ctx.job.job_number}` : ''} needs a day${returnDate ? ` (~${returnDate})` : ''} — find a slot + call the customer: ${reason}`,
     { to: autoISO, returnDate, reason, officePending });
   revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/my-day'); revalidatePath('/board');
-  return { ok: true, msg: `Rolled to ${next.toLocaleDateString()} — same job, parts & history kept.` };
+  return { ok: true, msg: autoISO ? `Rolled to ${new Date(autoISO).toLocaleDateString()} — same job, parts & history kept.` : `Sent to the office to schedule${returnDate ? ` (~${returnDate})` : ''} — same job, parts & history kept.` };
 }
 
 // Mark a rental issued to this job as RETURNED — clears it from the closeout gate. Allowed for anyone
