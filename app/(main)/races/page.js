@@ -46,6 +46,10 @@ export default async function Races() {
       else { rank = '—'; you$ = '$0'; toFirst = usd0(lb.rows[0].revenue); }
     }
   }
+  // 🔒 iPad privacy: a tech sees only their OWN name + everyone else as "Tech #N". Real names live on the
+  // shop's PSPN big-board (the weekly meeting), never on a guy's personal iPad.
+  board = board.map((b) => ({ ...b, who: b.me ? 'You' : 'Tech #' + b.n }));
+
   // Rank celebration (crown/medal/poop/comeback) — same engine as Start of Day. prevRank comes from the
   // tech's last Start-of-Day acknowledgement so "Comeback Run" can fire on the board too.
   let prevRank = null;
