@@ -69,7 +69,7 @@ function TagRow({ tags = [] }) {
   );
 }
 
-export default function JobCard({ job, seeAll, canAct, variant = 'active', tags = [], pastDue = 0 }) {
+export default function JobCard({ job, seeAll, canAct, variant = 'active', tags = [], pastDue = 0, next = null }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [busyKey, setBusyKey] = useState(null);
@@ -119,13 +119,24 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
     : cur === 'enroute' ? '📍 Mark On-site when you arrive'
     : '🚚 Tap En route to head out';
 
-  // Live on-site timer (active + started).
+  // Live on-site timer (active + started) — drives the elapsed label AND the $/hr pace + next-stop math.
   const [elapsed, setElapsed] = useState('');
+  const [elapsedMin, setElapsedMin] = useState(0);
   useEffect(() => {
     if (variant !== 'active' || !job.started_at) return;
-    const tick = () => { const ms = Date.now() - Date.parse(job.started_at); if (ms < 0) return; const m = Math.floor(ms / 60000); setElapsed(m < 60 ? `${m}m on-site` : `${Math.floor(m / 60)}h ${m % 60}m on-site`); };
+    const tick = () => { const ms = Date.now() - Date.parse(job.started_at); if (ms < 0) return; const m = Math.floor(ms / 60000); setElapsedMin(m); setElapsed(m < 60 ? `${m}m on-site` : `${Math.floor(m / 60)}h ${m % 60}m on-site`); };
     tick(); const i = setInterval(tick, 30000); return () => clearInterval(i);
   }, [variant, job.started_at]);
+  // ⏱ Revenue pace ($/hr) on the in-progress job — tech-only, the HTML "$921/hr pace" coach line.
+  const amt = Number(job.amount) || 0;
+  const paceHr = (cur === 'on_site' && job.started_at && amt > 0 && elapsedMin >= 1) ? Math.round(amt / (elapsedMin / 60)) : null;
+  // 🎯 Next stop: drive there + whether we'll make their window (slack). Computed from the passed leg+time.
+  let nextLine = null;
+  if (next && next.time) {
+    const arriveMs = Date.now() + (Number(next.driveMin) || 0) * 60000;
+    const slack = Math.round((Date.parse(next.time) - arriveMs) / 60000);
+    nextLine = { customer: String(next.customer || 'next stop').split(/\s+/)[0], at: fmtTime(next.time), driveMin: Math.round(Number(next.driveMin) || 0), slack };
+  }
 
   return (
     <div className={variant === 'active' ? 'card card-amber' : 'card'} style={{ opacity: variant === 'done' || cancelled ? 0.6 : 1, padding: compact ? '12px 14px' : undefined }}>
@@ -146,7 +157,7 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
           <TagRow tags={tags} />
           <QuickBar tel={tel} mapHref={mapHref} jobId={job.id} />
         </div>
-        <span className={pill.cls} style={pill.color ? { color: pill.color } : undefined}>{pill.label}</span>
+        <span className={pill.cls} style={pill.color ? { color: pill.color } : undefined}>{cur === 'on_site' && elapsedMin > 0 ? `${pill.label} · ${elapsedMin}m` : pill.label}</span>
       </div>
 
       {/* next required action — every non-cancelled card (scannable in the driveway) */}
@@ -162,6 +173,17 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
           <Link href={`/job/${job.id}/photos`} className="pill" style={{ fontSize: 11, color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>📸 Proof</Link>
         </div>
       )}
+
+      {/* ⏱ tech-only $/hr pace coach (HTML "$921/hr pace") — live off the on-site timer */}
+      {variant === 'active' && !cancelled && !done && cur === 'on_site' && paceHr ? (
+        <div style={{ marginTop: 6, fontSize: 10.5, color: 'var(--amber-dim)', fontStyle: 'italic' }}>⏱ Timer running · {money(amt)} / {elapsedMin}min = <strong style={{ color: 'var(--green-bright)' }}>{money(paceHr)}/hr pace</strong> · push the tier-2 quote before it drops</div>
+      ) : null}
+      {/* 🎯 next stop — drive there + will you make their window (HTML est-done/slack line) */}
+      {variant === 'active' && !cancelled && !done && nextLine ? (
+        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--fg-2)', background: 'rgba(255,179,0,0.08)', border: '1px solid var(--amber-dim)', padding: '4px 8px', borderRadius: 6, display: 'inline-block' }}>
+          🎯 then {nextLine.driveMin}-min drive → <strong>{nextLine.customer}</strong> at {nextLine.at} · <span style={{ color: nextLine.slack >= 0 ? 'var(--green)' : 'var(--red)' }}>{nextLine.slack >= 0 ? `+${nextLine.slack} min slack` : `${-nextLine.slack} min tight`}</span>
+        </div>
+      ) : null}
 
       {/* status workflow — active card only */}
       {variant === 'active' && canAct && !cancelled && (

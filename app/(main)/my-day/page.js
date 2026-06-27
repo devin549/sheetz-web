@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Fragment } from 'react';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
@@ -7,6 +8,8 @@ import TodayMoney from './TodayMoney';
 import { deriveTags } from '@/lib/jobTags';
 import ShareLocation from './ShareLocation';
 import { computeJobPay } from '@/lib/pay';
+import { haversineMiles, etaMinutes } from '@/lib/geo';
+import DriveLeg from './DriveLeg';
 
 const DAILY_REVENUE_GOAL = 1500; // default tech daily revenue goal for "vs goal" until per-tech goals land
 
@@ -18,6 +21,19 @@ export const dynamic = 'force-dynamic';
 const CB_TZ = 'America/New_York';
 function todayKey() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: CB_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+// The UTC instants that bound a CB-day (YYYY-MM-DD) so "today's jobs" is correct regardless of server TZ.
+function dayWindow(dayKey) {
+  const part = new Intl.DateTimeFormat('en-US', { timeZone: CB_TZ, timeZoneName: 'shortOffset' }).formatToParts(new Date(dayKey + 'T12:00:00Z')).find((p) => p.type === 'timeZoneName');
+  const m = (part?.value || 'GMT-5').match(/GMT([+-]\d{1,2})(?::(\d{2}))?/); const h = m ? parseInt(m[1], 10) : -5;
+  const off = h * 60 + (h < 0 ? -1 : 1) * parseInt((m && m[2]) || '0', 10);
+  const startMs = Date.parse(dayKey + 'T00:00:00Z') - off * 60000;
+  return { startISO: new Date(startMs).toISOString(), endISO: new Date(startMs + 86400000).toISOString() };
+}
+// Add/subtract whole days from a YYYY-MM-DD key.
+function shiftDay(dayKey, delta) {
+  const d = new Date(dayKey + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + delta);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 }
 function fmtTime(iso) {
   if (!iso) return '—';
@@ -59,6 +75,12 @@ export default async function MyDay({ searchParams }) {
   const seeAll = can(role, 'seeAllJobs');
   const officeFilter = (searchParams?.tech || '').trim();
 
+  // 📆 Which day are we showing? ?date=YYYY-MM-DD lets the tech flip days (‹ ›); default = today (CB time).
+  const rawDate = String(searchParams?.date || '').trim();
+  const dayKey = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : todayKey();
+  const isToday = dayKey === todayKey();
+  const { startISO: dayStartISO, endISO: dayEndISO } = dayWindow(dayKey);
+
   // Whose jobs: seeAll → everyone; helper → paired tech; else → own.
   let scopeTechId = null, scopeName = null, scopeLabel = '', subtitle = '', note = null;
   if (seeAll) {
@@ -90,12 +112,13 @@ export default async function MyDay({ searchParams }) {
     const useName = !scopeTechId && !!(scopeName && scopeName.length);
     const sel = (extra) => 'id, status, priority, scheduled_at, tech_id' + extra + ', customers(name, address, phone), techs' + (useName ? '!inner' : '') + '(name)';
     const run = (extra) => {
-      let q = supabase.from('jobs').select(sel(extra)).order('scheduled_at', { ascending: true });
+      // Filter to the selected CB-day so "Today" is today's jobs (not every job the tech has ever had).
+      let q = supabase.from('jobs').select(sel(extra)).gte('scheduled_at', dayStartISO).lt('scheduled_at', dayEndISO).order('scheduled_at', { ascending: true });
       if (scopeTechId) q = q.eq('tech_id', scopeTechId);
       else if (useName) q = q.ilike('techs.name', '%' + scopeName + '%');
       return q;
     };
-    let res = await run(', job_number, job_type, amount, customer_id, job_class, warranty_provider, notes, access_notes, started_at, enroute_at');
+    let res = await run(', job_number, job_type, amount, customer_id, job_class, warranty_provider, notes, access_notes, started_at, enroute_at, lat, lng');
     if (res.error) res = await run(', job_number, job_type, amount'); // pre-tag-fields fallback
     if (res.error && /column .* does not exist/i.test(res.error.message || '')) {
       res = await run('');   // 07_jobs_card_fields.sql not run yet — fall back to base columns
@@ -129,7 +152,36 @@ export default async function MyDay({ searchParams }) {
     return a;
   }, { onsite: 0, upcoming: 0, target: 0 });
 
-  const dateLabel = new Date().toLocaleDateString('en-US', { timeZone: CB_TZ, weekday: 'short', month: 'short', day: 'numeric' });
+  const dateLabel = new Date(dayKey + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const daySub = isToday ? 'Today' : (dayKey === shiftDay(todayKey(), 1) ? 'Tomorrow' : dayKey === shiftDay(todayKey(), -1) ? 'Yesterday' : '');
+
+  // 🚗 DRIVE INTEL — job-to-job legs (haversine→ETA now; real Google drive-times later). Running total,
+  // longest/backtrack leg flag, and % of a ~10hr field day spent on the road. Mirrors the HTML drive card.
+  const legByJobId = {};
+  let driveTotMin = 0, driveTotMiles = 0, longestId = null, longestMin = 0;
+  {
+    const seq = list.filter((j) => j.lat != null && j.lng != null);
+    for (let i = 0; i < seq.length - 1; i++) {
+      const a = seq[i], b = seq[i + 1];
+      const miles = haversineMiles(a.lat, a.lng, b.lat, b.lng);
+      if (!Number.isFinite(miles)) continue;
+      const min = etaMinutes(miles);
+      legByJobId[a.id] = { min, miles, fromName: ((a.customers || {}).name || 'last stop').split(/\s+/)[0] };
+      driveTotMin += min; driveTotMiles += miles;
+      if (min > longestMin) { longestMin = min; longestId = a.id; }
+    }
+    if (longestId && legByJobId[longestId] && (list.filter((j) => j.lat != null && j.lng != null).length > 2)) legByJobId[longestId].long = true;
+  }
+  const SHIFT_MIN = 600; // ~10hr field day
+  const drivePct = driveTotMin > 0 ? Math.round((driveTotMin / SHIFT_MIN) * 100) : 0;
+  const driveBadge = drivePct <= 18 ? { t: 'EFFICIENT', tone: 'var(--green-bright)' } : drivePct <= 28 ? { t: 'ON PACE', tone: 'var(--amber)' } : { t: 'HEAVY', tone: 'var(--red)' };
+  const fmtDur = (m) => { m = Math.round(m); return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`; };
+  // The next stop after the active job — feeds the on-site card's "→ drive → arrive" line.
+  const activeIdx = list.findIndex((j) => j.id === activeJobId);
+  const activeNextJob = activeIdx >= 0 ? (list[activeIdx + 1] || null) : null;
+  const activeNext = (activeNextJob && legByJobId[activeJobId])
+    ? { customer: (activeNextJob.customers || {}).name || 'next stop', time: activeNextJob.scheduled_at, driveMin: legByJobId[activeJobId].min, miles: legByJobId[activeJobId].miles }
+    : null;
 
   // ── Tabs (HTML My Day): 🔥 Today · 📜 My Jobs (30d) · 💰 Today $ ──
   const tab = ['jobs', 'money'].includes(searchParams?.tab) ? searchParams.tab : 'today';
@@ -219,15 +271,32 @@ export default async function MyDay({ searchParams }) {
           </div>
 
           {tab === 'today' && (<>
-            {/* date summary bar (onsite / upcoming / target) */}
-            <div className="card card-amber" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
-              <div><div style={{ fontWeight: 800, fontSize: 15 }}>{dateLabel}</div><div className="muted" style={{ fontSize: 11 }}>Today</div></div>
-              <div style={{ display: 'flex', gap: 22 }}>
+            {/* date bar with ‹ › day flips (HTML date-bar) — onsite / upcoming / $ target for the shown day */}
+            <div className="card card-amber" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Link href={`/my-day?date=${shiftDay(dayKey, -1)}`} aria-label="Previous day" style={{ textDecoration: 'none', color: 'var(--amber)', fontSize: 24, fontWeight: 800, lineHeight: 1, padding: '0 4px' }}>‹</Link>
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800, fontSize: 15 }}>{dateLabel}</div><div className="muted" style={{ fontSize: 11 }}>{daySub || 'schedule'}</div></div>
+              <div style={{ display: 'flex', gap: 18 }}>
                 <div style={{ textAlign: 'center' }}><div style={{ fontSize: 20, fontWeight: 800, color: stats.onsite ? 'var(--amber)' : 'var(--fg-2)' }}>{stats.onsite}</div><div className="muted" style={{ fontSize: 10 }}>onsite</div></div>
                 <div style={{ textAlign: 'center' }}><div style={{ fontSize: 20, fontWeight: 800 }}>{stats.upcoming}</div><div className="muted" style={{ fontSize: 10 }}>upcoming</div></div>
                 <div style={{ textAlign: 'center' }}><div style={{ fontSize: 20, fontWeight: 800, color: 'var(--green-bright)' }}>{money(stats.target)}</div><div className="muted" style={{ fontSize: 10 }}>target</div></div>
               </div>
+              <Link href={`/my-day?date=${shiftDay(dayKey, 1)}`} aria-label="Next day" style={{ textDecoration: 'none', color: 'var(--amber)', fontSize: 24, fontWeight: 800, lineHeight: 1, padding: '0 4px' }}>›</Link>
             </div>
+            {!isToday && (
+              <div style={{ marginTop: 8 }}><Link href="/my-day" className="pill" style={{ textDecoration: 'none', background: 'var(--amber)', color: '#1a1206', fontWeight: 800 }}>↩ Back to Today</Link></div>
+            )}
+
+            {/* 🚗 Drive time today — running job-to-job total + % of shift on the road (HTML drive card) */}
+            {driveTotMin > 0 && (
+              <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                <span style={{ fontSize: 18 }}>🚗</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>Drive time {isToday ? 'today' : 'this day'} · <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{fmtDur(driveTotMin)}</span> · {Math.round(driveTotMiles)} mi</div>
+                  <div style={{ fontSize: 10, color: 'var(--fg-3)' }}>{drivePct}% of your shift on the road · shop avg ~22% · <span style={{ color: driveBadge.tone }}>{drivePct <= 22 ? "you're tighter than most 👍" : 'room to tighten the route'}</span></div>
+                </div>
+                <span style={{ background: 'color-mix(in oklab, ' + driveBadge.tone + ' 18%, transparent)', border: '1px solid ' + driveBadge.tone, color: driveBadge.tone, fontSize: 9, fontWeight: 800, padding: '3px 8px', borderRadius: 9, flex: 'none' }}>{driveBadge.t}</span>
+              </div>
+            )}
             {/* 🧠 Ask Hank (HTML My Day) — Hank knows the tech's numbers */}
             <Link href="/hank" className="card" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit', marginTop: 10, borderLeft: '3px solid var(--purple, #9c64f4)' }}>
               <span style={{ fontSize: 22 }}>🧠</span>
@@ -250,7 +319,13 @@ export default async function MyDay({ searchParams }) {
         const s = String(j.status || '').toLowerCase();
         const variant = j.id === activeJobId ? 'active' : /done|complete|closed|cancel/.test(s) ? 'done' : 'upcoming';
         const tags = deriveTags(j, { member: memberByCust[j.customer_id], vip: vipByCust[j.customer_id], pastDue: pastDueByCust[j.customer_id] });
-        return <JobCard key={j.id} job={j} seeAll={seeAll} canAct={can(role, 'changeStatus')} variant={variant} tags={tags} pastDue={pastDueByCust[j.customer_id] || 0} />;
+        const leg = legByJobId[j.id];
+        return (
+          <Fragment key={j.id}>
+            <JobCard job={j} seeAll={seeAll} canAct={can(role, 'changeStatus')} variant={variant} tags={tags} pastDue={pastDueByCust[j.customer_id] || 0} next={variant === 'active' ? activeNext : null} />
+            {leg && <DriveLeg min={leg.min} miles={leg.miles} fromName={leg.fromName} long={leg.long} />}
+          </Fragment>
+        );
       })}
 
       {/* ── 📅 WEEK — this week's jobs grouped by day (ported from HTML "My Jobs" weekly view) ── */}
