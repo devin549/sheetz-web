@@ -247,7 +247,7 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
       {(challenges.length > 0 || bounties.length > 0) && (
         <div style={{ marginTop: 14 }}>
           <div style={{ borderRadius: 14, padding: '13px 16px', marginBottom: 2,
-            background: 'linear-gradient(135deg, #2a1a3a 0%, var(--surface-1) 100%)', border: '2px solid #ba68c8' }}>
+            background: 'linear-gradient(135deg, #3a2450 0%, #1f1430 100%)', border: '2px solid #ba68c8' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <span style={{ fontSize: 22 }}>⚡</span>
               <strong style={{ color: '#e1bee7', fontSize: 13, textTransform: 'uppercase', letterSpacing: '.04em' }}>Weekly Challenges · Live Bounties</strong>
@@ -262,8 +262,8 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
                     <strong style={{ color: 'var(--amber)', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '.04em' }}>{c.title}</strong>
                     <span style={{ marginLeft: 'auto', background: 'var(--amber)', color: '#1a1206', padding: '1px 7px', borderRadius: 8, fontSize: 9, fontWeight: 800, whiteSpace: 'nowrap' }}>{c.prize}</span>
                   </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--fg-2)', marginBottom: 6 }}>{c.desc}</div>
-                  <div style={{ background: 'var(--surface-2)', borderRadius: 5, padding: '6px 9px', fontSize: 11, fontWeight: 800, color: 'var(--amber)' }}>{c.progress}</div>
+                  <div style={{ fontSize: 11.5, color: '#e8dcef', marginBottom: 6 }}>{c.desc}</div>
+                  <div style={{ background: 'rgba(0,0,0,0.32)', borderRadius: 5, padding: '6px 9px', fontSize: 11, fontWeight: 800, color: '#ffd24a' }}>{c.progress}</div>
                 </div>
               ))}
               {/* office-posted live bounties — purple #e1bee7 accent tiles */}
@@ -274,11 +274,11 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
                     <strong style={{ color: '#e1bee7', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '.04em' }}>{b.title}</strong>
                     {(b.amount_cents != null || b.points != null) && <span style={{ marginLeft: 'auto', background: '#ba68c8', color: '#fff', padding: '1px 7px', borderRadius: 8, fontSize: 9, fontWeight: 800, whiteSpace: 'nowrap' }}>{[b.amount_cents != null ? '+$' + Math.round(b.amount_cents / 100) : '', b.points != null ? `${b.points} XP` : ''].filter(Boolean).join(' · ')}</span>}
                   </div>
-                  {b.description && <div style={{ fontSize: 11.5, color: 'var(--fg-2)' }}>{b.description}</div>}
+                  {b.description && <div style={{ fontSize: 11.5, color: '#e8dcef' }}>{b.description}</div>}
                 </div>
               ))}
             </div>
-            <div style={{ fontSize: 9.5, color: 'var(--fg-3)', marginTop: 8, textAlign: 'center' }}>
+            <div style={{ fontSize: 9.5, color: '#c2b0cf', marginTop: 8, textAlign: 'center' }}>
               ⚡ Devin fires new bounties anytime · 🎰 grab a Power Plunger pull from the top ribbon · full race on 🏁 Races.
             </div>
           </div>
