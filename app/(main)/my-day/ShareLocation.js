@@ -2,14 +2,15 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { pingLocation } from './actions';
+import { savePrefs } from '../account/actions';
 import { MapPin } from 'lucide-react';
 
 // Live location for dispatch ("closest tech" routing). A WEBSITE can't track in the background — browser
-// GPS only runs while this page is open and after the tech grants permission. So: tap once → we watch the
-// position and auto-ping while My Day is open (throttled), and re-arm on the next visit if permission's
-// already granted. For true always-on (app closed / phone pocketed) you'd need a native app or a vehicle GPS.
-const LS_KEY = 'cb_share_loc';
-
+// GPS only runs while this page is open and after the tech grants permission. So the model is "accept once":
+// the tech turns it on once (saved to their profile via prefs.share_location), and from then on it
+// auto-shares whenever My Day is open. `accepted` is that persistent server setting. Stop = pause for this
+// session only (it re-arms next visit); fully turning it off lives in Settings. True always-on (app closed /
+// phone pocketed) needs a native app or a vehicle GPS.
 function metersBetween(aLat, aLng, bLat, bLng) {
   const R = 6371000, rad = (d) => (d * Math.PI) / 180;
   const dLat = rad(bLat - aLat), dLng = rad(bLng - aLng);
@@ -17,7 +18,7 @@ function metersBetween(aLat, aLng, bLat, bLng) {
   return 2 * R * Math.asin(Math.sqrt(x));
 }
 
-export default function ShareLocation() {
+export default function ShareLocation({ accepted = false }) {
   const [live, setLive] = useState(false);
   const [msg, setMsg] = useState(null);
   const watchRef = useRef(null);
@@ -33,43 +34,58 @@ export default function ShareLocation() {
     pingLocation(latitude, longitude, accuracy).then((r) => setMsg(r && !r.ok ? { ok: false, msg: r.msg } : { ok: true, msg: 'Sharing live' }));
   }, []);
 
-  const stop = useCallback(() => {
-    if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null; }
-    setLive(false); setMsg(null);
-    try { localStorage.removeItem(LS_KEY); } catch (_) {}
-  }, []);
-
   const start = useCallback(() => {
     if (!('geolocation' in navigator)) { setMsg({ ok: false, msg: 'This device can’t share location.' }); return; }
     if (watchRef.current != null) return;
     watchRef.current = navigator.geolocation.watchPosition(
       onPos,
-      (err) => { setMsg({ ok: false, msg: err.code === 1 ? 'Location permission denied.' : 'Couldn’t get a fix.' }); if (err.code === 1) stop(); },
+      (err) => { setMsg({ ok: false, msg: err.code === 1 ? 'Location permission denied.' : 'Couldn’t get a fix.' }); if (err.code === 1) { if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null; } setLive(false); } },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
     );
     setLive(true);
-    try { localStorage.setItem(LS_KEY, '1'); } catch (_) {}
-  }, [onPos, stop]);
+  }, [onPos]);
 
-  // Re-arm on load if the tech turned it on before AND permission is still granted (no re-prompt).
+  // Pause for THIS session (doesn't change the saved setting — it re-arms on the next visit).
+  const pause = useCallback(() => {
+    if (watchRef.current != null) { navigator.geolocation.clearWatch(watchRef.current); watchRef.current = null; }
+    setLive(false); setMsg(null);
+  }, []);
+
+  // First-time accept (from My Day): save the persistent setting, then start.
+  const acceptAndStart = useCallback(() => {
+    savePrefs({ share_location: true }).catch(() => {});
+    start();
+  }, [start]);
+
+  // Already accepted → auto-start whenever the app opens, if permission is still granted (no re-prompt).
   useEffect(() => {
-    let on = false;
-    try { on = localStorage.getItem(LS_KEY) === '1'; } catch (_) {}
-    if (on && navigator.permissions?.query) {
-      navigator.permissions.query({ name: 'geolocation' }).then((p) => { if (p.state === 'granted') start(); }).catch(() => {});
+    if (accepted) {
+      if (navigator.permissions?.query) {
+        navigator.permissions.query({ name: 'geolocation' }).then((p) => { if (p.state !== 'denied') start(); }).catch(() => start());
+      } else start();
     }
     return () => { if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current); };
-  }, [start]);
+  }, [accepted, start]);
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', margin: '0 0 12px' }}>
-      <button type="button" onClick={live ? stop : start} className="btn btn-ghost"
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: live ? 'var(--green)' : undefined, borderColor: live ? 'var(--green)' : undefined }}>
-        <MapPin size={15} /> {live ? 'Sharing live ●' : 'Share my location'}
-      </button>
-      {live && <button type="button" onClick={stop} className="btn btn-ghost" style={{ fontSize: 12 }}>Stop</button>}
-      {msg && <span style={{ fontSize: 12.5, fontWeight: 700, color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.msg}</span>}
-      <span className="muted" style={{ fontSize: 11 }}>{live ? 'auto-updates while My Day is open' : 'helps dispatch route the closest tech for a part/tool'}</span>
+      {live ? (
+        <>
+          <span className="btn btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--green)', borderColor: 'var(--green)', cursor: 'default' }}>
+            <MapPin size={15} /> Sharing live ●
+          </span>
+          <button type="button" onClick={pause} className="btn btn-ghost" style={{ fontSize: 12 }}>Stop</button>
+          <span className="muted" style={{ fontSize: 11 }}>auto-updates while My Day is open</span>
+        </>
+      ) : (
+        <>
+          <button type="button" onClick={accepted ? start : acceptAndStart} className="btn btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+            <MapPin size={15} /> {accepted ? 'Resume sharing' : 'Share my location'}
+          </button>
+          {msg && <span style={{ fontSize: 12.5, fontWeight: 700, color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.msg}</span>}
+          <span className="muted" style={{ fontSize: 11 }}>{accepted ? 'paused — tap to resume' : 'accept once → dispatch can route you the closest job/part'}</span>
+        </>
+      )}
     </div>
   );
 }

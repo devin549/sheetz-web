@@ -201,6 +201,12 @@ export default function AccountSettings({ user, profile, isManager, ccGated, ccP
     start(async () => { await savePrefs({ reduce_motion: v }); });
   };
 
+  const shareLoc = prefs.share_location === true;
+  const toggleShareLoc = () => {
+    const v = !shareLoc; setPrefs((p) => ({ ...p, share_location: v }));
+    start(async () => { const r = await savePrefs({ share_location: v }); flash(r); });
+  };
+
   const setTheme = (t) => {
     setThemeState(t);
     document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
@@ -251,6 +257,17 @@ export default function AccountSettings({ user, profile, isManager, ccGated, ccP
           </span>
         </Row>
         <Row label="Reduce motion"><Toggle on={reduceMotion} onClick={toggleReduceMotion} /></Row>
+      </Section>
+
+      {/* 📍 LOCATION — accept once; auto-shares while the app is open so dispatch can route the closest tech */}
+      <Section title="📍 Location">
+        <Row label={
+          <span>Share location while working
+            <div className="muted" style={{ fontSize: 10.5, marginTop: 1, fontWeight: 400 }}>Accept once — it stays on and shares your location with dispatch <strong>while the app is open</strong>, so you get routed the closest job or part. Turn off here anytime.</div>
+          </span>
+        }>
+          <Toggle on={shareLoc} onClick={toggleShareLoc} disabled={pending} />
+        </Row>
       </Section>
 
       {/* 🔔 NOTIFICATIONS + 🔥 ROAST LEVEL */}
