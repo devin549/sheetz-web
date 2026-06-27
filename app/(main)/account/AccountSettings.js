@@ -136,7 +136,7 @@ function PhotoUploader({ initialUrl, name }) {
   );
 }
 
-export default function AccountSettings({ user, profile, isManager, ccGated, ccPinSet, ipadPinReady, ipadPinSet, theme: initialTheme }) {
+export default function AccountSettings({ user, profile, isManager, lockLocation = false, ccGated, ccPinSet, ipadPinReady, ipadPinSet, theme: initialTheme }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
@@ -201,8 +201,9 @@ export default function AccountSettings({ user, profile, isManager, ccGated, ccP
     start(async () => { await savePrefs({ reduce_motion: v }); });
   };
 
-  const shareLoc = prefs.share_location === true;
+  const shareLoc = lockLocation || prefs.share_location === true; // field crew = always on
   const toggleShareLoc = () => {
+    if (lockLocation) return; // required for field crew — can't turn off
     const v = !shareLoc; setPrefs((p) => ({ ...p, share_location: v }));
     start(async () => { const r = await savePrefs({ share_location: v }); flash(r); });
   };
@@ -259,14 +260,18 @@ export default function AccountSettings({ user, profile, isManager, ccGated, ccP
         <Row label="Reduce motion"><Toggle on={reduceMotion} onClick={toggleReduceMotion} /></Row>
       </Section>
 
-      {/* 📍 LOCATION — accept once; auto-shares while the app is open so dispatch can route the closest tech */}
+      {/* 📍 LOCATION — field crew: required, locked on. Office: optional. Auto-shares while the app is open. */}
       <Section title="📍 Location">
         <Row label={
-          <span>Share location while working
-            <div className="muted" style={{ fontSize: 10.5, marginTop: 1, fontWeight: 400 }}>Accept once — it stays on and shares your location with dispatch <strong>while the app is open</strong>, so you get routed the closest job or part. Turn off here anytime.</div>
+          <span>Share location while working{lockLocation && <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--amber)', marginLeft: 6, letterSpacing: '.5px' }}>REQUIRED</span>}
+            <div className="muted" style={{ fontSize: 10.5, marginTop: 1, fontWeight: 400 }}>
+              {lockLocation
+                ? <>Required for your role — shares your location with dispatch <strong>while the app is open</strong> so you get routed the closest job/part. Can’t be turned off here.</>
+                : <>Accept once — it stays on and shares your location with dispatch <strong>while the app is open</strong>. Turn off here anytime.</>}
+            </div>
           </span>
         }>
-          <Toggle on={shareLoc} onClick={toggleShareLoc} disabled={pending} />
+          <Toggle on={shareLoc} onClick={toggleShareLoc} disabled={pending || lockLocation} />
         </Row>
       </Section>
 

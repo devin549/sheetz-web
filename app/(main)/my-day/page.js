@@ -316,7 +316,7 @@ export default async function MyDay({ searchParams }) {
         <div className="notice"><strong>Your account has no name set.</strong> Ask the office to add your name on the Team screen.</div>
       )}
 
-      {!note && <ShareLocation accepted={profile.prefs?.share_location === true} />}
+      {!note && <ShareLocation accepted={profile.prefs?.share_location === true} required={(can(role, 'seeOwnOnly') || can(role, 'seeCrew')) && !can(role, 'manageUsers')} />}
 
       {/* 🔍 Find a job/invoice/receipt by number (HTML My Day search) — straight into the job. */}
       {!note && <JobSearch />}

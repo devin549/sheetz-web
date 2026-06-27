@@ -18,7 +18,8 @@ function metersBetween(aLat, aLng, bLat, bLng) {
   return 2 * R * Math.asin(Math.sqrt(x));
 }
 
-export default function ShareLocation({ accepted = false }) {
+export default function ShareLocation({ accepted = false, required = false }) {
+  const armed = accepted || required; // field crew: always armed (required, can't opt out in-app)
   const [live, setLive] = useState(false);
   const [msg, setMsg] = useState(null);
   const watchRef = useRef(null);
@@ -57,15 +58,16 @@ export default function ShareLocation({ accepted = false }) {
     start();
   }, [start]);
 
-  // Already accepted → auto-start whenever the app opens, if permission is still granted (no re-prompt).
+  // Armed (accepted, or required for field crew) → auto-start whenever the app opens, if permission is still
+  // granted (no re-prompt). Required crew auto-start even harder (we still try; OS denial surfaces a warning).
   useEffect(() => {
-    if (accepted) {
+    if (armed) {
       if (navigator.permissions?.query) {
-        navigator.permissions.query({ name: 'geolocation' }).then((p) => { if (p.state !== 'denied') start(); }).catch(() => start());
+        navigator.permissions.query({ name: 'geolocation' }).then((p) => { if (p.state !== 'denied' || required) start(); }).catch(() => start());
       } else start();
     }
     return () => { if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current); };
-  }, [accepted, start]);
+  }, [armed, required, start]);
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', margin: '0 0 12px' }}>
@@ -74,8 +76,16 @@ export default function ShareLocation({ accepted = false }) {
           <span className="btn btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--green)', borderColor: 'var(--green)', cursor: 'default' }}>
             <MapPin size={15} /> Sharing live ●
           </span>
-          <button type="button" onClick={pause} className="btn btn-ghost" style={{ fontSize: 12 }}>Stop</button>
-          <span className="muted" style={{ fontSize: 11 }}>auto-updates while My Day is open</span>
+          {!required && <button type="button" onClick={pause} className="btn btn-ghost" style={{ fontSize: 12 }}>Stop</button>}
+          <span className="muted" style={{ fontSize: 11 }}>{required ? 'required for your role · auto-updates while open' : 'auto-updates while My Day is open'}</span>
+        </>
+      ) : required ? (
+        // Field crew, not live = OS permission off / GPS off. They can't toggle it in-app; surface the warning.
+        <>
+          <button type="button" onClick={start} className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, background: 'var(--amber)', color: '#1a1206' }}>
+            <MapPin size={15} /> Turn on location
+          </button>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)' }}>⚠️ Location required — {msg?.msg || 'turn it on (Settings → Safari → Location) so dispatch can see you.'}</span>
         </>
       ) : (
         <>

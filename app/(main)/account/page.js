@@ -15,6 +15,10 @@ export default async function Account() {
   const profile = await loadProfile(user);
   const meta = roleMeta(profile.role);
   const theme = cookies().get('theme')?.value || 'dark';
+  // Field crew (own-only techs/helpers + crew leads) MUST share location while working — locked on, can't
+  // toggle off. Managers/office are exempt. (Note: the OS-level permission is still the tech's; this just
+  // removes the easy in-app off-switch — accountability comes from dark-detection, not this lock alone.)
+  const lockLocation = (can(profile.role, 'seeOwnOnly') || can(profile.role, 'seeCrew')) && !can(profile.role, 'manageUsers');
 
   return (
     <AccountSettings
@@ -26,6 +30,7 @@ export default async function Account() {
         licenseReady: profile.licenseReady, licenseOnFile: profile.licenseOnFile, licenseExpiry: profile.licenseExpiry, licenseState: profile.licenseState,
       }}
       isManager={can(profile.role, 'manageUsers')}
+      lockLocation={lockLocation}
       ccGated={ccGated(profile.role) && profile.ccPinReady}
       ccPinSet={profile.ccPinSet}
       ipadPinReady={profile.ipadPinReady}
