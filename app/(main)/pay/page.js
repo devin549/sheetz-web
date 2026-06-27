@@ -48,13 +48,19 @@ export default async function Pay() {
   }
 
   const live = !!pay;
-  const row = (ico, lbl, amt, opts = {}) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: opts.top ? '2px solid var(--amber-dim)' : '1px solid var(--border)', opacity: opts.dim ? 0.85 : 1 }}>
-      <span style={{ fontSize: 16 }}>{ico}</span>
-      <span style={{ flex: 1, fontSize: 12.5, fontWeight: opts.strong ? 700 : 400 }}>{lbl}</span>
-      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: opts.neg ? 'var(--fg-3)' : opts.pos ? 'var(--green)' : 'var(--fg-1)' }}>{amt}</span>
-    </div>
-  );
+  // Color contract mirrors the live iPad .pay-line styles: bonus amt = --green-bright, true deduct
+  // amt = --red-bright, the muted pre-commission "less X" lines = --fg-3, and the total row = --amber
+  // (with the NET PAY green gradient wash). opts.total renders the spec's amber-bordered total line.
+  const row = (ico, lbl, amt, opts = {}) => {
+    const amtColor = opts.deduct ? 'var(--red-bright)' : opts.neg ? 'var(--fg-3)' : opts.pos ? 'var(--green-bright)' : opts.total ? 'var(--amber)' : 'var(--fg-1)';
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: opts.total ? '12px 8px' : '8px 0', borderTop: opts.total ? '2px solid var(--amber)' : opts.top ? '2px solid var(--amber-dim)' : '1px solid var(--border)', marginTop: opts.total ? 4 : undefined, borderRadius: opts.total ? 6 : undefined, background: opts.total ? 'linear-gradient(90deg, rgba(76,175,80,0.12) 0%, rgba(76,175,80,0.04) 100%)' : undefined, opacity: opts.dim ? 0.85 : 1 }}>
+        <span style={{ fontSize: 16 }}>{ico}</span>
+        <span style={{ flex: 1, fontSize: 12.5, fontWeight: opts.strong || opts.total ? (opts.total ? 800 : 700) : 400, color: opts.total ? 'var(--amber)' : undefined }}>{lbl}</span>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: opts.total ? 16 : undefined, color: amtColor }}>{amt}</span>
+      </div>
+    );
+  };
 
   return (
     <div className="wrap" style={{ maxWidth: 760 }}>
@@ -92,7 +98,7 @@ export default async function Pay() {
             {[
               { h: 'Pay Type', v: PAY_TYPE_LABEL[pay.payType] || pay.payType, d: pay.rate ? `${pay.rate}% commission` : 'rate set in payroll', small: true },
               { h: 'Jobs This Week', v: String(pay.jobsCount), d: `${dollars(pay.revenue)} revenue`, dc: 'var(--fg-3)' },
-              { h: 'Rank', v: rank ? `#${rank}` : '—', d: 'this week', dc: '#58a6ff' },
+              { h: 'Rank', v: rank ? `#${rank}` : '—', d: 'this week', dc: 'var(--blue)' },
             ].map((c) => (
               <div key={c.h} className="card" style={{ padding: 14 }}>
                 <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.06em' }}>{c.h}</div>
@@ -115,8 +121,8 @@ export default async function Pay() {
             {pay.salaryBase > 0 && row('🗓', 'Weekly salary', dollars(pay.salaryBase))}
             {pay.ptoPay > 0 && row('🌴', 'PTO / holiday (hourly base)', dollars(pay.ptoPay))}
             {pay.bonuses > 0 && row('🏆', 'Awards / bonuses', dollars(pay.bonuses), { pos: true })}
-            {pay.deductions < 0 && row('⚖️', 'Deductions (callbacks / doc-fraud / holds)', dollars(pay.deductions), { neg: true })}
-            {row('💵', 'Gross this week (pre-tax)', dollars(pay.gross), { strong: true, top: true })}
+            {pay.deductions < 0 && row('⚖️', 'Deductions (callbacks / doc-fraud / holds)', dollars(pay.deductions), { deduct: true })}
+            {row('💵', 'Gross this week (pre-tax)', dollars(pay.gross), { total: true })}
             <div className="muted" style={{ fontSize: 10.5, marginTop: 10, lineHeight: 1.5 }}>
               Commission techs are commission-only — the hourly base is PTO/holiday pay, never stacked on job time. Structure: {structure.label || 'Clog Busterz'}. Final pay is approved in the weekly payroll run.
             </div>
@@ -134,8 +140,8 @@ export default async function Pay() {
                 <div className="card" style={{ marginTop: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <h3 style={{ margin: 0, fontSize: 13, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Per-job margin · this week</h3>
-                    <span className="pill" style={{ fontSize: 9.5, color: 'var(--green)' }}>🌽 {corns.length}</span>
-                    <span className="pill" style={{ fontSize: 9.5, color: 'var(--red)' }}>💩 {turds.length}</span>
+                    <span className="pill" style={{ fontSize: 9.5, color: 'var(--green-bright)' }}>🌽 {corns.length}</span>
+                    <span className="pill" style={{ fontSize: 9.5, color: 'var(--red-bright)' }}>💩 {turds.length}</span>
                   </div>
                   <div className="muted" style={{ fontSize: 11, marginBottom: 8 }}>🟢 GREEN ≥{MARGIN_TARGET}% = Crown territory (Corn bonus). 🔴 RED below — with the $ to get there.</div>
                   <div style={{ display: 'grid', gap: 5 }}>
@@ -145,7 +151,7 @@ export default async function Pay() {
                         <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderRadius: 8, background: 'var(--surface-2)', borderLeft: `3px solid ${corn ? 'var(--green)' : 'var(--red)'}` }}>
                           <span style={{ fontSize: 14 }}>{corn ? '🟢' : '🔴'}</span>
                           <span style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>{m.customer}{m.type ? ` · ${m.type}` : ''} <span className="muted">· {dollars(Math.round(m.amount * 100))}</span></span>
-                          <span style={{ fontWeight: 800, fontSize: 12.5, color: corn ? 'var(--green)' : 'var(--red)' }}>{m.verdict.pct}%{!corn && m.verdict.action ? ` · ${m.verdict.action.match(/\+\$[\d,]+/)?.[0] || ''}` : ''}</span>
+                          <span style={{ fontWeight: 800, fontSize: 12.5, color: corn ? 'var(--green-bright)' : 'var(--red-bright)' }}>{m.verdict.pct}%{!corn && m.verdict.action ? ` · ${m.verdict.action.match(/\+\$[\d,]+/)?.[0] || ''}` : ''}</span>
                         </div>
                       );
                     })}
@@ -164,14 +170,14 @@ export default async function Pay() {
                   <div className="card" style={{ marginTop: 12, borderTop: '2px solid var(--amber)' }}>
                     <h3 style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '.05em' }}>🌽👑 Corn + 💩🏆 Turd · Pay Coach</h3>
                     {corns.length > 0 && (
-                      <div style={{ padding: '9px 11px', borderRadius: 9, background: 'rgba(76,175,80,.08)', border: '1px solid var(--green)', marginBottom: 8 }}>
-                        <div style={{ fontWeight: 800, color: 'var(--green)', fontSize: 12.5 }}>🌽👑 Corn Crown — what you killed</div>
+                      <div style={{ padding: '9px 11px', borderRadius: 9, background: 'rgba(76,175,80,.08)', border: '1px solid var(--green-bright)', marginBottom: 8 }}>
+                        <div style={{ fontWeight: 800, color: 'var(--green-bright)', fontSize: 12.5 }}>🌽👑 Corn Crown — what you killed</div>
                         <div style={{ fontSize: 12, marginTop: 3 }}>{corns.length} job{corns.length > 1 ? 's' : ''} in Crown territory ({corns.map((c) => `${c.customer} ${c.verdict.pct}%`).slice(0, 3).join(' · ')}). That’s the Corn bonus zone — keep stacking these.</div>
                       </div>
                     )}
                     {turds.length > 0 && (
-                      <div style={{ padding: '9px 11px', borderRadius: 9, background: 'rgba(239,83,80,.08)', border: '1px solid var(--red)' }}>
-                        <div style={{ fontWeight: 800, color: 'var(--red)', fontSize: 12.5 }}>💩🏆 Golden Turd — what bled profit</div>
+                      <div style={{ padding: '9px 11px', borderRadius: 9, background: 'rgba(239,83,80,.08)', border: '1px solid var(--red-bright)' }}>
+                        <div style={{ fontWeight: 800, color: 'var(--red-bright)', fontSize: 12.5 }}>💩🏆 Golden Turd — what bled profit</div>
                         {turds.slice(0, 3).map((t) => (
                           <div key={t.id} style={{ fontSize: 12, marginTop: 4 }}><strong>{t.customer} ({t.verdict.pct}%)</strong> — {t.verdict.body} {t.verdict.action}</div>
                         ))}

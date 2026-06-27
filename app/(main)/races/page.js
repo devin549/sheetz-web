@@ -111,7 +111,7 @@ export default async function Races() {
             {/* progress bar with Crown + Turd markers */}
             <div style={{ position: 'relative', height: 26, borderRadius: 13, background: 'var(--surface-2)', border: '1px solid var(--border)', overflow: 'hidden', marginTop: 10 }}>
               <div style={{ height: '100%', width: pct + '%', background: 'linear-gradient(90deg,#7a5a00,var(--amber) 35%,#ffd24a 70%,#fff44f)', borderRadius: 13, boxShadow: '0 0 16px rgba(255,179,0,0.7)' }} />
-              <span style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${crownMark}% - 1px)`, width: 2, background: 'var(--fg-1)', opacity: 0.5 }} />
+              <span style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${crownMark}% - 1px)`, width: 2, background: '#3A1A0A', opacity: 0.6, boxShadow: '0 0 6px #FFD54F' }} />
               <span style={{ position: 'absolute', top: '50%', left: `calc(${pct}% - 14px)`, transform: 'translateY(-50%)', fontSize: 16 }}>{crownHit ? '👑' : '🌽'}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginTop: 4 }}>
@@ -121,7 +121,7 @@ export default async function Races() {
             {/* THE BIG NUMBER */}
             <div style={{ marginTop: 10, padding: '16px 12px', borderRadius: 12, background: 'linear-gradient(135deg,#1a1a2a,#0a0a1a)', border: '2px solid #ff9800', boxShadow: '0 0 22px rgba(255,152,0,0.35)', textAlign: 'center' }}>
               <div style={{ fontSize: 10, color: '#ffb74d', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 800 }}>🌋 The big number · revenue rate needed</div>
-              <div className="cb-glow" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 38, fontWeight: 800, color: '#ff9800', textShadow: '0 0 16px rgba(255,152,0,0.6)' }}>{crownHit ? '👑 CROWN' : usd0(rateCrown)}<span style={{ fontSize: 13, fontWeight: 600, color: '#c9b8a8' }}>{crownHit ? '' : '/hr to Crown by Saturday'}</span></div>
+              <div className="cb-glow" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 38, fontWeight: 800, color: '#ff9800', textShadow: '0 0 16px rgba(255,152,0,0.6)' }}>{crownHit ? '👑 CROWN' : usd0(rateCrown)}<span style={{ fontSize: 13, fontWeight: 600, color: '#e6dccf' }}>{crownHit ? '' : '/hr to Crown by Saturday'}</span></div>
               {!crownHit && <div style={{ fontSize: 11, color: '#ff8a80', marginTop: 2 }}>{usd0(gapCrown)} gap ÷ {hrsLeft} work hrs left · Turd needs {usd0(rateTurd)}/hr</div>}
             </div>
             {/* Corn + Turd coaching */}

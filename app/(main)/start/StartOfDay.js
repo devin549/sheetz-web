@@ -110,7 +110,9 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
           ) : null}
         </div>
         <div style={{ position: 'relative', zIndex: 6, display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11, fontWeight: 800, color: '#1a1206', background: ringColor, padding: '3px 10px', borderRadius: 20 }}>{fx?.label || 'On the board'}</span>
+          {/* badge FILL must stay bright so its dark #1a1206 label reads — ringColor's mid-tier default
+              (var(--amber)) goes dark-gold in light mode → dark-on-dark. Promote mid to --amber-bright. */}
+          <span style={{ fontSize: 11, fontWeight: 800, color: '#1a1206', background: ringColor === 'var(--amber)' ? 'var(--amber-bright)' : ringColor, padding: '3px 10px', borderRadius: 20 }}>{fx?.label || 'On the board'}</span>
           {fx?.comebackLabel && <span className="cb-pop" style={{ fontSize: 11, fontWeight: 800, color: 'var(--green-bright)', background: 'color-mix(in oklab, var(--green) 20%, var(--surface-1))', padding: '3px 10px', borderRadius: 20, border: '1px solid var(--green)' }}>{fx.comebackLabel}</span>}
           {sub && <span style={{ fontSize: 12, color: 'var(--fg-2)', fontWeight: 600 }}>{sub}</span>}
         </div>
@@ -168,8 +170,8 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
               <button key={t.id} onClick={() => !locked && setTone(t.id)} disabled={locked}
                 title={locked ? `Raise your roast level in Settings to unlock ${t.label}` : t.blurb}
                 style={{ fontSize: 12, fontWeight: 700, padding: '6px 11px', borderRadius: 20, cursor: locked ? 'not-allowed' : 'pointer',
-                  border: '1px solid ' + (tone === t.id ? 'var(--amber)' : 'var(--border-strong)'),
-                  background: tone === t.id ? 'var(--amber)' : 'var(--surface-2)', color: tone === t.id ? '#1a1206' : 'var(--fg-2)', opacity: locked ? 0.45 : 1 }}>
+                  border: '1px solid ' + (tone === t.id ? 'var(--amber-bright)' : 'var(--border-strong)'),
+                  background: tone === t.id ? 'var(--amber-bright)' : 'var(--surface-2)', color: tone === t.id ? '#1a1206' : 'var(--fg-2)', opacity: locked ? 0.45 : 1 }}>
                 {locked ? '🔒 ' : `${t.emoji} `}{t.label}
               </button>
             );
@@ -262,11 +264,11 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
               {/* weekly challenges with progress — amber chase tiles inside the plum card */}
               {challenges.map((c) => (
-                <div key={c.title} style={{ background: 'rgba(255,179,0,0.08)', border: '1px solid var(--amber)', borderRadius: 8, padding: '10px 12px' }}>
+                <div key={c.title} style={{ background: 'rgba(255,179,0,0.10)', border: '1px solid #ffb300', borderRadius: 8, padding: '10px 12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                     <span style={{ fontSize: 18 }}>{c.icon}</span>
-                    <strong style={{ color: 'var(--amber)', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '.04em' }}>{c.title}</strong>
-                    <span style={{ marginLeft: 'auto', background: 'var(--amber)', color: '#1a1206', padding: '1px 7px', borderRadius: 8, fontSize: 9, fontWeight: 800, whiteSpace: 'nowrap' }}>{c.prize}</span>
+                    <strong style={{ color: '#ffd24a', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '.04em' }}>{c.title}</strong>
+                    <span style={{ marginLeft: 'auto', background: '#ffb300', color: '#1a1206', padding: '1px 7px', borderRadius: 8, fontSize: 9, fontWeight: 800, whiteSpace: 'nowrap' }}>{c.prize}</span>
                   </div>
                   <div style={{ fontSize: 11.5, color: '#e8dcef', marginBottom: 6 }}>{c.desc}</div>
                   <div style={{ background: 'rgba(0,0,0,0.32)', borderRadius: 5, padding: '6px 9px', fontSize: 11, fontWeight: 800, color: '#ffd24a' }}>{c.progress}</div>
@@ -310,8 +312,10 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
             })}
           </div>
         )}
+        {/* CTA fill uses --amber-bright (stays #FFB300 in light mode); --amber goes dark-gold #7a5800
+            in light → near-black text on dark gold. Bright fill keeps the dark label readable in both. */}
         <button onClick={acknowledge} disabled={pending}
-          style={{ width: '100%', marginTop: 4, padding: '17px', borderRadius: 13, fontSize: 17, fontWeight: 800, cursor: 'pointer', border: 'none', background: 'var(--amber)', color: '#1a1206', opacity: pending ? 0.6 : 1 }}>
+          style={{ width: '100%', marginTop: 4, padding: '17px', borderRadius: 13, fontSize: 17, fontWeight: 800, cursor: 'pointer', border: 'none', background: 'var(--amber-bright)', color: '#1a1206', opacity: pending ? 0.6 : 1 }}>
           {pending ? 'Locking in…' : "✅ I know today's plan"}
         </button>
         <div className="muted" style={{ fontSize: 11, marginTop: 6, textAlign: 'center' }}>Tapping takes you to My Day. Hank's word stays private to you.</div>

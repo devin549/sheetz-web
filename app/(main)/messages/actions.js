@@ -41,6 +41,15 @@ async function gate() {
   return { sb: getSupabaseAdmin(), who: profile.name || user.email };
 }
 
+// Any active employee (incl. field techs/helpers) — used by Ask Hank, which the whole crew gets in chat.
+async function gateAny() {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const profile = user ? await loadProfile(user) : null;
+  if (!user || !profile || profile.active === false) return null;
+  return { sb: getSupabaseAdmin(), who: profile.name || user.email };
+}
+
 // Broadcast a team message to #sheetz (Discord) — and log it to the comms feed.
 export async function postTeamMessage(formData) {
   const g = await gate();
@@ -103,8 +112,8 @@ export async function syncDiscordNow() {
 
 // Ask Hank directly — answers from live CB data; optionally posts the answer into #sheetz.
 export async function askHank(question, postToChannel) {
-  const g = await gate();
-  if (!g || !g.sb) return { ok: false, msg: 'Your role can’t use Hank.' };
+  const g = await gateAny();
+  if (!g || !g.sb) return { ok: false, msg: 'Sign in to ask Hank.' };
   const q = String(question || '').trim();
   if (!q) return { ok: false, msg: 'Ask Hank something.' };
   const r = await askHankCore(g.sb, q, { post: !!postToChannel, askerName: g.who });
@@ -114,8 +123,8 @@ export async function askHank(question, postToChannel) {
 
 // Let Hank read what's new in #sheetz and chime in where he can help (manual trigger of the cron job).
 export async function hankReadFeed() {
-  const g = await gate();
-  if (!g || !g.sb) return { ok: false, msg: 'Your role can’t do that.' };
+  const g = await gateAny();
+  if (!g || !g.sb) return { ok: false, msg: 'Sign in to use Hank.' };
   const r = await runHank(g.sb, { autoPost: true });
   revalidatePath('/messages');
   return { ok: r.ok, msg: r.msg };

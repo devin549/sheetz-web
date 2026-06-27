@@ -47,7 +47,7 @@ function money(n) { return '$' + Number(n || 0).toLocaleString(undefined, { maxi
 function statusPill(status) {
   const s = String(status || '').toLowerCase();
   if (/done|complete|closed/.test(s)) return { label: '✓ COMPLETE', cls: 'pill pill-green' };
-  if (/on_site|onsite/.test(s)) return { label: '📍 ON-SITE', cls: 'pill', color: 'var(--amber)' };
+  if (/on_site|onsite/.test(s)) return { label: '📍 ON-SITE', cls: 'pill pill-green' };
   if (/enroute|en route|rolling/.test(s)) return { label: '🚚 EN ROUTE', cls: 'pill', color: 'var(--amber)' };
   if (/cancel/.test(s)) return { label: 'CANCELLED', cls: 'pill', color: 'var(--fg-3)' };
   return { label: (status || 'scheduled').toUpperCase(), cls: 'pill' };

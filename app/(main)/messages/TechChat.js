@@ -6,7 +6,7 @@
 // (your name's in it) > 🏢 From the Office > 💬 Crew Chatter. Each section is colored to its importance.
 import { useRef, useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { postChat, ackChat, markChatRead } from './actions';
+import { postChat, ackChat, markChatRead, askHank, hankReadFeed } from './actions';
 
 const fmt = (iso) => { try { return new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
 const initials = (n) => String(n || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
@@ -24,6 +24,16 @@ export default function TechChat({ messages = [], me = '' }) {
   const formRef = useRef(null);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
+  // 🪠 Ask Hank — the gold flow ported from the office Comms Desk (simpler): a question box wired to
+  // askHank, plus a "read #sheetz" button wired to hankReadFeed so Hank reads the team feed + chimes in.
+  const [hankOpen, setHankOpen] = useState(false);
+  const [hankQ, setHankQ] = useState('');
+  const [hankPost, setHankPost] = useState(false);
+  const [hankA, setHankA] = useState(null);
+  const [asking, startAsk] = useTransition();
+  const [reading, startRead] = useTransition();
+  const ask = (e) => { e.preventDefault(); if (!hankQ.trim()) return; setHankA(null); startAsk(async () => { const r = await askHank(hankQ, hankPost); setHankA(r); if (r.ok && hankPost) router.refresh(); }); };
+  const readFeed = () => { setHankA(null); startRead(async () => { const r = await hankReadFeed(); setHankA({ ok: r.ok, answer: r.msg, msg: r.msg }); if (r.ok) router.refresh(); }); };
   // Opening the chat marks it read → clears the sidebar Chat badge/blink (refresh so the rail updates).
   useEffect(() => { markChatRead().then(() => router.refresh()).catch(() => {}); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Auto-sync: re-pull the feed every 20s so new #sheetz chatter shows up without a manual refresh.
@@ -66,6 +76,26 @@ export default function TechChat({ messages = [], me = '' }) {
     <div className="wrap" style={{ maxWidth: 1100 }}>
       <div className="h1" style={{ fontSize: 20 }}>👥 Team Chat</div>
       <p className="muted" style={{ fontSize: 12.5 }}>The whole crew + office in #sheetz. Quick question, status, or a heads-up — everyone sees it. 🪠 Hank chimes in when he can help.</p>
+
+      {/* 🪠 ASK HANK — purple-accented (#9c64f4 border / #c8a8ff label) to match the tech-iPad. Ask a
+          question (askHank), or have Hank read the team feed and chime in (hankReadFeed). */}
+      <div style={{ margin: '8px 0 4px' }}>
+        <button onClick={() => setHankOpen((o) => !o)} className="pill" style={{ cursor: 'pointer', fontSize: 12, fontWeight: 800, color: '#c8a8ff', border: '1px solid #9c64f4', background: 'linear-gradient(135deg,rgba(156,100,244,0.12),rgba(156,100,244,0.03))', textTransform: 'uppercase', letterSpacing: 0.5 }}>🪠 Ask Hank {hankOpen ? '▲' : '▾'}</button>
+      </div>
+      {hankOpen && (
+        <form onSubmit={ask} className="card" style={{ display: 'grid', gap: 9, maxWidth: 620, marginBottom: 12, border: '1px solid #9c64f4', background: 'linear-gradient(135deg,rgba(156,100,244,0.10),rgba(156,100,244,0.02))' }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: '#c8a8ff', textTransform: 'uppercase', letterSpacing: 0.5 }}>🪠 Ask Hank</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input value={hankQ} onChange={(e) => setHankQ(e.target.value)} placeholder="Who's free for a 2-man job? · Who has the camera near me?" style={{ flex: '1 1 240px', background: 'var(--surface-2)', border: '1px solid #9c64f4', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 14, fontFamily: 'inherit', outline: 'none' }} />
+            <button type="submit" className="btn" disabled={asking || !hankQ.trim()} style={{ background: 'linear-gradient(135deg,#9c64f4,#7b3ff0)', border: 'none', color: '#fff', fontWeight: 700, opacity: (asking || !hankQ.trim()) ? 0.6 : 1 }}>{asking ? 'Thinking…' : 'Ask'}</button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--fg-2)', cursor: 'pointer' }}><input type="checkbox" checked={hankPost} onChange={(e) => setHankPost(e.target.checked)} /> Post answer to #sheetz</label>
+            <button type="button" onClick={readFeed} disabled={reading} className="pill" style={{ cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#c8a8ff', border: '1px solid #9c64f4', opacity: reading ? 0.6 : 1 }}>{reading ? 'Reading…' : '🪠 Hank, read #sheetz'}</button>
+          </div>
+          {hankA && <div style={{ fontSize: 13.5, lineHeight: 1.5, padding: '9px 11px', borderRadius: 8, background: 'var(--surface-2)', borderLeft: `3px solid ${hankA.ok ? '#9c64f4' : 'var(--red)'}` }}>{hankA.ok ? <><strong style={{ color: '#c8a8ff' }}>🪠 Hank:</strong> {hankA.answer}</> : <span style={{ color: 'var(--red)' }}>{hankA.msg}</span>}</div>}
+        </form>
+      )}
 
       {/* post box */}
       <form ref={formRef} onSubmit={send} className="card card-amber" style={{ display: 'flex', gap: 8, alignItems: 'flex-end', maxWidth: 620 }}>

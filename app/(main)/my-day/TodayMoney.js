@@ -21,7 +21,10 @@ export default function TodayMoney({
 
       {/* HEADLINE NUMBERS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 14 }}>
-        <div style={{ background: 'linear-gradient(135deg,rgba(46,230,160,0.14),rgba(46,230,160,0.03))', border: '1px solid #2ee6a0', borderRadius: 12, padding: '14px 16px', boxShadow: '0 0 14px rgba(46,230,160,0.18)' }}>
+        {/* Revenue card: faint mint tint over var(--surface-1), so the card is DARK in dark mode but CREAM in
+            light mode. var(--green*) tokens adapt to both (light-green on dark / dark-green on cream); a fixed
+            light-mint hex like the HTML's would wash out in LIGHT mode (the web app has no inline-style override). */}
+        <div style={{ background: 'linear-gradient(135deg,rgba(46,230,160,0.14),rgba(46,230,160,0.03))', border: '1px solid var(--green-bright)', borderRadius: 12, padding: '14px 16px', boxShadow: '0 0 14px rgba(46,230,160,0.18)' }}>
           <div style={{ fontSize: 10, color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 800 }}>Revenue booked today</div>
           <div style={{ fontFamily: mono, fontSize: 30, fontWeight: 800, color: 'var(--green-bright)', textShadow: '0 0 10px rgba(105,240,174,0.4)' }}>{money(revenue)}</div>
           <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 600 }}>{justNow ? `+${money(justNow.amount)} just now from ${justNow.name}${justNow.jobNumber ? ` · ${justNow.jobNumber}` : ''}` : 'closed jobs booked to you today'}</div>

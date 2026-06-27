@@ -15,7 +15,8 @@ function dial(raw) { const d = String(raw || '').replace(/[^\d]/g, ''); if (d.le
 function statusPill(status) {
   const s = String(status || '').toLowerCase();
   if (/done|complete|closed/.test(s)) return { label: '✓ COMPLETE', cls: 'pill pill-green' };
-  if (/on_site|onsite/.test(s)) return { label: '📍 ON-SITE', cls: 'pill', color: 'var(--amber)' };
+  // On-site chip is GREEN in the HTML (.jc-status.onsite → var(--green-bright)), not amber.
+  if (/on_site|onsite/.test(s)) return { label: '📍 ON-SITE', cls: 'pill pill-green' };
   if (/enroute|en route|rolling/.test(s)) return { label: '🚚 EN ROUTE', cls: 'pill', color: 'var(--amber)' };
   if (/cancel/.test(s)) return { label: 'CANCELLED', cls: 'pill', color: 'var(--fg-3)' };
   return { label: (status || 'scheduled').toUpperCase(), cls: 'pill' };
@@ -178,7 +179,7 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
         <div data-no-nav style={{ marginTop: 8 }}>
           {!lateOpen ? (
             <button onClick={() => { setLateOpen(true); setLateMsg(null); }}
-              style={{ width: '100%', padding: '11px', borderRadius: 10, border: '1px solid var(--amber-dim)', background: 'rgba(255,129,36,.10)', color: 'var(--amber)', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+              style={{ width: '100%', padding: '11px', borderRadius: 10, border: '1px solid var(--amber-dim)', background: 'rgba(255,179,0,.10)', color: 'var(--amber)', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
               ⏱ Running late
             </button>
           ) : (

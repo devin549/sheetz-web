@@ -38,18 +38,26 @@ export default function SodGate({ sod = {}, tools = [], handbook = {}, helper = 
 
   return (
     <div style={{ marginTop: 16 }}>
-      {/* gate header */}
-      <div className="card" style={{ background: g.ready ? 'color-mix(in oklab, var(--green) 12%, var(--surface-1))' : 'var(--surface-1)', border: `2px solid ${g.ready ? 'var(--green)' : 'var(--amber)'}` }}>
+      {/* gate header — HTML "blocking banner": warm amber gradient (#5a3a1a→#8a5a20, #ff9800 border).
+          Hardcoded-DARK card, so all text is hardcoded LIGHT (#ffe0b2 / #fff3e0) — never theme tokens,
+          which would flip dark on this dark banner in light mode. Ready state goes green. */}
+      <div className="card" style={{ background: g.ready ? 'color-mix(in oklab, var(--green) 12%, var(--surface-1))' : 'linear-gradient(135deg, #5a3a1a 0%, #8a5a20 100%)', border: `2px solid ${g.ready ? 'var(--green)' : '#ff9800'}`, boxShadow: g.ready ? undefined : '0 4px 12px rgba(255,152,0,0.25)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 22 }}>🛡</span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 800, fontSize: 15 }}>Start of Day Gate — {g.greens} of {g.required} ready</div>
-            <div className="muted" style={{ fontSize: 11.5 }}>Pre-trip + tools + handbook must be green before your first job. Helper &amp; KY-code are job-by-job.</div>
+            <div style={{ fontWeight: 800, fontSize: 15, color: g.ready ? 'var(--fg-1)' : '#ffe0b2' }}>Start of Day Gate — {g.greens} of {g.required} ready</div>
+            <div style={{ fontSize: 11.5, color: g.ready ? 'var(--fg-3)' : '#fff3e0' }}>Pre-trip + tools + handbook must be green before your first job. Helper &amp; KY-code are job-by-job.</div>
           </div>
           {g.ready && <Link href="/my-day" className="btn">Unlock My Day →</Link>}
         </div>
+        {/* On the dark amber banner (not-ready) the pills use hardcoded LIGHT hex; once green the banner
+            is light, so revert to theme tokens. Prevents the pills washing out in light mode. */}
         <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-          {g.items.map((i) => <span key={i.key} className="pill" style={{ fontSize: 10.5, color: i.green ? 'var(--green)' : 'var(--amber)', border: `1px solid ${i.green ? 'var(--green)' : 'var(--amber)'}` }}>{i.green ? '✓' : '⏳'} {i.label}</span>)}
+          {g.items.map((i) => {
+            const onDark = !g.ready;
+            const c = i.green ? (onDark ? '#a5d6a7' : 'var(--green)') : (onDark ? '#ffe0b2' : 'var(--amber)');
+            return <span key={i.key} className="pill" style={{ fontSize: 10.5, color: c, border: `1px solid ${c}`, background: onDark ? 'rgba(0,0,0,0.18)' : undefined }}>{i.green ? '✓' : '⏳'} {i.label}</span>;
+          })}
         </div>
       </div>
 

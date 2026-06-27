@@ -58,16 +58,16 @@ export default async function Record() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         {cards.map(([h, v, d]) => (
           <div key={h} className="card" style={{ padding: 14 }}>
-            <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</div>
-            <div style={{ fontWeight: 800, fontSize: 22, marginTop: 4, fontFamily: "'JetBrains Mono', monospace" }}>{v}</div>
-            <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 2 }}>{d}</div>
+            <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--amber-dim)', fontWeight: 700 }}>{h}</div>
+            <div style={{ fontWeight: 800, fontSize: 22, marginTop: 4, fontFamily: "'JetBrains Mono', monospace", color: 'var(--fg-1)' }}>{v}</div>
+            <div style={{ fontSize: 11, color: 'var(--green-bright)', fontWeight: 700, marginTop: 2 }}>{d}</div>
           </div>
         ))}
       </div>
 
       {months.length > 0 && (
         <>
-          <h3 style={{ margin: '18px 0 8px', fontSize: 13, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '.05em' }}>📈 Monthly compare (last 6)</h3>
+          <h3 style={{ margin: '18px 0 8px', fontSize: 13, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '.05em' }}>📈 Monthly compare (last 6)</h3>
           <div className="card" style={{ display: 'grid', gap: 6 }}>
             {months.map(([k, m]) => (
               <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
