@@ -2,8 +2,9 @@
 
 // My Truck · Maintenance (HTML van pane): oil tracker + van health (keep/watch/replace) + van stats +
 // documents + service log. The tech logs mileage/oil/service; the office sees the fleet on the shop sheet.
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import OdometerScan from '@/components/OdometerScan';
 import { setMileage, markOilChanged, logService } from './maintActions';
 
 const money = (c) => '$' + Math.round((Number(c) || 0) / 100).toLocaleString();
@@ -17,6 +18,7 @@ export default function Maintenance({ maint = {}, serviceLog = [], oil = {}, hea
   const [msg, setMsg] = useState(null);
   const run = (fn, form) => { setMsg(null); start(async () => { const r = await fn(form); if (r && !r.ok) setMsg(r.msg); else { setLogOpen(false); router.refresh(); } }); };
   const sub = (fn) => (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); if (tech) fd.set('tech', tech); run(fn, fd); };
+  const milesRef = useRef(null);
 
   const stat = (h, v, d) => (<div><div className="muted" style={{ fontSize: 10, textTransform: 'uppercase' }}>{h}</div><div style={{ fontWeight: 800, fontSize: 16, marginTop: 2 }}>{v}</div>{d && <div className="muted" style={{ fontSize: 10.5 }}>{d}</div>}</div>);
   const docRow = (icon, label, thru, url) => (thru || url) ? (<div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '6px 0', borderTop: '1px solid var(--border)' }}><span>{icon}</span><span style={{ flex: 1 }}>{label}{thru ? ` · valid thru ${thru}` : ''}</span>{url ? <a href={url} target="_blank" rel="noreferrer" className="pill" style={{ fontSize: 10 }}>open ›</a> : <span className="muted" style={{ fontSize: 10 }}>no file</span>}</div>) : null;
@@ -35,8 +37,9 @@ export default function Maintenance({ maint = {}, serviceLog = [], oil = {}, hea
           </div>
           <form onSubmit={sub(markOilChanged)}><button className="btn" disabled={pending} style={{ fontSize: 12.5 }}>✅ Mark oil changed</button></form>
         </div>
-        <form onSubmit={sub(setMileage)} style={{ display: 'flex', gap: 6, marginTop: 9, flexWrap: 'wrap' }}>
-          <input name="mileage" type="number" inputMode="numeric" placeholder="Current odometer" defaultValue={maint.current_mileage || ''} style={{ ...inp, flex: '1 1 140px' }} />
+        <form onSubmit={sub(setMileage)} style={{ display: 'flex', gap: 6, marginTop: 9, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input ref={milesRef} name="mileage" type="number" inputMode="numeric" placeholder="Current odometer" defaultValue={maint.current_mileage || ''} style={{ ...inp, flex: '1 1 140px' }} />
+          <OdometerScan onRead={(m) => { if (milesRef.current) milesRef.current.value = m; }} label="Snap" />
           <button className="pill" disabled={pending} style={{ cursor: 'pointer' }}>📍 Update mileage</button>
         </form>
       </div>

@@ -2,9 +2,10 @@
 
 // End of Day GATE (HTML eod pane) — go home clean: tools check-IN (vs the morning check-out), cash
 // custody per §21, van end-of-shift odometer/gas, then Clock Out. Mirrors the Start of Day gate.
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import OdometerScan from '@/components/OdometerScan';
 import { GAS_LEVELS } from '@/lib/sod';
 import { confirmToolsIn, saveEodVan, setCash, clockOut } from './eodActions';
 import { rollOverJob, markJobUnable, reopenDay } from './jobResolveActions';
@@ -32,6 +33,7 @@ export default function EodGate({ sod = {}, stats = {}, openJobs = [], afterHour
   const [unableId, setUnableId] = useState(null);
   const [reason, setReason] = useState('');
   const [msg, setMsg] = useState(null);
+  const odoEndRef = useRef(null);
   const run = (fn) => { setMsg(null); start(async () => { const r = await fn(); if (r) setMsg(r); if (!r || r.ok) { setEditVan(false); setUnableId(null); setReason(''); router.refresh(); } }); };
 
   const toolsIn = !!sod.tools_checked_in;
@@ -116,7 +118,8 @@ export default function EodGate({ sod = {}, stats = {}, openJobs = [], afterHour
           <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>✓ End {sod.end_odometer.toLocaleString()} mi{sod.end_gas ? ` · gas ${sod.end_gas}` : ''}{miles != null ? ` · ${miles} mi driven` : ''}. <button onClick={() => setEditVan(true)} className="pill" style={{ cursor: 'pointer', marginLeft: 6 }}>redo</button></div>
         ) : (
           <form action={(form) => run(() => saveEodVan(form))} style={{ display: 'grid', gap: 9, marginTop: 9 }}>
-            <input name="end_odometer" type="number" inputMode="numeric" placeholder="Odometer (end)" defaultValue={sod.end_odometer || ''} style={inp} />
+            <input ref={odoEndRef} name="end_odometer" type="number" inputMode="numeric" placeholder="Odometer (end)" defaultValue={sod.end_odometer || ''} style={inp} />
+            <OdometerScan onRead={(m) => { if (odoEndRef.current) odoEndRef.current.value = m; }} />
             <div>
               <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>Gas level (end)</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{GAS_LEVELS.map((lvl) => <label key={lvl} className="pill" style={{ cursor: 'pointer', fontSize: 12 }}><input type="radio" name="end_gas" value={lvl} defaultChecked={sod.end_gas === lvl} style={{ marginRight: 5 }} />{lvl}</label>)}</div>
