@@ -21,46 +21,79 @@ export default function TechReviews({ reviews = [], stats, reviewUrl = '' }) {
   const dispute = (id) => { if (!reason.trim()) { setMsg({ ok: false, msg: 'Add a quick reason first.' }); return; } start(async () => { const r = await disputeReview(id, reason); setMsg(r); if (r.ok) { setOpenId(null); setReason(''); router.refresh(); } }); };
   const copyLink = async () => { try { await navigator.clipboard.writeText(reviewUrl); setMsg({ ok: true, msg: 'Review link copied — show it to the customer or text it yourself.' }); } catch { setMsg({ ok: true, msg: reviewUrl }); } };
 
-  const avg = stats.count ? (stats.sum / stats.count).toFixed(1) : '—';
-  const avgColor = stats.count && stats.sum / stats.count >= 4.5 ? 'var(--green)' : stats.count && stats.sum / stats.count >= 4 ? 'var(--amber)' : 'var(--red)';
+  const avg = stats.count ? (stats.sum / stats.count).toFixed(2) : '—';
+  // This-week breakdown (5★ vs 4★ vs lower) for the "this month/week" delta line.
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const wk = reviews.filter((r) => { try { return new Date(r.created_at).getTime() >= weekAgo; } catch { return false; } });
+  const wkFive = wk.filter((r) => Number(r.rating) === 5).length;
+  const wkFour = wk.filter((r) => Number(r.rating) === 4).length;
+  // Lowest-rated still-standing review for the "1-star" stat card.
+  const lowOne = reviews.filter((r) => Number(r.rating) <= 1 && r.dispute_status !== 'approved');
+
+  const card = { background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' };
+  const h4 = { margin: '0 0 8px', fontSize: 11, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 };
+  const v = { fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 20, fontWeight: 800, color: 'var(--fg)' };
+  const delta = { fontSize: 11, color: 'var(--green-bright)', fontWeight: 700 };
+  const deltaNeg = { fontSize: 11, color: 'var(--red-bright)', fontWeight: 700 };
 
   return (
     <>
-      {/* my reputation */}
-      <div className="card" style={{ display: 'flex', gap: 20, flexWrap: 'wrap', borderTop: '2px solid var(--amber)' }}>
-        <div><div className="muted" style={{ fontSize: 10, textTransform: 'uppercase' }}>My average</div><div style={{ fontSize: 26, fontWeight: 800, color: avgColor }}>{avg}<span style={{ fontSize: 14 }}> ★</span></div></div>
-        <div><div className="muted" style={{ fontSize: 10, textTransform: 'uppercase' }}>This week</div><div style={{ fontSize: 26, fontWeight: 800 }}>{stats.week}</div></div>
-        <div><div className="muted" style={{ fontSize: 10, textTransform: 'uppercase' }}>5★ all-time</div><div style={{ fontSize: 26, fontWeight: 800, color: 'var(--green)' }}>{stats.five}</div></div>
-        <div><div className="muted" style={{ fontSize: 10, textTransform: 'uppercase' }}>Total</div><div style={{ fontSize: 26, fontWeight: 800 }}>{stats.count}</div></div>
+      <div className="muted" style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: -2, marginBottom: 12 }}>Live from Google · CB Review Watcher pushes new ones every hour</div>
+
+      {/* stat header — mirrors the HTML .pay-grid / .pay-card */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+        <div style={card}>
+          <h4 style={h4}>Avg Rating</h4>
+          <div style={v}>{avg} ⭐</div>
+          <div style={delta}>{stats.count} review{stats.count === 1 ? '' : 's'}</div>
+        </div>
+        <div style={card}>
+          <h4 style={h4}>This Week</h4>
+          <div style={v}>{stats.week} new</div>
+          <div style={delta}>{wkFive}× 5★ · {wkFour}× 4★</div>
+        </div>
+        <div style={card}>
+          <h4 style={h4}>5★ All-Time</h4>
+          <div style={v}>{stats.five}</div>
+          <div style={delta}>climbing the Review Race</div>
+        </div>
+        <div style={card}>
+          <h4 style={h4}>1-star standing</h4>
+          <div style={v}>{lowOne.length}</div>
+          <div style={lowOne.length ? deltaNeg : delta}>{lowOne.length ? `${lowOne[0].customer_name || 'Customer'} · ${fmt(lowOne[0].created_at)} ⚠` : 'all clear'}</div>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
         {reviewUrl && <button onClick={copyLink} className="btn">⭐ Ask for a review</button>}
         <Link href="/races" className="btn btn-ghost">🏁 Review Race</Link>
       </div>
-      <p className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>Every 5★ feeds your race + bonuses. Got a Karen / not-your-fault 1★? Dispute it — a manager decides within 48 hrs and an approved one wipes from the race.</p>
+      <p className="muted" style={{ fontSize: 11.5, marginBottom: 6 }}>Every 5★ feeds your race + bonuses. Got a Karen / not-your-fault 1★? Dispute it — a manager decides within 48 hrs and an approved one wipes from the race.</p>
 
-      {/* my reviews */}
-      <div className="h2" style={{ marginTop: 16 }}>My reviews</div>
+      {/* my reviews — mirrors the HTML .review-card list */}
       {reviews.length === 0 ? (
-        <div className="card muted" style={{ fontSize: 13.5 }}>No reviews logged for you yet. Ask happy customers for a 5★ — it’s the fastest way up the race.</div>
+        <div style={{ ...card, color: 'var(--fg-3)', fontSize: 13, textAlign: 'center', padding: '20px 16px', marginTop: 8 }}>
+          No reviews logged for you yet. Ask happy customers for a 5★ — it’s the fastest way up the race.
+        </div>
       ) : (
-        <div style={{ display: 'grid', gap: 8 }}>
+        <div style={{ marginTop: 8 }}>
           {reviews.map((r) => {
             const low = r.rating <= 3;
+            const wiped = r.dispute_status === 'approved';
             return (
-              <div key={r.id} style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', border: `1px solid ${low ? 'var(--red)' : 'var(--border)'}`, opacity: r.dispute_status === 'approved' ? 0.6 : 1 }}>
+              <div key={r.id} style={{ background: 'var(--surface-1)', border: `1px solid ${low ? 'var(--red)' : 'var(--border)'}`, borderRadius: 10, padding: '14px 16px', marginBottom: 8, opacity: wiped ? 0.6 : 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ color: low ? 'var(--red)' : 'var(--amber)', fontWeight: 800, letterSpacing: 1 }}>{stars(r.rating)}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700 }}>{r.customer_name || 'Customer'}</span>
-                  <span className="muted" style={{ fontSize: 11 }}>· {r.source || 'Google'} · {fmt(r.created_at)}</span>
-                  {r.dispute_status && <span className="pill" style={{ fontSize: 9.5, marginLeft: 'auto', color: r.dispute_status === 'approved' ? 'var(--green)' : r.dispute_status === 'denied' ? 'var(--red)' : 'var(--amber)' }}>{r.dispute_status === 'pending' ? 'dispute pending' : r.dispute_status === 'approved' ? 'wiped from race' : 'dispute denied'}</span>}
+                  <span style={{ color: low ? 'var(--red)' : 'var(--amber)', fontSize: 16, letterSpacing: 1 }}>{stars(r.rating)}</span>
+                  {r.dispute_status && <span className="pill" style={{ fontSize: 9.5, marginLeft: 'auto', color: wiped ? 'var(--green)' : r.dispute_status === 'denied' ? 'var(--red)' : 'var(--amber)' }}>{r.dispute_status === 'pending' ? 'dispute pending' : wiped ? 'wiped from race' : 'dispute denied'}</span>}
                 </div>
-                {r.text && <div style={{ fontSize: 12.5, marginTop: 5 }}>{r.text}</div>}
+                <div style={{ fontWeight: 600, fontSize: 13, marginTop: 4 }}>
+                  {r.customer_name || 'Customer'} <span style={{ fontSize: 10, color: 'var(--fg-3)', fontWeight: 400 }}>· {r.source || 'Google'} · {fmt(r.created_at)}</span>
+                </div>
+                {r.text && <div style={{ fontSize: 13, color: 'var(--fg-2)', marginTop: 6, fontStyle: 'italic', lineHeight: 1.5 }}>&ldquo;{r.text}&rdquo;</div>}
                 {low && !r.disputed && (
                   openId === r.id ? (
                     <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this unfair? (Karen / not our fault / wrong tech)" style={{ flex: '1 1 180px', background: 'var(--surface-1)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 7, padding: '7px 9px', fontSize: 12 }} />
+                      <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this unfair? (Karen / not our fault / wrong tech)" style={{ flex: '1 1 180px', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 7, padding: '7px 9px', fontSize: 12 }} />
                       <button onClick={() => dispute(r.id)} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--amber)', border: '1px solid var(--amber)' }}>Send dispute</button>
                       <button onClick={() => { setOpenId(null); setReason(''); }} className="pill muted" style={{ cursor: 'pointer' }}>cancel</button>
                     </div>

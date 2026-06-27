@@ -49,6 +49,19 @@ function StatCard({ h, v, d, dc }) {
   );
 }
 
+function BurnStep({ n, accent, tint, title, sub, right }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '32px 1fr auto', gap: 10, alignItems: 'center', background: tint, borderLeft: `3px solid ${accent}`, padding: '8px 10px', borderRadius: '0 6px 6px 0' }}>
+      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 800, color: accent, textAlign: 'center' }}>{n}</div>
+      <div>
+        <div style={{ fontSize: 12, color: 'var(--fg-1)', fontWeight: 700 }}>{title}</div>
+        <div style={{ fontSize: 10, color: 'var(--fg-3)' }}>{sub}</div>
+      </div>
+      {right}
+    </div>
+  );
+}
+
 function Person({ role, name, you, icon }) {
   return (
     <span style={{ background: 'var(--surface-2)', borderRadius: 6, padding: '3px 8px', color: 'var(--fg-2)', fontSize: 10 }}>
@@ -141,6 +154,7 @@ export default async function Pto() {
         <div style={{ position: 'relative', height: 10, background: 'rgba(0,0,0,0.3)', borderRadius: 5, overflow: 'hidden', border: '1px solid var(--border)' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg, #4caf50, #66bb6a)' }} />
           <div style={{ position: 'absolute', top: 0, left: '50%', width: 2, height: '100%', background: '#ffb74d' }} />
+          <div style={{ position: 'absolute', top: 0, left: 'calc(100% - 2px)', width: 2, height: '100%', background: '#ff5252' }} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--fg-3)', marginTop: 4 }}>
           <span>0 · clear</span><span style={{ color: '#ffb74d' }}>1 · warning</span><span style={{ color: '#ff5252' }}>2 · 🚨 HOLIDAYS FORFEITED</span>
@@ -149,24 +163,32 @@ export default async function Pto() {
 
       <div style={{ marginTop: 14 }}><RequestVacation /><AbsenceReport /></div>
 
-      {/* Pay-type rules (ported from the Tech Sheet sandbox — they differ by pay type) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 10, marginTop: 14 }}>
-        <div className="card" style={{ borderLeft: '3px solid var(--amber)' }}>
-          <div style={{ fontWeight: 800, fontSize: 12.5, color: 'var(--amber)' }}>🔧 Commission techs</div>
-          <ul className="muted" style={{ fontSize: 11.5, lineHeight: 1.6, margin: '6px 0 0', paddingLeft: 18 }}>
-            <li>Commission-only on jobs. Vacation + holidays paid at <strong>$15/hr</strong> — never job time.</li>
-            <li>1 week vacation (40 hrs) + 5 paid holidays (8 hrs hourly each). <strong>No sick PTO.</strong></li>
-            <li><strong style={{ color: '#ffb74d' }}>2 unexcused absences = forfeit all 5 holidays</strong> for the year.</li>
-          </ul>
+      {/* SALARY TECH · PTO BURN-DOWN HIERARCHY — ported from the iPad pane-pto. When a salary tech misses
+          work, paid time off burns holidays → vacation → pro-rated dock, in that order. */}
+      <div className="card" style={{ marginTop: 14, background: 'linear-gradient(135deg, var(--amber-deep) 0%, var(--surface-1) 100%)', border: '1px solid var(--amber-dim)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 22 }}>📋</span>
+          <strong style={{ color: 'var(--amber)', fontSize: 13, textTransform: 'uppercase', letterSpacing: '.04em' }}>Salary Tech · PTO burn-down hierarchy</strong>
+          <span style={{ background: 'rgba(255,179,0,0.18)', color: 'var(--amber)', padding: '1px 7px', borderRadius: 9, fontSize: 9, fontWeight: 800, marginLeft: 'auto' }}>if you&apos;re salary</span>
         </div>
-        <div className="card" style={{ borderLeft: '3px solid var(--blue)' }}>
-          <div style={{ fontWeight: 800, fontSize: 12.5, color: 'var(--blue)' }}>📘 Salary techs</div>
-          <ul className="muted" style={{ fontSize: 11.5, lineHeight: 1.6, margin: '6px 0 0', paddingLeft: 18 }}>
-            <li>Missed time burns down in order: <strong>holidays → vacation → pro-rated</strong> (salary docked once both are used).</li>
-            <li>Same 2-unexcused holiday-forfeit rule applies.</li>
-            <li>Higher Crown/Turd thresholds ($7,500 / $11,000).</li>
-          </ul>
+        <div style={{ fontSize: 11, color: 'var(--fg-2)', marginBottom: 10, lineHeight: 1.5 }}>When you miss work, your paid time off burns in this order before salary docking kicks in:</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <BurnStep n="1" accent="#4caf50" tint="rgba(76,175,80,0.06)" title="🎄 Holiday days absorb first" sub="5 days/yr · 8hr × $15 hourly each ($120/holiday)" right={<span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: '#4caf50', fontWeight: 800 }}>5 left</span>} />
+          <BurnStep n="2" accent="var(--amber)" tint="rgba(255,179,0,0.06)" title="🏖 Vacation absorbs next" sub="40 hrs/yr · 1 full week · hourly base rate, no commission" right={<span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: 'var(--amber)', fontWeight: 800 }}>40 hrs left</span>} />
+          <BurnStep n="3" accent="#ff5252" tint="rgba(255,82,82,0.06)" title="💸 PRO-RATED salary dock" sub="Once Holiday + Vacation both exhausted → salary deducted proportionally for missed time" right={<span style={{ background: '#ff5252', color: '#fff', padding: '2px 8px', borderRadius: 6, fontSize: 9, fontWeight: 800 }}>LAST RESORT</span>} />
         </div>
+        <div style={{ background: 'rgba(255,138,101,0.08)', borderLeft: '3px solid #ff8a65', padding: '7px 10px', marginTop: 10, borderRadius: '0 5px 5px 0', fontSize: 10, color: 'var(--fg-2)', lineHeight: 1.5 }}>
+          ⚠ <strong style={{ color: '#ff8a65' }}>Salary unexcused rule on top of holiday forfeit:</strong> 2+ unexcused absences/yr triggers a <strong>performance review</strong> with Ronnie + Tracey + Devin. Repeated pattern → review escalates beyond holiday forfeit.
+        </div>
+      </div>
+
+      {/* HOW VACATION + HOLIDAY PAY WORKS — amber explainer, matches the Tech Sheet rules. */}
+      <div className="card" style={{ marginTop: 14, background: 'rgba(255,179,0,0.06)', border: '1px solid var(--amber-dim)', fontSize: 11, color: 'var(--fg-2)', lineHeight: 1.6 }}>
+        <strong style={{ color: 'var(--amber)' }}>💰 How vacation + holiday pay works:</strong><br />
+        • <strong>Vacation</strong> = 40 hrs/yr · paid at <strong>your</strong> hourly base rate · <strong style={{ color: '#ff8a65' }}>NO commission on vacation pay</strong><br />
+        • <strong>Holiday</strong> = 5 days/yr · 8 hrs each · paid at <strong>your</strong> hourly base rate (8 hrs × your rate) · <strong style={{ color: '#ff8a65' }}>NO commission</strong><br />
+        • <strong style={{ color: '#ffb74d' }}>2+ unexcused absences/yr</strong> = ALL 5 holidays FORFEITED for the year · auto-calc via Tech Sheet · manager email + audit log<br />
+        • Excused absence (sick w/ notice, doctor note, family emergency w/ Tracey approval) does NOT count against you · UNEXCUSED = no call/no show or last-minute bail without legit reason
       </div>
 
       {/* Manager: recent absences — policy already decided; override is logged */}

@@ -39,8 +39,7 @@ export default async function Reviews() {
     const reviewUrl = process.env.GOOGLE_REVIEW_URL || process.env.NEXT_PUBLIC_GOOGLE_REVIEW_URL || '';
     return (
       <div className="wrap" style={{ maxWidth: 560 }}>
-        <div className="h1" style={{ fontSize: 20 }}>⭐ My Reviews</div>
-        <p className="muted" style={{ fontSize: 12.5 }}>Your reputation — what customers said about your work. Every 5★ climbs the Review Race.</p>
+        <div className="h1" style={{ fontSize: 22 }}>⭐ My Reviews</div>
         {res.error && <div className="notice">Reviews need their table — run <code>supabase/37_reviews.sql</code>.</div>}
         <TechReviews reviews={rows} stats={stats} reviewUrl={reviewUrl} />
       </div>

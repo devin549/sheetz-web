@@ -11,7 +11,6 @@ import { coachMessage, TONES, tonesForLevel } from '@/lib/roast';
 import { rankChip } from '@/lib/rankFx';
 import RankFx from '../RankFx';
 import SodGate from './SodGate';
-import SlotMachine from '../races/SlotMachine';
 import { CircleCheck, Circle } from 'lucide-react';
 
 const usd0 = (n) => '$' + Math.round(Number(n || 0)).toLocaleString();
@@ -242,32 +241,47 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
         <div style={{ fontSize: 16, fontWeight: 800, marginTop: 5, lineHeight: 1.45 }}>{win}</div>
       </div>
 
-      {/* 6.5 · TODAY'S BOUNTIES — the chase list + the Power Plunger pull. Lives HERE on Start (moved off
-          Races) so the tech sees what's up for grabs the moment they sign in. */}
-      {(challenges.length > 0 || bounties.length > 0 || (pp && pp.active)) && (
+      {/* 6.5 · WEEKLY CHALLENGES · LIVE BOUNTIES — the chase list, matching the HTML arcade card
+          (purple #e1bee7 / #ba68c8 accents on a dark plum gradient). The Power Plunger pull now lives in
+          the TOP RIBBON next to Power Plunger Hour (HTML rail parity). */}
+      {(challenges.length > 0 || bounties.length > 0) && (
         <div style={{ marginTop: 14 }}>
-          <SectionLabel>💰 Today's Bounties &amp; Bonuses</SectionLabel>
-          <div style={{ display: 'grid', gap: 8 }}>
-            {/* weekly challenges with progress */}
-            {challenges.map((c) => (
-              <div key={c.title} className="card" style={{ borderLeft: '3px solid var(--amber)', padding: '11px 13px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 20 }}>{c.icon}</span><strong style={{ fontSize: 14 }}>{c.title}</strong><span className="pill" style={{ marginLeft: 'auto', color: 'var(--green)', border: '1px solid var(--green)' }}>{c.prize}</span></div>
-                <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{c.desc}</div>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--amber)', marginTop: 5 }}>{c.progress}</div>
-              </div>
-            ))}
-            {/* office-posted live bounties */}
-            {bounties.map((b) => (
-              <div key={b.id} className="card" style={{ borderLeft: '3px solid var(--green)', padding: '11px 13px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 20 }}>{b.icon || '🎯'}</span>
-                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800, fontSize: 13.5 }}>{b.title}</div>{b.description && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{b.description}</div>}</div>
-                {(b.amount_cents != null || b.points != null) && <span className="pill" style={{ color: 'var(--green)', border: '1px solid var(--green)' }}>{[b.amount_cents != null ? '$' + Math.round(b.amount_cents / 100) : '', b.points != null ? `${b.points} XP` : ''].filter(Boolean).join(' · ')}</span>}
-              </div>
-            ))}
+          <div style={{ borderRadius: 14, padding: '13px 16px', marginBottom: 2,
+            background: 'linear-gradient(135deg, #2a1a3a 0%, var(--surface-1) 100%)', border: '2px solid #ba68c8' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <span style={{ fontSize: 22 }}>⚡</span>
+              <strong style={{ color: '#e1bee7', fontSize: 13, textTransform: 'uppercase', letterSpacing: '.04em' }}>Weekly Challenges · Live Bounties</strong>
+              <span style={{ marginLeft: 'auto', background: '#ba68c8', color: '#fff', padding: '1px 8px', borderRadius: 9, fontSize: 9, fontWeight: 800 }}>{challenges.length + bounties.length} active</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
+              {/* weekly challenges with progress — amber chase tiles inside the plum card */}
+              {challenges.map((c) => (
+                <div key={c.title} style={{ background: 'rgba(255,179,0,0.08)', border: '1px solid var(--amber)', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <span style={{ fontSize: 18 }}>{c.icon}</span>
+                    <strong style={{ color: 'var(--amber)', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '.04em' }}>{c.title}</strong>
+                    <span style={{ marginLeft: 'auto', background: 'var(--amber)', color: '#1a1206', padding: '1px 7px', borderRadius: 8, fontSize: 9, fontWeight: 800, whiteSpace: 'nowrap' }}>{c.prize}</span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--fg-2)', marginBottom: 6 }}>{c.desc}</div>
+                  <div style={{ background: 'var(--surface-2)', borderRadius: 5, padding: '6px 9px', fontSize: 11, fontWeight: 800, color: 'var(--amber)' }}>{c.progress}</div>
+                </div>
+              ))}
+              {/* office-posted live bounties — purple #e1bee7 accent tiles */}
+              {bounties.map((b) => (
+                <div key={b.id} style={{ background: 'rgba(186,104,200,0.1)', border: '1px solid #ba68c8', borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <span style={{ fontSize: 18 }}>{b.icon || '🎯'}</span>
+                    <strong style={{ color: '#e1bee7', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '.04em' }}>{b.title}</strong>
+                    {(b.amount_cents != null || b.points != null) && <span style={{ marginLeft: 'auto', background: '#ba68c8', color: '#fff', padding: '1px 7px', borderRadius: 8, fontSize: 9, fontWeight: 800, whiteSpace: 'nowrap' }}>{[b.amount_cents != null ? '+$' + Math.round(b.amount_cents / 100) : '', b.points != null ? `${b.points} XP` : ''].filter(Boolean).join(' · ')}</span>}
+                  </div>
+                  {b.description && <div style={{ fontSize: 11.5, color: 'var(--fg-2)' }}>{b.description}</div>}
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 9.5, color: 'var(--fg-3)', marginTop: 8, textAlign: 'center' }}>
+              ⚡ Devin fires new bounties anytime · 🎰 grab a Power Plunger pull from the top ribbon · full race on 🏁 Races.
+            </div>
           </div>
-          {/* ⚡ Power Plunger pull — always tappable; the server gates the real payout */}
-          {pp && pp.active && <SlotMachine pulls={pp.pulls} budgetTapped={pp.budgetTapped} topPrize={pp.topPrize} />}
-          <div className="muted" style={{ fontSize: 10.5, marginTop: 6 }}>Full standings + the race are on 🏁 Races.</div>
         </div>
       )}
 

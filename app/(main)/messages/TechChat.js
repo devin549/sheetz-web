@@ -1,13 +1,23 @@
 'use client';
 
-// Tech-side Team Chat (HTML chat pane) — simple: the #sheetz team feed + a post box. Not the office
+// Tech-side Team Chat (HTML chat pane) — the #sheetz team feed + a post box. Not the office
 // Comms Desk (delete / proposed-actions / customer threads). Read the team, drop a line, see Hank's chime.
+// The feed is BROKEN DOWN INTO CATEGORIES (matching the HTML's importance grouping): 📌 For You
+// (your name's in it) > 🏢 From the Office > 💬 Crew Chatter. Each section is colored to its importance.
 import { useRef, useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { postChat, ackChat, markChatRead } from './actions';
 
 const fmt = (iso) => { try { return new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
 const initials = (n) => String(n || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+
+// The three categories the feed breaks down into, in priority order. Colors map to the importance
+// accent (red = address this, blue = office heads-up, amber = general crew). 'general' also holds Hank.
+const SECTIONS = [
+  { tag: 'personal', label: '📌 For You', hint: 'Your name came up — address these', color: 'var(--red)' },
+  { tag: 'office', label: '🏢 From the Office', hint: 'Heads-ups from dispatch & the office', color: 'var(--blue)' },
+  { tag: 'general', label: '💬 Crew Chatter', hint: 'The whole crew in #sheetz', color: 'var(--amber)' },
+];
 
 export default function TechChat({ messages = [], me = '' }) {
   const router = useRouter();
@@ -25,6 +35,33 @@ export default function TechChat({ messages = [], me = '' }) {
 
   const send = (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); setMsg(null); start(async () => { const r = await postChat(fd); setMsg(r); if (r.ok) { formRef.current?.reset(); router.refresh(); } }); };
 
+  // Bucket the feed into the three categories. Within each section we keep the feed's order.
+  const buckets = { personal: [], office: [], general: [] };
+  messages.forEach((m) => { (buckets[m.tag] || buckets.general).push(m); });
+
+  // One chat bubble (shared by every section).
+  const renderMsg = (m, accent) => {
+    const mine = String(m.from_name || '').trim().toLowerCase() === String(me).trim().toLowerCase();
+    const isHank = /hank/i.test(m.from_name || '');
+    const fresh = isNew(m.id) && !mine;
+    // Blink color by importance: red = personal (address this), blue = office, amber = general.
+    const blinkClass = !fresh ? '' : m.tag === 'personal' ? 'cb-blink-red' : m.tag === 'office' ? 'cb-blink-blue' : 'cb-blink';
+    const newBadge = !fresh ? null : <span style={{ color: accent, fontSize: 9, fontWeight: 800 }}> · NEW</span>;
+    const bubbleBorder = fresh ? accent : isHank ? 'var(--purple, #9c64f4)' : 'var(--border)';
+    return (
+      <div key={m.id} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', flexDirection: mine ? 'row-reverse' : 'row' }}>
+        <div style={{ width: 30, height: 30, borderRadius: 999, flexShrink: 0, background: isHank ? 'var(--purple, #9c64f4)' : mine ? 'var(--amber)' : 'var(--surface-3)', color: isHank ? '#fff' : mine ? '#1a1206' : 'var(--fg-1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 11 }}>{isHank ? '🪠' : initials(m.from_name)}</div>
+        <div className={blinkClass} style={{ maxWidth: '80%', padding: '8px 11px', borderRadius: 12, background: mine ? 'rgba(255,179,0,0.12)' : 'var(--surface-2)', border: `1px solid ${bubbleBorder}` }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: isHank ? 'var(--purple, #9c64f4)' : 'var(--fg-2)' }}>{m.from_name || 'Someone'}{newBadge} <span className="muted" style={{ fontWeight: 400 }}>· {fmt(m.created_at)}</span></div>
+          <div style={{ fontSize: 13.5, marginTop: 2, whiteSpace: 'pre-wrap' }}>{m.body}</div>
+          {(m.tag === 'personal' || m.tag === 'office') && !mine && (
+            <button onClick={() => start(async () => { const r = await ackChat(m.from_name); setMsg(r); router.refresh(); })} disabled={pending} className="pill" style={{ cursor: 'pointer', marginTop: 6, fontSize: 10.5, color: 'var(--green)', border: '1px solid var(--green)' }}>👍 On it</button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="wrap" style={{ maxWidth: 560 }}>
       <div className="h1" style={{ fontSize: 20 }}>👥 Team Chat</div>
@@ -37,34 +74,26 @@ export default function TechChat({ messages = [], me = '' }) {
       </form>
       {msg && <div style={{ fontSize: 12, margin: '6px 0', color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.msg}</div>}
 
-      {/* feed */}
-      <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-        {messages.length === 0 && <div className="card"><span className="muted">No team messages yet. Say hi 👋</span></div>}
-        {messages.map((m) => {
-          const mine = String(m.from_name || '').trim().toLowerCase() === String(me).trim().toLowerCase();
-          const isHank = /hank/i.test(m.from_name || '');
-          const fresh = isNew(m.id) && !mine;
-          // Blink color by importance: red = personal (address this), blue = office, amber = general.
-          const blinkClass = !fresh ? '' : m.tag === 'personal' ? 'cb-blink-red' : m.tag === 'office' ? 'cb-blink-blue' : 'cb-blink';
-          const tagBadge = !fresh ? null : m.tag === 'personal'
-            ? <span style={{ color: 'var(--red)', fontSize: 9, fontWeight: 800 }}> · 📌 FOR YOU</span>
-            : m.tag === 'office' ? <span style={{ color: 'var(--blue)', fontSize: 9, fontWeight: 800 }}> · 🏢 OFFICE</span>
-            : <span style={{ color: 'var(--amber)', fontSize: 9, fontWeight: 800 }}> · NEW</span>;
-          const bubbleBorder = m.tag === 'personal' && fresh ? 'var(--red)' : m.tag === 'office' && fresh ? 'var(--blue)' : isHank ? 'var(--purple, #9c64f4)' : 'var(--border)';
-          return (
-            <div key={m.id} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', flexDirection: mine ? 'row-reverse' : 'row' }}>
-              <div style={{ width: 30, height: 30, borderRadius: 999, flexShrink: 0, background: isHank ? 'var(--purple, #9c64f4)' : mine ? 'var(--amber)' : 'var(--surface-3)', color: isHank ? '#fff' : mine ? '#1a1206' : 'var(--fg-1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 11 }}>{isHank ? '🪠' : initials(m.from_name)}</div>
-              <div className={blinkClass} style={{ maxWidth: '80%', padding: '8px 11px', borderRadius: 12, background: mine ? 'rgba(255,179,0,0.12)' : 'var(--surface-2)', border: `1px solid ${bubbleBorder}` }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: isHank ? 'var(--purple, #9c64f4)' : 'var(--fg-2)' }}>{m.from_name || 'Someone'}{tagBadge} <span className="muted" style={{ fontWeight: 400 }}>· {fmt(m.created_at)}</span></div>
-                <div style={{ fontSize: 13.5, marginTop: 2, whiteSpace: 'pre-wrap' }}>{m.body}</div>
-                {(m.tag === 'personal' || m.tag === 'office') && !mine && (
-                  <button onClick={() => start(async () => { const r = await ackChat(m.from_name); setMsg(r); router.refresh(); })} disabled={pending} className="pill" style={{ cursor: 'pointer', marginTop: 6, fontSize: 10.5, color: 'var(--green)', border: '1px solid var(--green)' }}>👍 On it</button>
-                )}
-              </div>
+      {/* feed — broken down by category */}
+      {messages.length === 0 && <div className="card" style={{ marginTop: 12 }}><span className="muted">No team messages yet. Say hi 👋</span></div>}
+
+      {messages.length > 0 && SECTIONS.map((s) => {
+        const list = buckets[s.tag];
+        if (!list || list.length === 0) return null;
+        return (
+          <div key={s.tag} style={{ marginTop: 16 }}>
+            {/* section header — colored to the category's importance */}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 2px 8px', borderBottom: `2px solid ${s.color}`, marginBottom: 10 }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: s.color, textTransform: 'uppercase', letterSpacing: 0.4 }}>{s.label}</span>
+              <span className="pill" style={{ fontSize: 10, color: s.color, border: `1px solid ${s.color}` }}>{list.length}</span>
+              <span className="muted" style={{ fontSize: 10.5, marginLeft: 'auto' }}>{s.hint}</span>
             </div>
-          );
-        })}
-      </div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {list.map((m) => renderMsg(m, s.color))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
