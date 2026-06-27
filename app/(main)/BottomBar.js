@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const PRIMARY = [
+  { icon: '🌅', label: 'Start', href: '/start' },
   { icon: '📋', label: 'My Day', href: '/my-day' },
   { icon: '💵', label: 'Pay', href: '/pay' },
   { icon: '🏁', label: 'Races', href: '/races' },
