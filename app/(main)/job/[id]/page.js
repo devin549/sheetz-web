@@ -18,9 +18,9 @@ import JobVideo from './JobVideo';
 import CustomerMemory from './CustomerMemory';
 import LinkToProject from './LinkToProject';
 import JobActionCards from './JobActionCards';
+import JobHeader from './JobHeader';
 import { loadCustomerMemory } from '@/lib/customerMemory';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
-import JobContext from './JobContext';
 import JobSegments from './JobSegments';
 import { rollupJob } from '@/lib/segments';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
@@ -195,54 +195,17 @@ export default async function JobDetail({ params }) {
         <Link href="/board" className="muted" style={{ fontSize: 12 }}>Board</Link>
       </div>
 
-      <div className="card card-amber" style={{ marginTop: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
-          <div style={{ minWidth: 240, flex: '1 1 360px' }}>
-            <div className="h1" style={{ margin: 0 }}>{title}</div>
-            <div className="muted" style={{ marginTop: 4 }}>
-              {job.job_number ? `#${job.job_number} - ` : ''}{statusLabel(job.status)} - {fmtDate(job.scheduled_at)}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {isEstimate && <span className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)', fontWeight: 800 }}>🧲 ESTIMATE</span>}
-            <span className="pill">{techName}</span>
-            {job.amount ? <span className="pill" style={{ color: 'var(--green)' }}>{money(job.amount)}</span> : null}
-            <span className="pill" style={{ color: photos.length ? 'var(--amber)' : 'var(--fg-3)' }}>{photos.length} photos</span>
-            <DispatchMeRef jobId={id} value={job.dispatchme_job_id} canEdit={can(role, 'assignJobs') || can(role, 'manageUsers') || can(role, 'createJobs')} />
-          </div>
-        </div>
+      {/* HTML work-order top: rich header — name · #job · address+turn-by-turn · Call(REC)/Text/CSR/
+          Directions action bar · customer notes · the tab rail. (Replaces the old plain title card.) */}
+      <JobHeader job={job} customer={customer} tab="Overview" />
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginTop: 16 }}>
-          <div>
-            <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em' }}>Customer</div>
-            {job.customer_id
-              ? <Link href={`/customers/${job.customer_id}`} style={{ fontWeight: 800, marginTop: 4, display: 'inline-block', color: 'var(--fg-1)' }} title="Open full customer history">{customer.name || 'Customer'} <span style={{ color: 'var(--amber)', fontWeight: 600, fontSize: 12 }}>· 360 →</span></Link>
-              : <div style={{ fontWeight: 800, marginTop: 4 }}>{customer.name || 'Customer'}</div>}
-            {customer.phone && <a href={`tel:${String(customer.phone).replace(/[^0-9+]/g, '')}`} style={{ display: 'block', marginTop: 4 }}>{customer.phone}</a>}
-            {customer.email && <div className="muted" style={{ marginTop: 3 }}>{customer.email}</div>}
-          </div>
-          <div>
-            <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em' }}>Address</div>
-            {customer.address ? (
-              <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(customer.address)}`}
-                target="_blank"
-                rel="noreferrer"
-                style={{ display: 'block', marginTop: 4, lineHeight: 1.35 }}
-              >
-                {customer.address}
-              </a>
-            ) : (
-              <div className="muted" style={{ marginTop: 4 }}>No address</div>
-            )}
-          </div>
-          <div>
-            <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.08em' }}>Photo spine</div>
-            <div style={{ marginTop: 4, lineHeight: 1.4 }}>
-              Before, during, after, receipts, damage, equipment, and closeout proof all attach here.
-            </div>
-          </div>
-        </div>
+      {/* slim status strip — estimate · tech · ticket · photos · DispatchMe ref */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+        {isEstimate && <span className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)', fontWeight: 800 }}>🧲 ESTIMATE</span>}
+        <span className="pill">{techName}</span>
+        {job.amount ? <span className="pill" style={{ color: 'var(--green)' }}>{money(job.amount)}</span> : null}
+        <span className="pill" style={{ color: photos.length ? 'var(--amber)' : 'var(--fg-3)' }}>{photos.length} photos</span>
+        <DispatchMeRef jobId={id} value={job.dispatchme_job_id} canEdit={can(role, 'assignJobs') || can(role, 'manageUsers') || can(role, 'createJobs')} />
       </div>
 
       {/* Failed-QA alert — immediate, top-of-job, when a photo failed and the job isn't closed. */}
@@ -255,10 +218,7 @@ export default async function JobDetail({ params }) {
         </a>
       )}
 
-      {/* Customer context — must-tell, do-not-service, what we promised, access, flags. Never lose what
-          the tech needs before knocking. (Real columns only; the card hides when there's nothing.) */}
-      <JobContext job={job} customer={customer} />
-
+      {/* (Customer context / notes now render inside JobHeader above — no duplicate here.) */}
       <div id="customer" style={{ scrollMarginTop: 70 }}><CustomerMemory mem={memory} customer={customer} job={job} /></div>
 
       <JobActionCards jobId={id} jobNumber={job.job_number} customerName={customer.name} jobType={job.job_type} status={job.status} canAct={canAct} />
