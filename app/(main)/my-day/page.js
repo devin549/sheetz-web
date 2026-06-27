@@ -66,6 +66,9 @@ function SetupCard() {
 
 export default async function MyDay({ searchParams }) {
   const { user, role, profile } = await requireHref('/my-day');
+  // Field crew (own-only techs/helpers + crew leads, not managers) are the ones who get dispatched — only
+  // they see the location widget, and for them it's required/auto (live status, not a manual "share" button).
+  const fieldCrew = (can(role, 'seeOwnOnly') || can(role, 'seeCrew')) && !can(role, 'manageUsers');
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">📋 My Day</div><SetupCard /></div>;
@@ -316,7 +319,7 @@ export default async function MyDay({ searchParams }) {
         <div className="notice"><strong>Your account has no name set.</strong> Ask the office to add your name on the Team screen.</div>
       )}
 
-      {!note && <ShareLocation accepted={profile.prefs?.share_location === true} required={(can(role, 'seeOwnOnly') || can(role, 'seeCrew')) && !can(role, 'manageUsers')} />}
+      {!note && fieldCrew && <ShareLocation accepted={profile.prefs?.share_location === true} required={fieldCrew} />}
 
       {/* 🔍 Find a job/invoice/receipt by number (HTML My Day search) — straight into the job. */}
       {!note && <JobSearch />}
