@@ -299,9 +299,11 @@ export default async function MyDay({ searchParams }) {
     <div className="wrap" style={{ maxWidth: 880 }}>
       <div className="h1">📋 My Day{scopeLabel}</div>
       <p className="muted">
-        Live from Supabase{subtitle ? ` · ${subtitle}` : ''}
-        {seeAll && officeFilter ? <> · <Link href="/my-day">show everyone</Link></> : null}
-        {seeAll && !officeFilter ? <> · add <code>?tech=Name</code> to filter</> : null}
+        {seeAll
+          ? (officeFilter
+              ? <>{officeFilter}’s day · <Link href="/my-day">show everyone</Link></>
+              : 'All techs')
+          : (subtitle || 'Your jobs for today')}
       </p>
 
       {note && note.kind === 'helperNone' && (
