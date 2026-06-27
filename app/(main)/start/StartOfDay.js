@@ -11,6 +11,7 @@ import { coachMessage, TONES, tonesForLevel } from '@/lib/roast';
 import { rankChip } from '@/lib/rankFx';
 import RankFx from '../RankFx';
 import SodGate from './SodGate';
+import SlotMachine from '../races/SlotMachine';
 import { CircleCheck, Circle } from 'lucide-react';
 
 const usd0 = (n) => '$' + Math.round(Number(n || 0)).toLocaleString();
@@ -36,7 +37,7 @@ function RankRow({ label, chip }) {
   );
 }
 
-export default function StartOfDay({ name, lastWorked, scorecard, rankings, fieldSize, overallRank, fx, jobs = [], win, onCall, saved, roastLevel = 'PG', sodGate = null, bounties = [], leaveBy = null }) {
+export default function StartOfDay({ name, lastWorked, scorecard, rankings, fieldSize, overallRank, fx, jobs = [], win, onCall, saved, roastLevel = 'PG', sodGate = null, bounties = [], challenges = [], pp = null, leaveBy = null }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const allowedTones = tonesForLevel(roastLevel);
@@ -241,21 +242,32 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
         <div style={{ fontSize: 16, fontWeight: 800, marginTop: 5, lineHeight: 1.45 }}>{win}</div>
       </div>
 
-      {/* 6.5 · TODAY'S BOUNTIES — the office's chase list (full board on Races) */}
-      {bounties.length > 0 && (
+      {/* 6.5 · TODAY'S BOUNTIES — the chase list + the Power Plunger pull. Lives HERE on Start (moved off
+          Races) so the tech sees what's up for grabs the moment they sign in. */}
+      {(challenges.length > 0 || bounties.length > 0 || (pp && pp.active)) && (
         <div style={{ marginTop: 14 }}>
-          <SectionLabel>💰 Today's Bounties · {bounties.length} live</SectionLabel>
-          <div style={{ display: 'grid', gap: 7 }}>
+          <SectionLabel>💰 Today's Bounties &amp; Bonuses</SectionLabel>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {/* weekly challenges with progress */}
+            {challenges.map((c) => (
+              <div key={c.title} className="card" style={{ borderLeft: '3px solid var(--amber)', padding: '11px 13px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 20 }}>{c.icon}</span><strong style={{ fontSize: 14 }}>{c.title}</strong><span className="pill" style={{ marginLeft: 'auto', color: 'var(--green)', border: '1px solid var(--green)' }}>{c.prize}</span></div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{c.desc}</div>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--amber)', marginTop: 5 }}>{c.progress}</div>
+              </div>
+            ))}
+            {/* office-posted live bounties */}
             {bounties.map((b) => (
-              <a key={b.id} href="/races" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+              <div key={b.id} className="card" style={{ borderLeft: '3px solid var(--green)', padding: '11px 13px', display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 20 }}>{b.icon || '🎯'}</span>
-                <span style={{ flex: 1, fontWeight: 700, fontSize: 13, color: 'var(--fg-1)' }}>{b.title}</span>
-                {(b.amount_cents != null || b.points != null) && <span className="pill" style={{ color: 'var(--green)' }}>{[b.amount_cents != null ? '$' + Math.round(b.amount_cents / 100) : '', b.points != null ? `${b.points} XP` : ''].filter(Boolean).join(' · ')}</span>}
-                <span style={{ color: 'var(--amber)', fontWeight: 800 }}>›</span>
-              </a>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800, fontSize: 13.5 }}>{b.title}</div>{b.description && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{b.description}</div>}</div>
+                {(b.amount_cents != null || b.points != null) && <span className="pill" style={{ color: 'var(--green)', border: '1px solid var(--green)' }}>{[b.amount_cents != null ? '$' + Math.round(b.amount_cents / 100) : '', b.points != null ? `${b.points} XP` : ''].filter(Boolean).join(' · ')}</span>}
+              </div>
             ))}
           </div>
-          <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>Tap any bounty for the full board on Races.</div>
+          {/* ⚡ Power Plunger pull — always tappable; the server gates the real payout */}
+          {pp && pp.active && <SlotMachine pulls={pp.pulls} budgetTapped={pp.budgetTapped} topPrize={pp.topPrize} />}
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 6 }}>Full standings + the race are on 🏁 Races.</div>
         </div>
       )}
 

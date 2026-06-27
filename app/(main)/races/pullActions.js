@@ -16,6 +16,7 @@ export async function pullSlot() {
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Unavailable right now.' };
   const res = await doPull(sb, { techId: profile.tech_id, name: profile.name || user.email });
+  revalidatePath('/start');
   revalidatePath('/races');
   return res;
 }

@@ -178,21 +178,21 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
             💰 <span style={{ color: '#69f0ae', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 800 }}>My Day $</span><span style={{ color: '#a5d6a7', fontWeight: 800 }}>›</span>
           </Link>
           <span style={{ color: 'rgba(255,196,60,0.5)' }}>│</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>🏆 <span style={{ color: 'var(--fg-3)', fontSize: 10, textTransform: 'uppercase' }}>Rank</span>
-            <span style={{ color: 'var(--amber)', fontWeight: 800, fontSize: 16 }}>#{game.rank}</span>
-            {game.rankDelta ? <span style={{ color: '#4caf50', fontWeight: 800, fontSize: 11, background: 'rgba(76,175,80,0.15)', border: '1px solid #4caf50', borderRadius: 10, padding: '2px 6px' }}>▲{game.rankDelta}</span> : null}
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>🏆 <span style={{ color: '#c3cbd5', fontSize: 10, textTransform: 'uppercase' }}>Rank</span>
+            <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 16 }}>#{game.rank}</span>
+            {game.rankDelta ? <span style={{ color: '#8ef0a0', fontWeight: 800, fontSize: 11, background: 'rgba(76,175,80,0.25)', border: '1px solid #6ddc84', borderRadius: 10, padding: '2px 6px' }}>▲{game.rankDelta}</span> : null}
           </span>
           <span style={{ color: 'rgba(255,196,60,0.5)' }}>│</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>🔥 <span style={{ color: '#ff8a65', fontWeight: 800, fontSize: 14 }}>{game.streak}</span><span style={{ color: 'var(--fg-3)', fontSize: 10, textTransform: 'uppercase' }}>day on-time</span></span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>🔥 <span style={{ color: '#ff9e6b', fontWeight: 800, fontSize: 14 }}>{game.streak}</span><span style={{ color: '#c3cbd5', fontSize: 10, textTransform: 'uppercase' }}>day on-time</span></span>
           <span style={{ color: 'rgba(255,196,60,0.5)' }}>│</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,179,0,0.12)', padding: '4px 10px', borderRadius: 14, border: '1px solid var(--amber)' }}>
-            ⚡ <span style={{ color: 'var(--amber)', fontWeight: 800, fontSize: 11, textTransform: 'uppercase' }}>Power Plunger Hour</span><span style={{ color: '#ffeb3b', fontWeight: 800 }}>{game.powerHour}m</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,179,0,0.18)', padding: '4px 10px', borderRadius: 14, border: '1px solid #ffc44d' }}>
+            ⚡ <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 11, textTransform: 'uppercase' }}>Power Plunger Hour</span><span style={{ color: '#ffeb3b', fontWeight: 800 }}>{game.powerHour}m</span>
           </span>
           <span style={{ marginLeft: 'auto', paddingRight: 6, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>👑
             <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
-              <span style={{ color: 'var(--amber)', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Plunger · Lvl {game.level}</span>
-              <span style={{ background: 'var(--surface-2)', width: 80, height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 2 }}><span style={{ display: 'block', width: `${game.levelPct}%`, height: '100%', background: 'var(--amber)' }} /></span>
-              <span style={{ color: 'var(--fg-3)', fontSize: 8 }}>{game.levelPct}% to next</span>
+              <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Plunger · Lvl {game.level}</span>
+              <span style={{ background: 'rgba(255,255,255,0.22)', width: 80, height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 2 }}><span style={{ display: 'block', width: `${game.levelPct}%`, height: '100%', background: '#ffc44d' }} /></span>
+              <span style={{ color: '#c3cbd5', fontSize: 8 }}>{game.levelPct}% to next</span>
             </span>
           </span>
         </div>

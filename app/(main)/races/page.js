@@ -2,10 +2,8 @@ import { requirePerm } from '@/lib/guard';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { weeklyLeaderboard, weeklyEligibility } from '@/lib/leaderboard';
 import { rankEffect } from '@/lib/rankFx';
-import { getConfig, pullsAvailable, budgetSpent } from '@/lib/powerPlunger';
 import { laneRoast } from '@/lib/laneRoast';
 import RankFx from '../RankFx';
-import SlotMachine from './SlotMachine';
 import LaneRoast from './LaneRoast';
 
 export const dynamic = 'force-dynamic';
@@ -58,11 +56,9 @@ export default async function Races() {
   }
   const fx = rankEffect({ rank: Number(rank), total: fieldTotal, prevRank, seed: name });
   const rowBadge = (n) => n === 1 ? '👑' : n === 2 ? '🥈' : n === 3 ? '🥉' : (fieldTotal > 1 && n === fieldTotal) ? '💩' : '';
-  // Owner-managed live bounties/weekly awards (active rows from the awards catalog).
-  let liveAwards = [];
+  // Weekly eligibility (DQ strikes). Bounties + the Power Plunger pull now live on the Start tab.
   let elig = { available: false };
   if (isAdminConfigured) {
-    try { const { data } = await getSupabaseAdmin().from('awards').select('id, title, icon, amount_cents, points, description').eq('active', true).in('kind', ['bounty', 'weekly']).order('sort', { ascending: true }); liveAwards = data || []; } catch (_) {}
     elig = await weeklyEligibility(getSupabaseAdmin(), { techId: profile.tech_id, name }, Date.now());
   }
   // DQ rows — LATE + CALLBACK are real when eligibility loaded; review/margin stay sample until those feeds land.
@@ -72,19 +68,6 @@ export default async function Races() {
   const eligible = elig.available ? elig.eligible : true;
   const strikes = elig.available ? (elig.late + elig.callbacks) : 0;
 
-  // ⚡ Power Plunger — pulls earned this week (5★ reviews + memberships) + budget state. Owner-configurable.
-  let ppPulls = 0, ppBudgetTapped = false, ppTopPrize = 15, ppActive = false;
-  if (isAdminConfigured) {
-    try {
-      const sb = getSupabaseAdmin();
-      const cfg = await getConfig(sb);
-      ppTopPrize = Number(cfg.top_prize) || 15; ppActive = !!cfg.active;
-      if (cfg.active) {
-        ppPulls = await pullsAvailable(sb, { techId: profile.tech_id, name }, cfg);
-        ppBudgetTapped = (await budgetSpent(sb, cfg.budget_period)) >= Number(cfg.budget_cap);
-      }
-    } catch (_) {}
-  }
   return (
     <div className="wrap" style={{ maxWidth: 640 }}>
       <div className="card" style={{ background: 'linear-gradient(135deg, color-mix(in oklab, var(--amber) 18%, var(--surface-1)) 0%, var(--amber-deep) 100%)', border: '1px solid var(--amber)' }}>
@@ -103,7 +86,8 @@ export default async function Races() {
           Crown by Saturday. Corn (hype) + Turd (heel) coach in voice. (Corn/Turd lines swap to the
           Anthropic file once Devin sends the file_id.) */}
       {(() => {
-        const num = (s) => Number(String(s).replace(/[^0-9.]/g, '')) || 0;
+        // Parse the FIRST number only — '$6,500 @ 55%' must read 6500, not 650055 (digits glued together).
+        const num = (s) => { const m = String(s).match(/[\d,]+(?:\.\d+)?/); return m ? Number(m[0].replace(/,/g, '')) || 0 : 0; };
         const revenue = num(you$);
         const crownAmt = num(r.crown) || 6500, turdAmt = num(r.turd) || 9500;
         const crownBonus = 150, turdBonus = 250;
@@ -137,8 +121,8 @@ export default async function Races() {
             {/* THE BIG NUMBER */}
             <div style={{ marginTop: 10, padding: '14px 12px', borderRadius: 12, background: 'linear-gradient(135deg,#1a1206,#0e0a04)', border: '1px solid var(--amber-dim)', textAlign: 'center' }}>
               <div style={{ fontSize: 10, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 800 }}>🌋 The big number · revenue rate needed</div>
-              <div className="cb-glow" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 34, fontWeight: 800, color: 'var(--amber)' }}>{crownHit ? '👑 CROWN' : `$${rateCrown}`}<span style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg-3)' }}>{crownHit ? '' : '/hour to Crown by Saturday'}</span></div>
-              {!crownHit && <div style={{ fontSize: 11, color: '#ff8a65', marginTop: 2 }}>{usd0(gapCrown)} gap ÷ {hrsLeft} work hrs left · Turd needs ${rateTurd}/hr</div>}
+              <div className="cb-glow" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 34, fontWeight: 800, color: 'var(--amber)' }}>{crownHit ? '👑 CROWN' : usd0(rateCrown)}<span style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg-3)' }}>{crownHit ? '' : '/hr to Crown by Saturday'}</span></div>
+              {!crownHit && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 2 }}>{usd0(gapCrown)} gap ÷ {hrsLeft} work hrs left · Turd needs {usd0(rateTurd)}/hr</div>}
             </div>
             {/* Corn + Turd coaching */}
             <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, borderLeft: '3px solid var(--green)', background: 'color-mix(in oklab, var(--green) 7%, transparent)', fontSize: 12 }}><strong style={{ color: 'var(--green)' }}>🌽 Mr. Corn:</strong> {cornSays}</div>
@@ -155,36 +139,12 @@ export default async function Races() {
         <div style={{ fontSize: 12.5, marginTop: 6 }}>You: <strong>{r.biggest.you}</strong> · gap {r.biggest.gap} · current pace could close it <span className="pill" style={{ color: 'var(--green)' }}>🥇 {r.biggest.bonus} bonus</span></div>
       </div>
 
-      {/* ⚡ Power Plunger Hour — roll-for-a-bonus slot (real, budget-capped) */}
-      {ppActive && <SlotMachine pulls={ppPulls} budgetTapped={ppBudgetTapped} topPrize={ppTopPrize} />}
-
-      {/* Weekly challenges */}
-      <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-        <div style={{ fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--amber-dim)' }}>Weekly Challenges · live bounties</div>
-        {r.challenges.map((c) => (
-          <div key={c.title} className="card" style={{ borderLeft: '3px solid var(--amber)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 20 }}>{c.icon}</span><strong>{c.title}</strong><span className="pill" style={{ marginLeft: 'auto', color: 'var(--green)' }}>{c.prize}</span></div>
-            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>{c.desc}</div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginTop: 4 }}>{c.progress}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Live bounties from the office (owner-managed) */}
-      {liveAwards.length > 0 && (
-        <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--green)' }}>
-          <div style={{ fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--green)', marginBottom: 8 }}>🟢 Live bounties from the office</div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            {liveAwards.map((a) => (
-              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 20 }}>{a.icon || '🎯'}</span>
-                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 13 }}>{a.title}</div>{a.description && <div className="muted" style={{ fontSize: 11 }}>{a.description}</div>}</div>
-                {(a.amount_cents != null || a.points != null) && <span className="pill" style={{ color: 'var(--green)' }}>{[a.amount_cents != null ? '$' + (a.amount_cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 }) : '', a.points != null ? `${a.points} XP` : ''].filter(Boolean).join(' · ')}</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* 💰 Bounties + the ⚡ Power Plunger pull moved to the Start tab — chase them at sign-in. */}
+      <a href="/start" className="card" style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit', borderLeft: '3px solid var(--amber)' }}>
+        <span style={{ fontSize: 20 }}>💰</span>
+        <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800, fontSize: 13 }}>Today's bounties &amp; the Power Plunger pull</div><div className="muted" style={{ fontSize: 11.5 }}>now on your 🌅 Start screen — tap to chase them</div></div>
+        <span style={{ color: 'var(--amber)', fontWeight: 800 }}>›</span>
+      </a>
 
       {/* Eligibility (DQ) — being late this week loses your awards */}
       <div className="card" style={{ marginTop: 10, borderLeft: `3px solid ${eligible ? 'var(--green)' : 'var(--red)'}` }}>

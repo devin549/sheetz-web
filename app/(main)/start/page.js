@@ -5,6 +5,7 @@ import { lastWorkedDay, lastShiftScorecard, companyRankings, enrichTodayJob, win
 import { rankEffect } from '@/lib/rankFx';
 import { driveMatrix } from '@/lib/maps';
 import { haversineMiles, etaMinutes } from '@/lib/geo';
+import { getConfig, pullsAvailable, budgetSpent } from '@/lib/powerPlunger';
 import StartOfDay from './StartOfDay';
 
 export const dynamic = 'force-dynamic';
@@ -120,10 +121,27 @@ export default async function Start() {
   const rankings = ranks.available ? ranks.metrics : null;
   // Active bounties from the office (same catalog the Races board uses) — surfaced here to chase at sign-in.
   let bounties = [];
-  try { const { data } = await sb.from('awards').select('id, title, icon, amount_cents, points').eq('active', true).in('kind', ['bounty', 'weekly']).order('sort', { ascending: true }).limit(6); bounties = data || []; } catch (_) {}
+  try { const { data } = await sb.from('awards').select('id, title, icon, amount_cents, points, description').eq('active', true).in('kind', ['bounty', 'weekly']).order('sort', { ascending: true }).limit(6); bounties = data || []; } catch (_) {}
+  // Weekly challenge bounties (sample seam until the challenges feed wires) — the chase list lives on Start now.
+  const challenges = [
+    { icon: '🍔', title: 'First to $1K Today', prize: "Lunch · Devin's tab", desc: 'First tech to clear $1,000 NET today (after parts + pay). Counts profit, not the sale. Resets 6am.', progress: 'You (net): $680 / $1,000 · $320 to go' },
+    { icon: '💧', title: 'Hybrid Heater Bounty', prize: '+$100', desc: 'Sell a hybrid water heater this week. First to log + manager-approve gets $100.', progress: '⏳ Expires in 6 days · open to all' },
+  ];
+  // ⚡ Power Plunger pulls (earned 5★/memberships) + budget state — the roll-for-a-bonus slot lives on Start now.
+  let pp = { active: false, pulls: 0, budgetTapped: false, topPrize: 15 };
+  try {
+    const cfg = await getConfig(sb);
+    pp.topPrize = Number(cfg.top_prize) || 15; pp.active = !!cfg.active;
+    if (cfg.active) {
+      pp.pulls = await pullsAvailable(sb, { techId: profile.tech_id, name }, cfg);
+      pp.budgetTapped = (await budgetSpent(sb, cfg.budget_period)) >= Number(cfg.budget_cap);
+    }
+  } catch (_) {}
   return (
     <StartOfDay
       bounties={bounties}
+      challenges={challenges}
+      pp={pp}
       leaveBy={leaveBy}
       sodGate={{ sod: sodRow || {}, tools: sodTools, handbook: sodHandbook, helper: sodHelper }}
       name={name}
