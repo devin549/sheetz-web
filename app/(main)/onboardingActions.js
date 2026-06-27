@@ -52,16 +52,18 @@ export async function completeOnboarding(payload) {
   if (!level) return { ok: false, msg: 'Pick a roast level (PG, PG-13, or R).' };
   if (level === 'R' && !p.roastRAccepted) return { ok: false, msg: 'R requires the thick-skin acceptance.' };
 
-  // Audit rows — one per policy, server timestamp is the legal record.
+  // Audit rows — one per policy, server timestamp is the legal record. detail + initials are NOT NULL in
+  // prod, so every row sets both (empty where N/A) — never leave them undefined.
   const rows = [
-    { user_id: user.id, kind: 'monitoring', version: POLICY_VERSIONS.monitoring, detail: { name: profile.name } },
-    { user_id: user.id, kind: 'handbook', version: POLICY_VERSIONS.handbook, initials: hb },
-    { user_id: user.id, kind: 'nda', version: POLICY_VERSIONS.nda, initials: nda },
+    { user_id: user.id, kind: 'monitoring', version: POLICY_VERSIONS.monitoring, initials: '', detail: { name: profile.name } },
+    { user_id: user.id, kind: 'handbook', version: POLICY_VERSIONS.handbook, initials: hb, detail: {} },
+    { user_id: user.id, kind: 'nda', version: POLICY_VERSIONS.nda, initials: nda, detail: {} },
   ];
-  if (level === 'R') rows.push({ user_id: user.id, kind: 'roast_r', version: POLICY_VERSIONS.roast_r, detail: { agreed: true } });
+  if (level === 'R') rows.push({ user_id: user.id, kind: 'roast_r', version: POLICY_VERSIONS.roast_r, initials: '', detail: { agreed: true } });
 
   const ins = await sb.from('policy_acks').insert(rows);
-  if (ins.error) return { ok: false, msg: /policy_acks|relation|column|schema cache|does not exist/i.test(ins.error.message || '') ? 'Run supabase/75_policy_acks.sql first.' : ins.error.message };
+  // Only blame the migration on a genuine missing-table/column error — otherwise surface the real reason.
+  if (ins.error) return { ok: false, msg: /relation .* does not exist|could not find the .* column|schema cache/i.test(ins.error.message || '') ? 'Run supabase/75_policy_acks.sql first.' : ins.error.message };
 
   const upd = await sb.from('profiles').update({ roast_level: level, roast_locked: true, onboarded_at: new Date().toISOString() }).eq('user_id', user.id);
   if (upd.error) return { ok: false, msg: /column|schema cache|does not exist/i.test(upd.error.message || '') ? 'Run supabase/74 + 75 first.' : upd.error.message };
