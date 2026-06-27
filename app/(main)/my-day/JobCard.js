@@ -138,106 +138,44 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
     nextLine = { customer: String(next.customer || 'next stop').split(/\s+/)[0], at: fmtTime(next.time), driveMin: Math.round(Number(next.driveMin) || 0), slack };
   }
 
+  // Whole card is a tap-target into the job (HTML cbOpenJob) — but clicks on inner controls (Running late
+  // button/form) must NOT navigate, so bail if the tap landed on an interactive element (cbOnsiteCardTap).
+  const goJob = (e) => { if (e.target.closest && e.target.closest('button, a, input, textarea, select, [data-no-nav]')) return; router.push(`/job/${job.id}`); };
+  const accent = done ? 'var(--fg-3)' : cur === 'on_site' ? 'var(--green-bright)' : cur === 'enroute' ? 'var(--amber)' : variant === 'active' ? 'var(--amber)' : 'var(--border-strong)';
+
   return (
-    <div className={variant === 'active' ? 'card card-amber' : 'card'} style={{ opacity: variant === 'done' || cancelled ? 0.6 : 1, padding: compact ? '12px 14px' : undefined }}>
+    <div className={variant === 'active' ? 'card card-amber' : 'card'} onClick={goJob} title="Open this job"
+      style={{ opacity: variant === 'done' || cancelled ? 0.6 : 1, padding: compact ? '12px 14px' : undefined, cursor: 'pointer', borderLeft: `4px solid ${accent}` }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 12, alignItems: 'start' }}>
         <div style={{ textAlign: 'center', minWidth: 52 }}>
-          <div style={{ fontWeight: 800, color: 'var(--amber)', fontSize: 14 }}>{fmtTime(job.scheduled_at)}</div>
+          <div style={{ fontWeight: 800, color: 'var(--amber)', fontSize: 14, fontFamily: "'JetBrains Mono',monospace" }}>{fmtTime(job.scheduled_at)}</div>
           {job.job_number && <div className="muted" style={{ fontSize: 10, fontFamily: 'monospace' }}>#{job.job_number}</div>}
         </div>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 15 }}>
             {urgent && <span className="alert-dot" aria-hidden="true" />}
-            <Link href={`/job/${job.id}`} style={{ color: 'var(--fg-1)', textDecoration: 'none' }} title="Open this job">{cust.name || 'Customer'} <span style={{ color: 'var(--amber)', fontSize: 12, fontWeight: 600 }}>›</span></Link>
+            <span style={{ color: 'var(--fg-1)' }}>{cust.name || 'Customer'} <span style={{ color: 'var(--amber)', fontSize: 12, fontWeight: 600 }}>›</span></span>
             {urgent && <span className="pill pill-red pill-blink" style={{ marginLeft: 8 }}>RUNNING LATE</span>}
           </div>
           {cust.address && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {cust.address}</div>}
           {typeBits && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>🔧 {typeBits}</div>}
           {seeAll && t.name && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}><PersonCard name={t.name}><span style={{ cursor: 'pointer' }}>👷 {t.name}</span></PersonCard></div>}
           <TagRow tags={tags} />
-          <QuickBar tel={tel} mapHref={mapHref} jobId={job.id} />
+          {/* ⏱ on-site $/hr pace (live off the timer) — tech-only intelligence kept from the HTML */}
+          {variant === 'active' && !cancelled && !done && cur === 'on_site' && paceHr ? (
+            <div style={{ marginTop: 5, fontSize: 10.5, color: 'var(--amber-dim)', fontStyle: 'italic' }}>⏱ {money(amt)} / {elapsedMin}min = <strong style={{ color: 'var(--green-bright)' }}>{money(paceHr)}/hr pace</strong></div>
+          ) : null}
+          {/* 🎯 next stop — drive + will you make their window */}
+          {variant === 'active' && !cancelled && !done && nextLine ? (
+            <div style={{ marginTop: 5, fontSize: 11, color: 'var(--fg-2)', background: 'rgba(255,179,0,0.08)', border: '1px solid var(--amber-dim)', padding: '3px 7px', borderRadius: 6, display: 'inline-block' }}>🎯 {nextLine.driveMin}-min drive → <strong>{nextLine.customer}</strong> {nextLine.at} · <span style={{ color: nextLine.slack >= 0 ? 'var(--green)' : 'var(--red)' }}>{nextLine.slack >= 0 ? `+${nextLine.slack} slack` : `${-nextLine.slack} tight`}</span></div>
+          ) : null}
         </div>
         <span className={pill.cls} style={pill.color ? { color: pill.color } : undefined}>{cur === 'on_site' && elapsedMin > 0 ? `${pill.label} · ${elapsedMin}m` : pill.label}</span>
       </div>
 
-      {/* next required action — every non-cancelled card (scannable in the driveway) */}
-      {!cancelled && (
-        <div style={{ marginTop: 8, fontSize: 12.5, fontWeight: 700, color: done ? 'var(--green)' : 'var(--amber)' }}>{nextAction}</div>
-      )}
-
-      {/* active status strip — timer · payment · photo proof */}
-      {variant === 'active' && !cancelled && !done && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-          {elapsed && <span className="pill" style={{ fontSize: 11, color: 'var(--amber)' }}>⏱ {elapsed}</span>}
-          <span className="pill" style={{ fontSize: 11, color: pastDue > 0 ? 'var(--red)' : 'var(--green)' }}>{pastDue > 0 ? `💸 ${money(pastDue)} due` : '💳 no balance'}</span>
-          <Link href={`/job/${job.id}/photos`} className="pill" style={{ fontSize: 11, color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>📸 Proof</Link>
-        </div>
-      )}
-
-      {/* ⏱ tech-only $/hr pace coach (HTML "$921/hr pace") — live off the on-site timer */}
-      {variant === 'active' && !cancelled && !done && cur === 'on_site' && paceHr ? (
-        <div style={{ marginTop: 6, fontSize: 10.5, color: 'var(--amber-dim)', fontStyle: 'italic' }}>⏱ Timer running · {money(amt)} / {elapsedMin}min = <strong style={{ color: 'var(--green-bright)' }}>{money(paceHr)}/hr pace</strong> · push the tier-2 quote before it drops</div>
-      ) : null}
-      {/* 🎯 next stop — drive there + will you make their window (HTML est-done/slack line) */}
-      {variant === 'active' && !cancelled && !done && nextLine ? (
-        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--fg-2)', background: 'rgba(255,179,0,0.08)', border: '1px solid var(--amber-dim)', padding: '4px 8px', borderRadius: 6, display: 'inline-block' }}>
-          🎯 then {nextLine.driveMin}-min drive → <strong>{nextLine.customer}</strong> at {nextLine.at} · <span style={{ color: nextLine.slack >= 0 ? 'var(--green)' : 'var(--red)' }}>{nextLine.slack >= 0 ? `+${nextLine.slack} min slack` : `${-nextLine.slack} min tight`}</span>
-        </div>
-      ) : null}
-
-      {/* status workflow — active card only */}
-      {variant === 'active' && canAct && !cancelled && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          {STEPS.map((st) => (
-            <button key={st.key} onClick={() => setStatus(st.key)} disabled={pending} style={btn(cur === st.key, done && st.key !== 'done')}>
-              {pending && busyKey === st.key ? '…' : st.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {err && <div style={{ color: 'var(--red)', fontSize: 11, marginTop: 6 }}>{err}</div>}
-
-      {/* Collect payment — only after arrival/diagnosis (on-site or done), never before. */}
-      {variant === 'active' && canAct && !cancelled && (cur === 'on_site' || done) && (
-        <div style={{ marginTop: 8 }}>
-          {!payOpen ? (
-            <button onClick={() => { setPayOpen(true); setPayLink(null); setPayErr(null); }}
-              style={{ width: '100%', padding: '11px', borderRadius: 10, border: '1px solid #635bff', background: 'rgba(99,91,255,.10)', color: 'var(--purple)', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
-              💳 Collect payment
-            </button>
-          ) : (
-            <div style={{ border: '1px solid #635bff', borderRadius: 10, padding: 12, background: 'var(--surface-1)' }}>
-              {!payLink ? (
-                <>
-                  <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>Amount to collect</div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <span style={{ fontSize: 16, fontWeight: 700 }}>$</span>
-                    <input type="number" inputMode="decimal" value={payAmt} onChange={(e) => setPayAmt(e.target.value)} placeholder="0.00"
-                      style={{ flex: 1, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 15 }} />
-                    <button onClick={makePayLink} disabled={pending || !(Number(payAmt) > 0)} className="btn" style={{ opacity: (pending || !(Number(payAmt) > 0)) ? 0.6 : 1 }}>{pending ? '…' : 'Create link'}</button>
-                  </div>
-                  <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>Customer pays this + a 4% card fee on a secure Stripe page.</div>
-                  {payErr && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 6 }}>{payErr}</div>}
-                </>
-              ) : (
-                <>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--purple)', marginBottom: 6 }}>💳 Ready — customer pays {money(payLink.totalDollars)} ({money(payLink.baseDollars)} + {money(payLink.feeDollars)} fee)</div>
-                  <input readOnly value={payLink.url} onFocus={(e) => e.target.select()} style={{ width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '8px 10px', fontSize: 12, marginBottom: 8 }} />
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {tel && <a href={`sms:${tel}?body=${encodeURIComponent('Pay your Clog Busterz Plumbing invoice here: ' + payLink.url)}`} className="btn" style={{ flex: 1, textAlign: 'center', minWidth: 120, textDecoration: 'none' }}>✉️ Text customer</a>}
-                    <button onClick={() => navigator.clipboard && navigator.clipboard.writeText(payLink.url)} className="btn btn-ghost">Copy</button>
-                    <a href={payLink.url} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ textDecoration: 'none' }}>Open ↗</a>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Running Late — active card only */}
+      {/* Running late relay — active card only (the HTML on-site ETA nudge). data-no-nav stops the card-tap. */}
       {variant === 'active' && canAct && !cancelled && !done && (
-        <div style={{ marginTop: 8 }}>
+        <div data-no-nav style={{ marginTop: 8 }}>
           {!lateOpen ? (
             <button onClick={() => { setLateOpen(true); setLateMsg(null); }}
               style={{ width: '100%', padding: '11px', borderRadius: 10, border: '1px solid var(--amber-dim)', background: 'rgba(255,129,36,.10)', color: 'var(--amber)', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>

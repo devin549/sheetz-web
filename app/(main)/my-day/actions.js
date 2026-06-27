@@ -37,6 +37,32 @@ export async function createJobPayLink(jobId, amountDollars) {
   return { ok: true, url: r.url, baseDollars: (r.baseCents || cents) / 100, feeDollars: (r.feeCents || 0) / 100, totalDollars: (r.totalCents || cents) / 100 };
 }
 
+// My Day "Find a job, invoice, or receipt by number…" box (HTML cbTechIpad_search). Searches by job
+// number or customer name. SERVER-SCOPED: a field-only tech finds only their OWN jobs; office finds all.
+export async function searchMyJobs(query) {
+  const q = String(query || '').trim();
+  if (q.length < 2) return { ok: true, results: [] };
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const profile = user ? await loadProfile(user) : null;
+  if (!user || !profile) return { ok: false, results: [] };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, results: [] };
+  const ownOnly = !can(profile.role, 'seeAllJobs') && can(profile.role, 'seeOwnOnly');
+  if (ownOnly && !profile.tech_id) return { ok: true, results: [] }; // own-only with no roster link → nothing to scope
+  const like = '%' + q.replace(/[%_,]/g, '') + '%';
+  const seen = new Set(), results = [];
+  const scope = (sel) => (ownOnly ? sel.eq('tech_id', profile.tech_id) : sel);
+  const cols = 'id, job_number, job_type, status, scheduled_at, customer_id, customers(name)';
+  const push = (rows) => { for (const j of (rows || [])) { if (seen.has(j.id) || results.length >= 8) continue; seen.add(j.id); results.push({ id: j.id, jobNumber: j.job_number || '', type: j.job_type || 'Service call', status: j.status || '', customer: (j.customers || {}).name || 'Customer', when: j.scheduled_at }); } };
+  // By customer name (inner join so the filter applies to the joined table).
+  try { const r = await scope(sb.from('jobs').select('id, job_number, job_type, status, scheduled_at, customer_id, customers!inner(name)').ilike('customers.name', like)).order('scheduled_at', { ascending: false }).limit(8); if (!r.error) push(r.data); } catch (_) {}
+  // By job number — try text ilike; if the column is integer (ilike errors), exact-match a numeric query.
+  try { const r = await scope(sb.from('jobs').select(cols).ilike('job_number', like)).order('scheduled_at', { ascending: false }).limit(8); if (r.error) throw r.error; push(r.data); }
+  catch (_) { if (/^\d+$/.test(q)) { try { const r = await scope(sb.from('jobs').select(cols).eq('job_number', q)).limit(8); if (!r.error) push(r.data); } catch (_2) {} } }
+  return { ok: true, results };
+}
+
 // Tech shares their live GPS from the field (My Day "Share location") → tech_locations, so Hank can
 // route "closest tech for material/equipment" by true distance. Keyed to the signed-in tech's name.
 export async function pingLocation(lat, lng, accuracy) {

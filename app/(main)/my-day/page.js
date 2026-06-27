@@ -10,6 +10,7 @@ import ShareLocation from './ShareLocation';
 import { computeJobPay } from '@/lib/pay';
 import { haversineMiles, etaMinutes } from '@/lib/geo';
 import DriveLeg from './DriveLeg';
+import JobSearch from './JobSearch';
 
 const DAILY_REVENUE_GOAL = 1500; // default tech daily revenue goal for "vs goal" until per-tech goals land
 
@@ -258,6 +259,9 @@ export default async function MyDay({ searchParams }) {
       )}
 
       {!note && <ShareLocation />}
+
+      {/* 🔍 Find a job/invoice/receipt by number (HTML My Day search) — straight into the job. */}
+      {!note && <JobSearch />}
 
       {!note && (
         <>
