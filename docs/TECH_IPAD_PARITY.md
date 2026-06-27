@@ -85,3 +85,53 @@ PO · Prices · Equip · History**. Web home: `/job/[id]`.
    complete the **failed → circled → corrected** loop on the existing tables.
 2. Add the cockpit info we don't want to lose: **customer notes + warnings** on the job header.
 3. Then by value: Start/End of day, Bids, Equipment, History, guided photos + video gate, Races/Record/Vegas, financing, Mkt.
+
+---
+
+# 6/27 update — full gold re-extraction (agents) + current status
+
+Much of the above is now DONE (My Day rich port, job cockpit, Start, Bids, Pay, Races, Customer 360,
+Settings, Calendar week-stepper). Re-extracted the gold (`mockups/tech_ipad_v3.html`) for the remaining
+ports. See also [[reference_tech_ipad_backend_contract]].
+
+**Decisions (Devin 6/27):** ID Part → Truck tab + EVERY work order. Shop (after-hours material) → a
+SECTION INSIDE My Truck, not a top tab. iPad nav (side rail vs bottom) = Devin sleeping on it; currently
+bottom bar on touch devices (any orientation), side rail on mouse desktop. Bottom tabs: Start · My Day ·
+Bids · Truck · Chat · Hank · More (or all, scrollable — pending his call).
+
+**Key finding — Calendar:** `pane-cal` is a static **Google-Calendar agenda** (callbacks/inspections/
+training/PTO/on-call), NOT a job grid. The real "week view" = the My Day **date-bar + `cbChangeDay`
+stepper**, ALREADY ported (‹ › day flips). Job source for both = `getMyDay(email, isoDate)`. Remaining:
+optionally bring the Calendar Bridge events (`cbCal_listUpcoming_`) across; wire other-day job cards to
+`/job/[id]` (gold left them non-clickable).
+
+**My Truck (`pane-tools` 5607–5990)** — 4 sub-tabs via `switchTruckSub`: My Van (scan box + 4-stat card
+{partsOnVan, inventoryValue, lowStockCount, daysSinceRestock} + top-6 most-used + low-stock alerts + full
+inventory) · Truck-Wide Search (fleet → shop/other-vans/transfer) · Shop Inventory (Richmond/Lexington
+toggle + per-shop stats + categorized stock) · My Tools custody ({toolsIssued,issuedValue,onLoan,missing}
++ active loans + serialized tools w/ condition photos). Scan: `cbInv_compare(code)` →
+`{ok,name,sku,shopCost,techPrice,customerPriceFromShop,vendor{name,price},warehouses[{warehouseId,qty,bin}],
+verdict}`. Add-to-job: `cbInv_scanOut({sku,qty,tech,jobId})`. Tables: parts/truck_inventory, shop_inventory
+(per-loc), tools, tool_loans, tool_condition_photos.
+
+**Shop self-checkout (`pane-shopco` 5992–6084) → My Truck sub-tab** — form Job#(prefill active job) ·
+Part(scan/type) · Qty · Note → `cbTechIpad_selfIssue({jobId,sku,qty,note,confirm})` (tech from SESSION,
+never client email). Returns `{needsConfirm,warning}` (job# typo confirm round-trip) / `{ok:false,error}` /
+`{ok:true,qty,name,jobId,afterHours,message}`. Engine `cbShop_selfIssueCore_` (`CB_Dispatch_ShopIssue_v1.js`):
+part lookup → typo gate → van-only guard → after-hours stamp (weekend OR hr<7 OR ≥17 ET) → custPrice =
+round2(techPrice × markup, default 1.5) → append `_DB_ShopIssues` (19-col ledger) → decrement stock. Cost
+on the JOB never tech pay; every pull tagged `[SELF-SERVE]`/`[· after-hours]` for Reed. Web: `shop_issues`
+table + `/api/shop/self-issue` + manager review (`cbShop_selfServeReport`).
+
+**ID Part / Equipment plate** — gold = data-plate CAMERA (NOT a part-Lens). `openPlateCapture` → role
+modal (🆕 installed → equipment+warranty+auto-permit `cbPermit_request` · 🗑 removed · 🔧 existing) →
+`cbTechIpad_scanEquipmentPlate` → `cbEquip_captureFromPhoto` → Anthropic vision `cbEquip_scanPlateB64_` →
+`{detected,category,manufacturer,model,serial,gasType:'NAT|LP|ELECTRIC|UNKNOWN',capacity,btuInput,mfgDate,
+ageYears}`. **gasType read ONLY off the plate "TYPE GAS" field — never inferred (fuel-safety gas-gate).**
+Web: photo→Storage→`/api/equipment/scan-plate`→vision→upsert `equipment` by customer_phone + unit_role;
+installed → insert `permit_requests`. The SerpAPI/Lens "identify unknown part by photo" = separate queued
+build ([[project_part_identifier]]).
+
+**Still ⬜:** End of Day, Record/Vegas/Leaderboard gamification, Van Maintenance, Dry Calc/Moisture
+(FloodBusterz), the `pane-cal` Google agenda. Cross-cutting: Customer Mode (`data-tech-only` server-side by
+role), gas-gate, video-evidence invoice lock, after-hours on-call-FS routing, idle re-auth.
