@@ -53,3 +53,57 @@ export async function scanOntoVan(formData) {
     return { ok: false, msg: String(e?.message || e).slice(0, 160) };
   }
 }
+
+async function whoami() {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const profile = user ? await loadProfile(user) : null;
+  if (!user || !profile || profile.active === false) return null;
+  return { user, profile, name: profile.name || user.email };
+}
+
+// 🔍 Truck-Wide Search — find a part across the SHOPS + every tech's van. Powers the inline search sub-tab.
+// Returns { ok, shops:[{name,qty,bin,location_id}], vans:[{name,qty,bin,tech_name,mine}] }.
+export async function truckWideSearch(query) {
+  const me = await whoami();
+  if (!me) return { ok: false, msg: 'Not signed in.' };
+  const q = clean(query, 80).replace(/[%,]/g, ' ').trim();
+  if (q.length < 2) return { ok: true, shops: [], vans: [] };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const like = `%${q}%`;
+  let shops = [], vans = [];
+  try {
+    const { data } = await sb.from('item_locations').select('name, sku, qty, bin, location_id').eq('location_type', 'shop').gt('qty', 0).or(`name.ilike.${like},sku.ilike.${like}`).order('qty', { ascending: false }).limit(30);
+    shops = data || [];
+  } catch (_) {}
+  try {
+    const { data } = await sb.from('truck_inventory').select('name, sku, qty, bin, tech_name').gt('qty', 0).or(`name.ilike.${like},sku.ilike.${like}`).order('qty', { ascending: false }).limit(40);
+    const mine = String(me.name || '').trim().toLowerCase();
+    vans = (data || []).map((v) => ({ ...v, mine: String(v.tech_name || '').trim().toLowerCase() === mine }));
+  } catch (_) {}
+  return { ok: true, shops, vans };
+}
+
+// 🔄 Request a van-to-van transfer — drops a message into the team feed tagging the holder (no silent
+// auto-move; the holder coordinates). Real + auditable via the existing comms feed.
+export async function requestPartTransfer({ part, qty, fromTech }) {
+  const me = await whoami();
+  if (!me) return { ok: false, msg: 'Not signed in.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const p = clean(part, 120), holder = clean(fromTech, 80), n = Math.max(1, Number(qty) || 1);
+  if (!p || !holder) return { ok: false, msg: 'Missing part or tech.' };
+  try {
+    await sb.from('cb_comms').insert({
+      channel: 'internal', direction: 'internal', from_name: me.name,
+      body: `🔄 ${me.name} needs ${n}× ${p} — ${holder} has it on their van. Can you transfer / meet up?`,
+      status: 'sent',
+    });
+  } catch (e) {
+    if (/relation|does not exist|schema cache/i.test(String(e?.message))) return { ok: false, msg: 'Chat feed not set up yet.' };
+    return { ok: false, msg: 'Could not send the request.' };
+  }
+  revalidatePath('/messages');
+  return { ok: true, msg: `Asked ${holder} for ${n}× ${p} in the team chat.` };
+}

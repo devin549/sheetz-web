@@ -10,6 +10,7 @@ import AddTool from '../tools/AddTool';
 import ToolRemoveBtn from './ToolRemoveBtn';
 import ShopSelfCheckout from './ShopSelfCheckout';
 import StockVan from './StockVan';
+import TruckWideSearch from './TruckWideSearch';
 
 export const dynamic = 'force-dynamic';
 
@@ -127,6 +128,23 @@ export default async function MyTruck({ searchParams }) {
   // Stocking another tech's van (load-out) = shop/manager; a field tech stocks only their own.
   const canStockOthers = can(role, 'manageInventory') || can(role, 'seeCrew') || can(role, 'manageUsers');
 
+  // Days since the van was last restocked (newest updated_at across parts) — HTML "Since last restock".
+  let daysSinceRestock = null;
+  if (parts.length) {
+    const last = parts.reduce((m, p) => { const t = p.updated_at ? new Date(p.updated_at).getTime() : 0; return t > m ? t : m; }, 0);
+    if (last) daysSinceRestock = Math.max(0, Math.floor((Date.now() - last) / 864e5));
+  }
+  // Top-6 most-used this month — from shop pulls onto jobs by this tech (HTML "most-used · auto-restock").
+  // Empty until usage accrues (the AI/Reed restock signal builds as parts get pulled).
+  let mostUsed = [];
+  try {
+    const since = new Date(Date.now() - 30 * 864e5).toISOString();
+    const { data } = await sb.from('shop_issues').select('item_name, qty, created_at').ilike('issued_to', detailTech).gte('created_at', since).limit(300);
+    const by = {};
+    (data || []).forEach((r) => { const k = String(r.item_name || '').trim(); if (k) by[k] = (by[k] || 0) + (Number(r.qty) || 1); });
+    mostUsed = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, n]) => ({ name, n }));
+  } catch (_) {}
+
   return (
     <div className="wrap" style={{ maxWidth: 880 }}>
       <div className="h1">🚐 {role === 'tech' ? 'My Truck' : detailTech + '’s Truck'}</div>
@@ -145,10 +163,29 @@ export default async function MyTruck({ searchParams }) {
       {sub === 'van' && (<>
         <div className="card card-amber" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
           <div><div style={{ fontSize: 22, fontWeight: 800, color: 'var(--amber)' }}>{parts.length}</div><div className="muted" style={{ fontSize: 10.5 }}>parts on van</div></div>
-          <div><div style={{ fontSize: 22, fontWeight: 800, color: lowCount ? 'var(--red)' : 'var(--green)' }}>{lowCount}</div><div className="muted" style={{ fontSize: 10.5 }}>low stock</div></div>
-          <div><div style={{ fontSize: 22, fontWeight: 800 }}>{toolList.length}</div><div className="muted" style={{ fontSize: 10.5 }}>tools issued</div></div>
-          <div><div style={{ fontSize: 22, fontWeight: 800, color: 'var(--green-bright)' }}>{money(toolVal)}</div><div className="muted" style={{ fontSize: 10.5 }}>tools value</div></div>
+          <div><div style={{ fontSize: 22, fontWeight: 800 }}>{parts.reduce((a, p) => a + (Number(p.qty) || 0), 0)}</div><div className="muted" style={{ fontSize: 10.5 }}>total units</div></div>
+          <div><div style={{ fontSize: 22, fontWeight: 800, color: lowCount ? 'var(--red)' : 'var(--green)' }}>{lowCount}</div><div className="muted" style={{ fontSize: 10.5 }}>low stock ⚠</div></div>
+          <div><div style={{ fontSize: 22, fontWeight: 800, color: 'var(--amber)' }}>{daysSinceRestock == null ? '—' : daysSinceRestock + 'd'}</div><div className="muted" style={{ fontSize: 10.5 }}>since restock</div></div>
         </div>
+
+        {/* 🔥 Top-6 most-used this month — the auto-restock signal (Reed/AI). Builds as parts get pulled. */}
+        {mostUsed.length > 0 && (
+          <div className="card" style={{ marginTop: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 16 }}>🔥</span>
+              <strong style={{ fontSize: 12, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Top {mostUsed.length} most-used this month</strong>
+              <span className="pill" style={{ marginLeft: 'auto', fontSize: 9.5 }}>auto-restock signal</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 6, fontSize: 11.5 }}>
+              {mostUsed.map((m, i) => (
+                <div key={i} style={{ background: 'var(--surface-2)', padding: '6px 9px', borderRadius: 6, display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
+                  <span style={{ color: 'var(--green-bright)', fontWeight: 800, whiteSpace: 'nowrap' }}>{m.n}×</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div style={{ marginTop: 10 }}><TruckScan /></div>
 
@@ -181,9 +218,9 @@ export default async function MyTruck({ searchParams }) {
         </Section>
       </>)}
 
-      {/* ───────── FIND A PART (Google-Maps nearest locator) ───────── */}
+      {/* ───────── FIND A PART (inline truck-wide search + transfer; full map locator one tap away) ───────── */}
       {sub === 'search' && (<>
-        <TruckScan big />
+        <TruckWideSearch />
         <Link href="/tools" className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: 'inherit', marginTop: 10, borderLeft: '3px solid var(--amber)' }}>
           <span style={{ fontSize: 26 }}>🗺️</span>
           <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>Open the full locator</div><div className="muted" style={{ fontSize: 12 }}>Map of every van, shop &amp; vendor — ranked by drive time, with route + reserve.</div></div>
