@@ -3,6 +3,7 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { weeklyLeaderboard, weeklyEligibility } from '@/lib/leaderboard';
 import { rankEffect } from '@/lib/rankFx';
 import { getConfig, pullsAvailable, budgetSpent } from '@/lib/powerPlunger';
+import { laneRoast } from '@/lib/laneRoast';
 import RankFx from '../RankFx';
 import SlotMachine from './SlotMachine';
 
@@ -235,12 +236,61 @@ export default async function Races() {
                   <div style={{ height: '100%', width: pct + '%', background: grad, borderRadius: 11 }} />
                   <span style={{ position: 'absolute', top: '50%', left: `calc(${pct}% - 16px)`, transform: 'translateY(-50%)', fontSize: 15 }}>{racer}</span>
                 </div>
+                {/* 🌽💩 your personal roast — tuned to your rank in THIS race */}
+                {b.me && (() => { const rt = laneRoast(b.n, fieldTotal, { seed: name }); return (
+                  <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: rt.tier === 'leader' ? 'var(--green)' : rt.tier === 'top3' ? 'var(--amber)' : '#ff8a65' }}>{rt.text}</div>
+                ); })()}
               </div>
             );
           });
         })()}
         <div className="muted" style={{ fontSize: 10.5 }}>🏁 leader's pace = finish line · catch them by Saturday</div>
       </div>
+
+      {/* ⭐ REVIEW RACE · customer love — lanes + your personal roast (sample until the review feed wires) */}
+      {(() => {
+        const rev = [
+          { n: 1, who: 'Tech #1', pts: 66, reviews: 7 }, { n: 2, who: 'Tech #3', pts: 46, reviews: 5 },
+          { n: 3, who: name, pts: 43, reviews: 6, me: true }, { n: 4, who: 'Tech #4', pts: 22, reviews: 4 }, { n: 5, who: 'Tech #5', pts: 26, reviews: 3 },
+        ];
+        const max = Math.max(1, ...rev.map((x) => x.pts));
+        return (
+          <div className="card" style={{ marginTop: 10 }}>
+            <div style={{ fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em', color: '#64b5f6', marginBottom: 4 }}>⭐ Review Race · customer love</div>
+            <div className="muted" style={{ fontSize: 10.5, marginBottom: 8 }}>5★ +10 · 4★ +8 · 3★ −5 · 1★ 💀 · $15 floor at 5+ reviews · Pete calls the customer 15 min after the job</div>
+            {rev.map((x) => { const pct = Math.max(5, Math.round((x.pts / max) * 100)); const grad = x.n === 1 ? 'linear-gradient(90deg,#1565c0,#42a5f5)' : x.me ? 'linear-gradient(90deg,#1976d2,#64b5f6)' : 'linear-gradient(90deg,#5c6b7a,#90a4ae)';
+              return (
+                <div key={x.n} style={{ marginBottom: 9 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 2 }}><span style={{ fontWeight: x.me ? 800 : 600 }}>{rowBadge(x.n) ? rowBadge(x.n) + ' ' : ''}{x.who}{x.me ? ' (YOU)' : ''}</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>{x.pts} pts · {x.reviews} rev</span></div>
+                  <div style={{ position: 'relative', height: 20, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid ' + (x.me ? '#64b5f6' : 'var(--border)'), overflow: 'hidden' }}><div style={{ height: '100%', width: pct + '%', background: grad, borderRadius: 10 }} /></div>
+                  {x.me && (() => { const rt = laneRoast(x.n, rev.length, { seed: name + 'review' }); return <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: rt.tier === 'leader' ? 'var(--green)' : rt.tier === 'top3' ? '#64b5f6' : '#ff8a65' }}>{rt.text}</div>; })()}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* 🤝 HHWP RACE · day-off on-call — harsher roasts (not top 3 → Corn + Turd let 'em have it) */}
+      {(() => {
+        const hh = [{ n: 1, who: 'Tech #1', x: 3 }, { n: 2, who: name, x: 0, me: true }];
+        const max = Math.max(1, ...hh.map((h) => h.x));
+        return (
+          <div className="card" style={{ marginTop: 10 }}>
+            <div style={{ fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em', color: '#b08b4a', marginBottom: 4 }}>🤝 HHWP Race · tech day-off on-call</div>
+            <div className="muted" style={{ fontSize: 10.5, marginBottom: 8 }}>Cover on-call on your DAY OFF · ranked by # of pickups · 🥇 $250 · 🥈 $100 · 🥉 $50</div>
+            {hh.map((h) => { const pct = Math.max(5, Math.round((h.x / max) * 100));
+              return (
+                <div key={h.n} style={{ marginBottom: 9 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 2 }}><span style={{ fontWeight: h.me ? 800 : 600 }}>{rowBadge(h.n) ? rowBadge(h.n) + ' ' : ''}{h.who}{h.me ? ' (YOU)' : ''}</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>{h.x}× pickups</span></div>
+                  <div style={{ position: 'relative', height: 20, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid ' + (h.me ? '#b08b4a' : 'var(--border)'), overflow: 'hidden' }}><div style={{ height: '100%', width: pct + '%', background: h.n === 1 ? 'linear-gradient(90deg,#8a6d3b,#d9b24a)' : 'linear-gradient(90deg,#6b5a3b,#b08b4a)', borderRadius: 10 }} /></div>
+                  {h.me && (() => { const rt = laneRoast(h.n, hh.length, { seed: name + 'hhwp', hhwp: true }); return <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: rt.tier === 'leader' ? 'var(--green)' : '#ff8a65' }}>{rt.text}</div>; })()}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
       <div className="card" style={{ marginTop: 10 }}>
         <div style={{ fontWeight: 800, marginBottom: 6 }}>🌟 Other awards this week</div>
         {r.awards.map((a) => <div key={a} className="muted" style={{ fontSize: 12.5, padding: '3px 0' }}>{a}</div>)}
