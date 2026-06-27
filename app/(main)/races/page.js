@@ -92,6 +92,54 @@ export default async function Races() {
       </div>
       <div className="muted" style={{ fontSize: 12, margin: '8px 0 0' }}>{live ? '🟢 Leaderboard is LIVE (this week’s revenue). Bounties + biggest-ticket are sample until those feeds wire.' : 'Sample — live rank feed wires when this week has completed jobs.'}</div>
 
+      {/* 🌽 THE STACK — one revenue counter: 👑 Crown unlock, then 💩 Golden Turd. Big number = $/hr to
+          Crown by Saturday. Corn (hype) + Turd (heel) coach in voice. (Corn/Turd lines swap to the
+          Anthropic file once Devin sends the file_id.) */}
+      {(() => {
+        const num = (s) => Number(String(s).replace(/[^0-9.]/g, '')) || 0;
+        const revenue = num(you$);
+        const crownAmt = num(r.crown) || 6500, turdAmt = num(r.turd) || 9500;
+        const crownBonus = 150, turdBonus = 250;
+        const gapCrown = Math.max(0, crownAmt - revenue), gapTurd = Math.max(0, turdAmt - revenue);
+        const pct = Math.max(2, Math.min(100, Math.round((revenue / turdAmt) * 100)));
+        const crownMark = Math.round((crownAmt / turdAmt) * 100);
+        const etDay = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })).getDay(); // 0=Sun..6=Sat
+        const hrsLeft = Math.max(1, (6 - etDay) * 10 + 4); // ~10hr days through Saturday + today's tail
+        const rateCrown = Math.round(gapCrown / hrsLeft), rateTurd = Math.round(gapTurd / hrsLeft);
+        const crownHit = gapCrown <= 0;
+        const cornSays = crownHit
+          ? `👑 CROWN unlocked — +$${crownBonus} banked. Don't coast: the Golden Turd's right there for +$${turdBonus} more. Keep climbing.`
+          : `You're ${Math.round((revenue / crownAmt) * 100)}% to Crown — ONE solid install grabs the +$${crownBonus} AND keeps you climbing. Don't stop at Crown.`;
+        const turdSays = crownHit
+          ? `Alright, you earned me. $${gapTurd.toLocaleString()} more and the Golden Turd's yours for +$${turdBonus}. Quit dragging.`
+          : `🔒 I'm locked behind Crown. Hit your $${crownAmt.toLocaleString()} first, then I'm yours. Stop leaving money on the floor.`;
+        return (
+          <div className="card" style={{ marginTop: 10, border: '1px solid var(--amber)' }}>
+            <div style={{ fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--amber-dim)' }}>🌽 The Stack · this week</div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>One revenue counter → 👑 Crown @ {usd0(crownAmt)} unlocks +${crownBonus} → keep climbing → 💩 Turd @ {usd0(turdAmt)} unlocks +${turdBonus} = ${crownBonus + turdBonus} max</div>
+            {/* progress bar with Crown + Turd markers */}
+            <div style={{ position: 'relative', height: 26, borderRadius: 13, background: 'var(--surface-2)', border: '1px solid var(--border)', overflow: 'hidden', marginTop: 10 }}>
+              <div style={{ height: '100%', width: pct + '%', background: 'linear-gradient(90deg,#bfa12e,#ffd24a)', borderRadius: 13 }} />
+              <span style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${crownMark}% - 1px)`, width: 2, background: 'var(--fg-1)', opacity: 0.5 }} />
+              <span style={{ position: 'absolute', top: '50%', left: `calc(${pct}% - 14px)`, transform: 'translateY(-50%)', fontSize: 16 }}>{crownHit ? '👑' : '🌽'}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginTop: 4 }}>
+              <span style={{ color: 'var(--green)', fontWeight: 700 }}>{usd0(revenue)} · {eligible ? 'GREEN · qualified' : 'DQ’d'}</span>
+              <span className="muted">{gapCrown > 0 ? `${usd0(gapCrown)} to Crown` : `${usd0(gapTurd)} to Turd`}</span>
+            </div>
+            {/* THE BIG NUMBER */}
+            <div style={{ marginTop: 10, padding: '14px 12px', borderRadius: 12, background: 'linear-gradient(135deg,#1a1206,#0e0a04)', border: '1px solid var(--amber-dim)', textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 800 }}>🌋 The big number · revenue rate needed</div>
+              <div className="cb-glow" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 34, fontWeight: 800, color: 'var(--amber)' }}>{crownHit ? '👑 CROWN' : `$${rateCrown}`}<span style={{ fontSize: 13, fontWeight: 600, color: 'var(--fg-3)' }}>{crownHit ? '' : '/hour to Crown by Saturday'}</span></div>
+              {!crownHit && <div style={{ fontSize: 11, color: '#ff8a65', marginTop: 2 }}>{usd0(gapCrown)} gap ÷ {hrsLeft} work hrs left · Turd needs ${rateTurd}/hr</div>}
+            </div>
+            {/* Corn + Turd coaching */}
+            <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, borderLeft: '3px solid var(--green)', background: 'color-mix(in oklab, var(--green) 7%, transparent)', fontSize: 12 }}><strong style={{ color: 'var(--green)' }}>🌽 Mr. Corn:</strong> {cornSays}</div>
+            <div style={{ marginTop: 6, padding: '8px 10px', borderRadius: 8, borderLeft: '3px solid #8a6d3b', background: 'color-mix(in oklab, #8a6d3b 9%, transparent)', fontSize: 12 }}><strong style={{ color: '#b08b4a' }}>💩 Golden Turd:</strong> {turdSays}</div>
+          </div>
+        );
+      })()}
+
       {/* Biggest ticket */}
       <div className="card" style={{ marginTop: 10, border: '2px solid var(--amber)', background: 'linear-gradient(135deg,rgba(255,179,0,0.14),rgba(255,179,0,0.04))' }}>
         <div style={{ fontWeight: 800, marginBottom: 6 }}>🏆 Biggest Ticket — this week</div>
