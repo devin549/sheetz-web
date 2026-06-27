@@ -11,6 +11,7 @@ import { computeJobPay } from '@/lib/pay';
 import { haversineMiles, etaMinutes } from '@/lib/geo';
 import DriveLeg from './DriveLeg';
 import JobSearch from './JobSearch';
+import MyJobs from './MyJobs';
 
 const DAILY_REVENUE_GOAL = 1500; // default tech daily revenue goal for "vs goal" until per-tech goals land
 
@@ -227,20 +228,75 @@ export default async function MyDay({ searchParams }) {
   }
 
 
-  // My Jobs (last 30d) — loaded only on that tab.
-  let jobs30 = [];
+  // 📜 My Jobs — rich history (HTML myDaySub_jobs): period filter + week-summary + grouped rich rows.
+  let myJobsData = null;
   if (tab === 'jobs' && !note) {
-    try {
-      const since = new Date(Date.now() - 30 * 864e5).toISOString();
-      let q = supabase.from('jobs').select('id, job_number, job_type, amount, status, scheduled_at, customers(name)').gte('scheduled_at', since).order('scheduled_at', { ascending: false }).limit(60);
-      if (scopeTechId) q = q.eq('tech_id', scopeTechId); else if (scopeName) q = q.ilike('tech_name', '%' + scopeName + '%');
-      const r = await q; jobs30 = r.error ? [] : (r.data || []);
-    } catch (_) {}
+    const range = ['lastweek', 'month', 'all'].includes(searchParams?.range) ? searchParams.range : 'week';
+    const scopedOne = !!(scopeTechId || (seeAll && officeFilter)); // one tech → pay + rating make sense
+    const nowMs = Date.now();
+    const etKey = (ms) => new Intl.DateTimeFormat('en-CA', { timeZone: CB_TZ }).format(new Date(ms));
+    const weekStartKey = (ms) => { const d = new Date(etKey(ms) + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - d.getUTCDay()); return new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC' }).format(d); };
+    const tk = todayKey();
+    let sinceKey, untilKey = null, periodLabel;
+    if (range === 'lastweek') { sinceKey = weekStartKey(nowMs - 7 * 864e5); untilKey = weekStartKey(nowMs); periodLabel = 'Last week'; }
+    else if (range === 'month') { sinceKey = tk.slice(0, 8) + '01'; periodLabel = 'This month'; }
+    else if (range === 'all') { sinceKey = shiftDay(tk, -365); periodLabel = 'Last 12 months'; }
+    else { sinceKey = weekStartKey(nowMs); periodLabel = 'This week'; }
+    const sinceISO = dayWindow(sinceKey).startISO;
+    const untilISO = untilKey ? dayWindow(untilKey).startISO : dayWindow(shiftDay(tk, 1)).startISO;
+    const cols = 'id, job_number, job_type, amount, status, scheduled_at, completed_at, duration_min, job_class, warranty_provider, customer_id, customers(name)';
+    let mq = supabase.from('jobs').select(cols).gte('scheduled_at', sinceISO).lt('scheduled_at', untilISO).order('scheduled_at', { ascending: false }).limit(range === 'all' ? 300 : 150);
+    if (scopeTechId) mq = mq.eq('tech_id', scopeTechId); else if (seeAll && officeFilter) mq = mq.ilike('tech_name', '%' + officeFilter + '%'); else if (scopeName) mq = mq.ilike('tech_name', '%' + scopeName + '%');
+    let { data: mrows } = await mq; mrows = mrows || [];
+    const ids2 = mrows.map((j) => j.id);
+    // photo counts (one query, tallied)
+    const photoCount = {};
+    if (ids2.length) { try { const { data } = await supabase.from('job_photos').select('job_id').in('job_id', ids2).is('deleted_at', null); (data || []).forEach((p) => { photoCount[p.job_id] = (photoCount[p.job_id] || 0) + 1; }); } catch (_) {} }
+    // pay per job (only when scoped to one commission tech)
+    const payByJob = {}; let payKnown = false;
+    if (scopedOne && scopeTechId && ids2.length) {
+      try {
+        const { data: pp } = await supabase.from('pay_profiles').select('commission_pct, pay_type').eq('tech_id', scopeTechId).maybeSingle();
+        if (pp && (pp.pay_type === 'commission' || pp.pay_type === 'hourly_comm')) {
+          const pct = Number(pp.commission_pct) || 0; payKnown = pct > 0;
+          const costById = {};
+          try { const { data } = await supabase.from('jobs').select('id, material_cost_cents, dispatch_fee_cents, sub_cost_cents, sub_verified').in('id', ids2); (data || []).forEach((x) => { costById[x.id] = x; }); } catch (_) {}
+          mrows.forEach((j) => { const c = costById[j.id] || {}; const p = computeJobPay({ revenue_cents: Math.round((Number(j.amount) || 0) * 100), material_cost_cents: c.material_cost_cents, dispatch_fee_cents: c.dispatch_fee_cents, sub_cost_cents: c.sub_cost_cents, sub_verified: c.sub_verified }, pct); payByJob[j.id] = p.jobPay / 100; });
+        }
+      } catch (_) {}
+    }
+    // rating (avg of reviews on these jobs) — fail-soft if table/cols differ
+    let rating = null;
+    if (scopedOne && ids2.length) { try { const { data } = await supabase.from('reviews').select('rating').in('job_id', ids2); const rs = (data || []).map((x) => Number(x.rating)).filter((n) => n > 0); if (rs.length) rating = Math.round((rs.reduce((a, b) => a + b, 0) / rs.length) * 10) / 10; } catch (_) {} }
+    const isDone2 = (j) => /done|complete|closed/.test(String(j.status || '').toLowerCase());
+    const fbRe = /flood|mitigation|water damage|restoration/i;
+    const rowOf = (j) => ({
+      id: j.id, time: fmtTime(j.scheduled_at), jobNumber: j.job_number ? '#' + j.job_number : '', status: j.status || '',
+      customer: (j.customers || {}).name || 'Customer', type: j.job_type || '',
+      hours: j.duration_min != null ? Math.round((Number(j.duration_min) / 60) * 10) / 10 : null,
+      amount: Number(j.amount) || 0, pay: payByJob[j.id] || 0, photos: photoCount[j.id] || 0,
+      badges: [...(fbRe.test(j.job_type || '') ? [{ label: '🌊 FB', tone: 'var(--blue)' }] : []), ...((['warranty', 'insurance'].includes(String(j.job_class || '').toLowerCase()) || j.warranty_provider) ? [{ label: '🛡 warranty', tone: 'var(--amber)' }] : [])],
+    });
+    const byDay = {};
+    mrows.forEach((j) => { const k = etKey(new Date(j.scheduled_at).getTime()); (byDay[k] = byDay[k] || []).push(j); });
+    const groups = Object.keys(byDay).sort().reverse().map((k) => {
+      const label = new Date(k + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase();
+      const dow = new Date(k + 'T12:00:00Z').getUTCDay();
+      return { dayKey: k, label, isToday: k === tk, resetBoundary: dow === 0, rows: byDay[k].map(rowOf) };
+    });
+    const done2 = mrows.filter(isDone2);
+    const revenue = done2.reduce((s, j) => s + (Number(j.amount) || 0), 0);
+    const hours = Math.round(mrows.reduce((s, j) => s + (Number(j.duration_min) || 0), 0) / 60 * 10) / 10;
+    const pay = done2.reduce((s, j) => s + (payByJob[j.id] || 0), 0);
+    const issues = mrows.filter((j) => /callback|doc.?fraud/i.test(String(j.job_class || ''))).length;
+    myJobsData = { range, scoped: scopedOne, payKnown, total: mrows.length,
+      summary: { periodLabel, jobs: mrows.length, hours: hours || null, revenue, pay, avg: done2.length ? Math.round(revenue / done2.length) : 0, rating, issues, counts: { [range]: mrows.length } },
+      groups };
   }
   const tabHref = (t) => `/my-day${t === 'today' ? '' : `?tab=${t}`}`;
 
   return (
-    <div className="wrap">
+    <div className="wrap" style={{ maxWidth: 880 }}>
       <div className="h1">📋 My Day{scopeLabel}</div>
       <p className="muted">
         Live from Supabase{subtitle ? ` · ${subtitle}` : ''}
@@ -337,24 +393,8 @@ export default async function MyDay({ searchParams }) {
       {/* ── 💰 TODAY $ — tech-only earnings (ported from HTML "Today's Money") ── */}
       {!note && !error && tab === 'money' && moneyProps && <TodayMoney {...moneyProps} />}
 
-      {/* ── 📜 MY JOBS — last 30 days ── */}
-      {!note && !error && tab === 'jobs' && (
-        jobs30.length === 0 ? <div className="card muted" style={{ fontSize: 13 }}>No jobs in the last 30 days.</div> : (
-          <div style={{ display: 'grid', gap: 6 }}>
-            {jobs30.map((j) => {
-              const c = j.customers || {}; const done = isDone(j);
-              return (
-                <Link key={j.id} href={`/job/${j.id}`} className="card" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit' }}>
-                  <span className="muted" style={{ fontSize: 11, minWidth: 56 }}>{j.scheduled_at ? new Date(j.scheduled_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : ''}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 700 }}>{c.name || 'Customer'}</div><div className="muted" style={{ fontSize: 11.5 }}>{j.job_type || 'Job'}{j.job_number ? ` · #${j.job_number}` : ''}</div></div>
-                  {j.amount ? <span style={{ fontWeight: 700, color: 'var(--green-bright)' }}>{money(j.amount)}</span> : null}
-                  <span className="pill" style={{ fontSize: 9, color: done ? 'var(--green)' : 'var(--fg-3)' }}>{(j.status || '').toUpperCase()}</span>
-                </Link>
-              );
-            })}
-          </div>
-        )
-      )}
+      {/* ── 📜 MY JOBS — rich history (period filter + week-summary + grouped rows) ── */}
+      {!note && !error && tab === 'jobs' && myJobsData && <MyJobs {...myJobsData} />}
     </div>
   );
 }
