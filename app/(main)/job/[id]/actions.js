@@ -363,19 +363,48 @@ export async function backOnSite(jobId) {
   return { ok: true, msg: 'Back on site — office notified.' };
 }
 
-// "Can't finish today?" → roll the job to another day. SAME job number, parts, and history — we just move
-// the schedule and reset it to scheduled. Default +1 day at the same time.
-export async function rollOverJob(jobId, note) {
+// "Can't finish today?" → roll the SAME job (number, parts, history kept). Asks WHY + an estimated return
+// date. Rolling your OWN job to your OWN free day is continuity → auto-set it. If the tech is already
+// booked that day, it goes OFFICE PENDING (unscheduled, in the office tray) — the office finds a day and
+// calls the customer (a tech never schedules around a conflict). opts: { reason, returnDate 'YYYY-MM-DD' }.
+export async function rollOverJob(jobId, opts = {}) {
   const ctx = await getActionContext(cleanText(jobId, 80));
   if (!ctx.ok) return ctx;
   if (!can(ctx.role, 'changeStatus')) return { ok: false, msg: 'Your role can’t reschedule.' };
-  const base = ctx.job.scheduled_at ? new Date(ctx.job.scheduled_at) : new Date();
-  if (isNaN(base.getTime())) base.setTime(Date.now());
-  const next = new Date(base.getTime() + 24 * 3600 * 1000);
-  const n = cleanText(note, 200);
-  const { error } = await ctx.sb.from('jobs').update({ scheduled_at: next.toISOString(), status: 'scheduled', enroute_at: null, started_at: null }).eq('id', ctx.job.id);
+  const reason = cleanText(opts?.reason, 200);
+  const returnDate = cleanText(opts?.returnDate, 20); // YYYY-MM-DD (the tech's estimate)
+  if (!reason) return { ok: false, msg: 'Tell the office why it’s rolling.' };
+
+  // Is the tech open on the requested return date? (only auto-schedule if so)
+  let officePending = !returnDate || !ctx.job.tech_id; // no date or no tech → office decides
+  let autoISO = null;
+  if (returnDate && ctx.job.tech_id) {
+    try {
+      const { count } = await ctx.sb.from('jobs').select('id', { count: 'exact', head: true })
+        .eq('tech_id', ctx.job.tech_id).neq('id', ctx.job.id)
+        .gte('scheduled_at', returnDate + 'T00:00:00').lte('scheduled_at', returnDate + 'T23:59:59.999')
+        .not('status', 'in', '(done,complete,closed,cancelled)');
+      if ((count || 0) === 0) {
+        const orig = ctx.job.scheduled_at ? new Date(ctx.job.scheduled_at) : null;
+        const at = new Date(returnDate + 'T00:00:00Z');
+        at.setUTCHours(orig && !isNaN(orig) ? orig.getUTCHours() : 14, orig && !isNaN(orig) ? orig.getUTCMinutes() : 0, 0, 0);
+        autoISO = at.toISOString();
+      } else officePending = true;
+    } catch (_) { officePending = true; }
+  }
+
+  const tag = officePending ? ' · OFFICE: find a day + call the customer' : '';
+  const note = `Rolled by ${ctx.profile?.name || 'tech'}: ${reason}${returnDate ? ` · wants ~${returnDate}` : ''}${tag}`;
+  const patch = autoISO
+    ? { scheduled_at: autoISO, status: 'scheduled', enroute_at: null, started_at: null, notes: note }
+    : { scheduled_at: null, status: 'scheduled', enroute_at: null, started_at: null, notes: note }; // unscheduled → office tray
+  let { error } = await ctx.sb.from('jobs').update(patch).eq('id', ctx.job.id);
+  if (error && /notes|column|schema cache/i.test(error.message || '')) { const { notes, ...p2 } = patch; ({ error } = await ctx.sb.from('jobs').update(p2).eq('id', ctx.job.id)); }
   if (error) return { ok: false, msg: error.message };
-  await pingOffice(ctx, 'job.rollover', `📆 **Rolled over** — ${custName(ctx.job)}${ctx.job.job_number ? ` · job ${ctx.job.job_number}` : ''} moved to ${next.toLocaleDateString()} (same job, parts & history kept)${n ? `: ${n}` : ''}.`, { to: next.toISOString(), note: n });
+  await pingOffice(ctx, 'job.rollover', autoISO
+    ? `📆 **Rolled** — ${custName(ctx.job)}${ctx.job.job_number ? ` · job ${ctx.job.job_number}` : ''} → ${new Date(autoISO).toLocaleDateString()} (tech was open that day): ${reason}`
+    : `📥 **Roll — OFFICE PENDING** — ${custName(ctx.job)}${ctx.job.job_number ? ` · job ${ctx.job.job_number}` : ''} needs a day${returnDate ? ` (~${returnDate})` : ''} — find a slot + call the customer: ${reason}`,
+    { to: autoISO, returnDate, reason, officePending });
   revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/my-day'); revalidatePath('/board');
   return { ok: true, msg: `Rolled to ${next.toLocaleDateString()} — same job, parts & history kept.` };
 }
