@@ -289,7 +289,8 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
     return (
       <div draggable={canAssign} onDragStart={canAssign ? (e) => dragStart(e, j.id) : undefined}
         onClick={() => setSel(j)} onContextMenu={(e) => openMenu(e, j)}
-        className="card" style={{ borderLeft: `3px solid ${pr ? pr.color : (j.techId ? ACCENT : 'var(--red)')}`, cursor: 'pointer', padding: '10px 12px' }}>
+        className={`card${j.rollPending ? ' cb-blink-red' : ''}`} style={{ borderLeft: `3px solid ${j.rollPending ? 'var(--red)' : (pr ? pr.color : (j.techId ? ACCENT : 'var(--red)'))}`, cursor: 'pointer', padding: '10px 12px' }}>
+        {j.rollPending && <div style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--red)', marginBottom: 4, letterSpacing: '.04em' }}>🔁 ROLLED · SCHEDULE + CALL CUSTOMER</div>}
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
           <span style={{ fontWeight: 700, fontSize: 13 }}>{pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.dns && <span title="Do not service">🚫 </span>}{j.member && <span title="Member">⭐ </span>}{j.mustTell && <span title={j.mustTell}>🚨 </span>}{j.customer}</span>
           <span className="muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{j.scheduledISO ? fmtTime(j.scheduledISO) : 'no time'}</span>

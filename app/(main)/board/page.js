@@ -49,7 +49,7 @@ export default async function Board({ searchParams }) {
   const dayFilter = `and(scheduled_at.gte.${startISO},scheduled_at.lt.${endISO}),scheduled_at.is.null`;
 
   const run = (extra) => sb.from('jobs')
-    .select('id, status, priority, scheduled_at, tech_id' + extra + ', customers(name, address, phone), techs(name)')
+    .select('id, status, priority, scheduled_at, tech_id, notes' + extra + ', customers(name, address, phone), techs(name)')
     .or(dayFilter)
     .order('scheduled_at', { ascending: true });
   let res = await run(', job_number, job_type, amount, tech_name, duration_min, customer_promise, access_notes, sold_scope, must_tell_tech, csr');
@@ -111,6 +111,8 @@ export default async function Board({ searchParams }) {
       member: memberNames.has((((j.customers && j.customers.name) || '')).trim().toLowerCase()),
       dns: dnsNames.has((((j.customers && j.customers.name) || '')).trim().toLowerCase()),
       mustTell: j.must_tell_tech || '', csr: j.csr || '', promise: j.customer_promise || '', access: j.access_notes || '', scope: j.sold_scope || '',
+      // 🔁 Roll that went OFFICE PENDING (tech was booked) — needs a day + a customer call. Blinks in the tray.
+      rollPending: !j.scheduled_at && /OFFICE:\s*find a day|Rolled by/i.test(j.notes || ''),
     };
     if (j.tech_id && when) gridJobs.push(base);
     else tray.push(base);
