@@ -1,8 +1,13 @@
 import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireRole } from '@/lib/guard';
+import { can } from '@/lib/roles';
+import { canSeeCost } from '@/lib/pricebookEngine';
 import Maintenance from './Maintenance';
 import TruckScan from './TruckScan';
+import IdentifyClient from '../identify/IdentifyClient';
+import AddTool from '../tools/AddTool';
+import ToolRemoveBtn from './ToolRemoveBtn';
 
 export const dynamic = 'force-dynamic';
 
@@ -103,11 +108,20 @@ export default async function MyTruck({ searchParams }) {
   const shopLabel = (k) => ({ richmond: 'Richmond', lexington: 'Lexington' }[k] || (k.charAt(0).toUpperCase() + k.slice(1)));
 
   // 🚐 My Truck sub-tabs (gold pane-tools: My Van · Truck-Wide Search · Shop Inventory · My Tools · Maintenance).
-  const sub = ['search', 'shop', 'tools', 'maint'].includes(searchParams?.sub) ? searchParams.sub : 'van';
+  const sub = ['search', 'shop', 'tools', 'maint', 'id'].includes(searchParams?.sub) ? searchParams.sub : 'van';
   const techQ = role === 'tech' ? '' : `tech=${encodeURIComponent(detailTech)}&`;
   const subHref = (s) => `/my-truck?${techQ}sub=${s}`;
   const lowParts = parts.filter(isLow);
-  const SUBS = [['van', '🚐 My Van'], ['search', '🔦 Find a Part'], ['shop', '🏪 Shop'], ['tools', '🔧 My Tools'], ['maint', '🛠 Maintenance']];
+  const SUBS = [['van', '🚐 My Van'], ['search', '🔦 Find a Part'], ['shop', '🏪 Shop'], ['tools', '🔧 My Tools'], ['id', '🔍 ID Part'], ['maint', '🛠 Maintenance']];
+
+  // 🔍 ID Part sub-tab needs the tech's active job (so a found fix drops onto it) + whether they see cost.
+  let activeJob = null;
+  if (profile?.tech_id) {
+    try { const { data } = await sb.from('jobs').select('id, job_number').eq('tech_id', profile.tech_id).in('status', ['enroute', 'on_site', 'onsite', 'rolling']).order('scheduled_at', { ascending: true }).limit(1).maybeSingle(); activeJob = data || null; } catch (_) {}
+  }
+  const showCost = canSeeCost(role);
+  // Add / remove tools = manager-controlled (Chris W / Ronnie / owner), per the shop-sheet tool design.
+  const canManageTools = can(role, 'manageInventory') || can(role, 'manageUsers');
 
   return (
     <div className="wrap" style={{ maxWidth: 880 }}>
@@ -203,19 +217,25 @@ export default async function MyTruck({ searchParams }) {
           <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>Find / loan a tool</div><div className="muted" style={{ fontSize: 12 }}>Every van, shop &amp; vendor — nearest first, route + reserve.</div></div>
           <span style={{ color: 'var(--amber)', fontWeight: 800 }}>›</span>
         </Link>
+        {/* Manager-controlled: add a tool to the roster (issue) — per the shop-sheet tool design. */}
+        {canManageTools && <div style={{ marginTop: 10 }}><AddTool /></div>}
+
         <Section title={`🔧 Tools issued to ${role === 'tech' ? 'you' : detailTech} · ${money(toolVal)}`}>
-          {!toolList.length && <div className="card"><span className="muted">No tools issued yet.</span></div>}
+          {!toolList.length && <div className="card"><span className="muted">No tools issued yet{canManageTools ? ' — use ＋ Add a tool above.' : '.'}</span></div>}
           {toolList.length > 0 && (
             <div className="card" style={{ padding: 0 }}>
               {toolList.map((t) => {
                 const loaned = /loan/i.test(String(t.status || ''));
+                const photo = t.condition_photo_url || null;
                 return (
-                  <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
+                  <div key={t.id} style={{ display: 'grid', gridTemplateColumns: `${photo ? '38px ' : ''}1fr auto${canManageTools ? ' auto' : ''}`, gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
+                    {photo && <img src={photo} alt="" title="Condition photo on file" style={{ width: 38, height: 38, borderRadius: 5, objectFit: 'cover', border: '1px solid var(--border)' }} />}
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
                       <div className="muted" style={{ fontSize: 10, fontFamily: 'monospace' }}>{[t.serial && 'SN: ' + t.serial, t.mfg, t.year, t.value && money(t.value)].filter(Boolean).join(' · ')}</div>
                     </div>
                     <span style={{ fontSize: 10, fontWeight: 700, color: loaned ? 'var(--red)' : 'var(--green-bright)', whiteSpace: 'nowrap' }}>{loaned ? '🔄 LOANED' : '✓ ON VAN'}</span>
+                    {canManageTools && <ToolRemoveBtn toolId={t.id} toolName={t.name} />}
                   </div>
                 );
               })}
@@ -223,6 +243,13 @@ export default async function MyTruck({ searchParams }) {
           )}
         </Section>
       </>)}
+
+      {/* ───────── 🔍 ID PART (SerpAPI Lens part identifier — moved into the Truck tab per Devin) ───────── */}
+      {sub === 'id' && (
+        <div style={{ marginTop: 4 }}>
+          <IdentifyClient activeJobId={activeJob?.id || null} activeJobNumber={activeJob?.job_number || null} showCost={showCost} />
+        </div>
+      )}
 
       {/* ───────── MAINTENANCE ───────── */}
       {sub === 'maint' && <Maintenance maint={maint} serviceLog={serviceLog} oil={oil} health={health} tech={role === 'tech' ? '' : detailTech} />}
