@@ -59,11 +59,11 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
   const quiet = (onSite || atHouse) && !peek && !cust;
   // Hide the global office "Sheetz" topbar — the cockpit owns its own chrome (no office clutter).
   useEffect(() => {
+    // Add the cockpit chrome class but DON'T pin the theme — the field app defaults to LIGHT (matches the
+    // HTML), and the tech can flip to dark with the toggle (persisted via the theme cookie in layout.js).
     const el = document.documentElement;
-    const prev = el.getAttribute('data-theme');
     el.classList.add('cb-tech');
-    el.setAttribute('data-theme', 'dark'); // the field cockpit is designed dark — pin it (the neon ribbon/board only read right dark)
-    return () => { el.classList.remove('cb-tech'); if (prev) el.setAttribute('data-theme', prev); else el.removeAttribute('data-theme'); };
+    return () => { el.classList.remove('cb-tech'); };
   }, []);
   // Geofence: while on an active job with coords, watch device location and auto-quiet within ~150m.
   useEffect(() => {
@@ -131,6 +131,7 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
         )}
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          {!cust && <ThemeToggle />}
           {canOffice && (
             <button onClick={() => switchShell('office')} title="Switch to the office app" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: 'var(--fg-2)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 14, padding: '5px 11px', cursor: 'pointer' }}>
               💼 Office
@@ -185,7 +186,7 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,179,0,0.12)', padding: '4px 10px', borderRadius: 14, border: '1px solid var(--amber)' }}>
             ⚡ <span style={{ color: 'var(--amber)', fontWeight: 800, fontSize: 11, textTransform: 'uppercase' }}>Power Plunger Hour</span><span style={{ color: '#ffeb3b', fontWeight: 800 }}>{game.powerHour}m</span>
           </span>
-          <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>👑
+          <span style={{ marginLeft: 'auto', paddingRight: 6, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>👑
             <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
               <span style={{ color: 'var(--amber)', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Plunger · Lvl {game.level}</span>
               <span style={{ background: 'var(--surface-2)', width: 80, height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 2 }}><span style={{ display: 'block', width: `${game.levelPct}%`, height: '100%', background: 'var(--amber)' }} /></span>

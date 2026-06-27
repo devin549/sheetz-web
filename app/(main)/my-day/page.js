@@ -14,9 +14,11 @@ const DAILY_REVENUE_GOAL = 1500; // default tech daily revenue goal for "vs goal
 // Always read fresh (no static caching) — this is live job data.
 export const dynamic = 'force-dynamic';
 
+// CB runs on Eastern time. The Vercel server clock is UTC, so after ~8pm ET "new Date()" already reads
+// tomorrow — compute "today" in CB's timezone so the date + which jobs count as today are correct.
+const CB_TZ = 'America/New_York';
 function todayKey() {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: CB_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
 function fmtTime(iso) {
   if (!iso) return '—';
@@ -128,7 +130,7 @@ export default async function MyDay({ searchParams }) {
     return a;
   }, { onsite: 0, upcoming: 0, target: 0 });
 
-  const dateLabel = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  const dateLabel = new Date().toLocaleDateString('en-US', { timeZone: CB_TZ, weekday: 'short', month: 'short', day: 'numeric' });
 
   // ── Tabs (HTML My Day): 🔥 Today · 📜 My Jobs (30d) · 💰 Today $ ──
   const tab = ['jobs', 'money', 'week'].includes(searchParams?.tab) ? searchParams.tab : 'today';
@@ -163,7 +165,8 @@ export default async function MyDay({ searchParams }) {
     const paySoFar = doneToday.reduce((s, j) => s + payDollars(j), 0);
     const justJob = moneyStats.breakdown.find((j) => isLive(j)) || doneToday[doneToday.length - 1] || null;
     const justNow = justJob ? { amount: Number(justJob.amount) || 0, name: (justJob.customers || {}).name || 'Customer', jobNumber: justJob.job_number ? `#${justJob.job_number}` : '' } : null;
-    const vsGoalPct = DAILY_REVENUE_GOAL > 0 ? Math.round((moneyStats.revenue / DAILY_REVENUE_GOAL - 1) * 100) : null;
+    // vs-goal only makes sense for ONE tech against their daily goal — not the owner's all-techs total.
+    const vsGoalPct = (!seeAll && DAILY_REVENUE_GOAL > 0) ? Math.round((moneyStats.revenue / DAILY_REVENUE_GOAL - 1) * 100) : null;
     moneyProps = {
       revenue: moneyStats.revenue, justNow, paySoFar, payKnown,
       jobsDone: moneyStats.count, avgTicket: moneyStats.avg, vsGoalPct, memberships: moneyStats.members,

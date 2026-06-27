@@ -19,8 +19,9 @@ export const viewport = {
 };
 
 export default function RootLayout({ children }) {
-  // Read the saved theme server-side so there's no flash of the wrong mode.
-  const theme = cookies().get('theme')?.value === 'light' ? 'light' : 'dark';
+  // Default to LIGHT (matches the HTML cockpit); only go dark if the tech has explicitly chosen it.
+  // Read server-side so there's no flash of the wrong mode.
+  const theme = cookies().get('theme')?.value === 'dark' ? 'dark' : 'light';
   return (
     <html lang="en" data-theme={theme} className={`${inter.variable} ${mono.variable}`}>
       <body>
