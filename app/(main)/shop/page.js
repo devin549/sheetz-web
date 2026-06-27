@@ -3,6 +3,7 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import ShopCounter from './ShopCounter';
 import AddPart from './AddPart';
+import { priceStats } from '@/lib/barcodePricing';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +49,25 @@ export default async function Shop() {
   });
   const purchaseList = Object.values(byPart).sort((a, b) => b.order - a.order);
 
+  // 🏷 Cheapest vendor per reorder part — match shop part → pricebook item (by sku, else name) → its
+  // barcode prices → the cheapest. So purchasing knows who to buy from. Best-effort (empty before mig 120/121).
+  try {
+    const skus = [...new Set(purchaseList.map((r) => r.sku).filter(Boolean))];
+    const names = [...new Set(purchaseList.map((r) => r.name).filter(Boolean))];
+    const items = [];
+    if (skus.length) { const { data } = await sb.from('pricebook_items').select('id, sku, name, customer_name').in('sku', skus); (data || []).forEach((x) => items.push(x)); }
+    if (names.length) { const { data } = await sb.from('pricebook_items').select('id, sku, name, customer_name').in('name', names); (data || []).forEach((x) => { if (!items.find((y) => y.id === x.id)) items.push(x); }); }
+    if (items.length) {
+      const { data: bc } = await sb.from('pricebook_barcodes').select('item_id, barcode, vendor_seller, unit_price, vendor_url').in('item_id', items.map((i) => i.id)).gt('unit_price', 0);
+      const byItem = {}; (bc || []).forEach((b) => { (byItem[b.item_id] = byItem[b.item_id] || []).push(b); });
+      const cheapestFor = (it) => priceStats(byItem[it.id] || []).cheapest;
+      purchaseList.forEach((r) => {
+        const it = items.find((x) => (r.sku && x.sku && x.sku.toLowerCase() === String(r.sku).toLowerCase()) || (x.name === r.name) || (x.customer_name === r.name));
+        if (it) { const ch = cheapestFor(it); if (ch) r.cheapest = ch; }
+      });
+    }
+  } catch (_) {}
+
   // RESTOCK-RUN VIEW — which truck needs what (pack a run per van).
   const byTruck = {};
   low.forEach((p) => { (byTruck[p.tech_name || 'Unassigned'] = byTruck[p.tech_name || 'Unassigned'] || []).push(p); });
@@ -84,8 +104,16 @@ export default async function Shop() {
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700 }}>{r.name}</div>
                   <div className="muted" style={{ fontSize: 11 }}>{r.sku ? r.sku + ' · ' : ''}low on {r.vans} van{r.vans > 1 ? 's' : ''}</div>
+                  {r.cheapest && (
+                    <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, marginTop: 2 }}>
+                      ★ cheapest: {r.cheapest.url ? <a href={r.cheapest.url} target="_blank" rel="noreferrer" style={{ color: 'var(--green)' }}>{r.cheapest.vendor}</a> : r.cheapest.vendor} · {money(r.cheapest.price)}/{r.unit}
+                    </div>
+                  )}
                 </div>
-                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', whiteSpace: 'nowrap' }}>order ~{r.order} {r.unit}</span>
+                <span style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', display: 'block' }}>order ~{r.order} {r.unit}</span>
+                  {r.cheapest && <span style={{ fontSize: 11, color: 'var(--fg-3)' }}>≈ {money(r.cheapest.price * r.order)}</span>}
+                </span>
               </div>
             ))}
           </div>

@@ -5,6 +5,7 @@
 // baked-in material cost. One item can carry MANY barcodes (Everbilt@HD, Oatey@Lowe's — all one part).
 import { useState, useMemo, useTransition } from 'react';
 import { loadServiceParts, recordPartLink, setLinkStatus, refreshVendorPrice, addBarcode, removeBarcode } from './actions';
+import { priceStats } from '@/lib/barcodePricing';
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const inp = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 7, padding: '8px 10px', fontSize: 13 };
@@ -106,28 +107,44 @@ export default function PartsClassify({ items = [] }) {
 function Barcodes({ itemId, list = [], onChange }) {
   const [code, setCode] = useState('');
   const [vendor, setVendor] = useState('');
+  const [price, setPrice] = useState('');
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
-  const add = () => start(async () => { const r = await addBarcode(itemId, code.trim(), vendor.trim(), ''); if (r.ok) { setCode(''); setVendor(''); setOpen(false); onChange && onChange(); } });
+  const add = () => start(async () => { const r = await addBarcode(itemId, code.trim(), vendor.trim(), '', price.trim()); if (r.ok) { setCode(''); setVendor(''); setPrice(''); setOpen(false); onChange && onChange(); } });
   const del = (id) => start(async () => { const r = await removeBarcode(id); if (r.ok) onChange && onChange(); });
+  const stats = priceStats(list);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-      {list.map((b) => (
-        <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, padding: '2px 7px', borderRadius: 7, background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-          🔖 {b.barcode}{b.vendor_seller ? <span className="muted">· {b.vendor_seller}</span> : null}
-          <button onClick={() => del(b.id)} disabled={pending} style={{ background: 'none', border: 'none', color: 'var(--fg-3)', cursor: 'pointer', fontSize: 12, padding: 0 }}>×</button>
-        </span>
-      ))}
-      {!open ? (
-        <button onClick={() => setOpen(true)} className="pill" style={{ cursor: 'pointer', fontSize: 10.5 }}>＋ barcode</button>
-      ) : (
-        <span style={{ display: 'inline-flex', gap: 4 }}>
-          <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="scan / type UPC" style={{ ...inp, width: 140, padding: '5px 8px', fontSize: 11.5 }} autoFocus />
-          <input value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="vendor" style={{ ...inp, width: 90, padding: '5px 8px', fontSize: 11.5 }} />
-          <button onClick={add} disabled={pending || !code.trim()} className="pill" style={{ cursor: 'pointer', color: 'var(--green)' }}>{pending ? '…' : 'save'}</button>
-          <button onClick={() => setOpen(false)} className="pill" style={{ cursor: 'pointer', color: 'var(--fg-3)' }}>✕</button>
-        </span>
+    <div style={{ marginTop: 6 }}>
+      {/* avg · cheapest · by-vendor rollup */}
+      {stats.count > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 11, marginBottom: 5 }}>
+          <span className="muted">avg <strong style={{ color: 'var(--fg-1)' }}>{money(stats.avg)}</strong> across {stats.count}</span>
+          {stats.cheapest && <span style={{ color: 'var(--green)', fontWeight: 700 }}>★ cheapest {stats.cheapest.vendor} {money(stats.cheapest.price)}</span>}
+          {stats.byVendor.length > 1 && <span className="muted">· {stats.byVendor.map((v) => `${v.vendor} ${money(v.price)}`).join(' · ')}</span>}
+        </div>
       )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        {list.map((b) => {
+          const isCheap = stats.cheapest && Number(b.unit_price) === stats.cheapest.price && (b.vendor_seller || 'Vendor').trim() === stats.cheapest.vendor;
+          return (
+            <span key={b.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, padding: '2px 7px', borderRadius: 7, background: 'var(--surface-1)', border: `1px solid ${isCheap ? 'var(--green)' : 'var(--border)'}` }}>
+              {isCheap ? '★' : '🔖'} {b.barcode}{b.vendor_seller ? <span className="muted">· {b.vendor_seller}</span> : null}{Number(b.unit_price) > 0 ? <span style={{ color: 'var(--green)' }}>{money(b.unit_price)}</span> : null}
+              <button onClick={() => del(b.id)} disabled={pending} style={{ background: 'none', border: 'none', color: 'var(--fg-3)', cursor: 'pointer', fontSize: 12, padding: 0 }}>×</button>
+            </span>
+          );
+        })}
+        {!open ? (
+          <button onClick={() => setOpen(true)} className="pill" style={{ cursor: 'pointer', fontSize: 10.5 }}>＋ barcode</button>
+        ) : (
+          <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+            <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="scan / type UPC" style={{ ...inp, width: 130, padding: '5px 8px', fontSize: 11.5 }} autoFocus />
+            <input value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="vendor" style={{ ...inp, width: 86, padding: '5px 8px', fontSize: 11.5 }} />
+            <input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" placeholder="$ price" style={{ ...inp, width: 64, padding: '5px 8px', fontSize: 11.5 }} />
+            <button onClick={add} disabled={pending || !code.trim()} className="pill" style={{ cursor: 'pointer', color: 'var(--green)' }}>{pending ? '…' : 'save'}</button>
+            <button onClick={() => setOpen(false)} className="pill" style={{ cursor: 'pointer', color: 'var(--fg-3)' }}>✕</button>
+          </span>
+        )}
+      </div>
     </div>
   );
 }
