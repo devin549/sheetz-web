@@ -19,12 +19,12 @@ export async function emailMeDoc(which) {
   const to = user.email;
   if (!to) return { ok: false, msg: 'No email on your account.' };
   if (!isEmailConfigured) return { ok: false, msg: 'Email isn’t set up yet — ask the office for a copy.' };
-  const doc = which === 'nda'
-    ? { name: 'Non-Disclosure Agreement', url: process.env.NDA_URL }
-    : { name: 'Employee Handbook', url: process.env.HANDBOOK_URL };
-  const body = doc.url
-    ? `<p>Here’s the CB <strong>${doc.name}</strong> you’re signing in the app — please read the full document, then sign.</p><p><a href="${doc.url}" style="display:inline-block;background:#caa14a;color:#1a1206;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:700">📖 Open the ${doc.name}</a></p>`
-    : `<p>You asked for a copy of the CB <strong>${doc.name}</strong>. The office will email you the current signed copy shortly.</p>`;
+  const rel = which === 'nda' ? (process.env.NDA_URL || '/nda') : (process.env.HANDBOOK_URL || '/handbook');
+  const origin = (process.env.APP_URL || 'https://tech.sheetzz.com').replace(/\/$/, '');
+  const url = /^https?:\/\//.test(rel) ? rel : `${origin}${rel}`;
+  const name = which === 'nda' ? 'Non-Disclosure Agreement' : 'Employee Handbook';
+  const body = `<p>Here’s the CB <strong>${name}</strong> you’re signing in the app — please read the full document, then sign.</p><p><a href="${url}" style="display:inline-block;background:#caa14a;color:#1a1206;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:700">📖 Open the ${name}</a></p>`;
+  const doc = { name };
   const r = await sendOne({ to, subject: `Your copy — CB ${doc.name}`, html: `${body}<p style="color:#888;font-size:12px;margin-top:18px">Clog Busterz Plumbing · keep this for your records.</p>` });
   if (!r || !r.ok) return { ok: false, msg: 'Could not send — try again, or ask the office.' };
   return { ok: true, msg: `Sent to ${to}.` };

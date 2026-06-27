@@ -66,7 +66,7 @@ export default async function MainLayout({ children }) {
   // Handbook + NDA + roast rating. Owner/GM/admin are exempt (they manage the policy, not gated by it).
   if (shell === 'tech' && !can(role, 'manageUsers')) {
     const acks = await loadOnboarding(getSupabaseAdmin(), user.id, profile);
-    if (!onboardingComplete(profile, acks)) return <Onboarding name={name} handbookUrl={process.env.HANDBOOK_URL || ''} ndaUrl={process.env.NDA_URL || ''} />;
+    if (!onboardingComplete(profile, acks)) return <Onboarding name={name} handbookUrl={process.env.HANDBOOK_URL || '/handbook'} ndaUrl={process.env.NDA_URL || '/nda'} />;
   }
 
   // Field shell = iPad cockpit chrome (no office sidebar/topbar). Office/Shop = the desktop sidebar.
