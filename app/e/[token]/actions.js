@@ -71,8 +71,21 @@ export async function approveEstimate(token, opts = {}) {
   try {
     await sb.from('pricebook_estimates').update({ status: 'approved', responded_at: nowISO, approved_name: name, approval_method: 'link', approver_ip: ip, approver_user_agent: ua, consent_text: consentText }).eq('id', est.id);
   } catch (_) { await sb.from('pricebook_estimates').update({ status: 'approved', responded_at: nowISO }).eq('id', est.id); }
+  // If the original job is already closed (a later/remote approval), spin up a scheduled high-priority
+  // work order so dispatch books the approved work. If it's still open, the tech does it on this visit.
+  let scheduled = null;
+  try {
+    const { data: job } = await sb.from('jobs').select('id, status, customer_id, tech_id, job_type').eq('id', est.job_id).maybeSingle();
+    const closed = job && /done|complete|closed|cancel/.test(String(job.status || '').toLowerCase());
+    if (closed) {
+      const base = { customer_id: job.customer_id || est.customer_id, tech_id: job.tech_id || est.tech_id, job_type: `Approved: ${est.headline || job.job_type || 'estimate'}`.slice(0, 120), status: 'scheduled', priority: 'high', notes: `Customer approved estimate (${est.token}) for $${total.toLocaleString()} — schedule the work.` };
+      let ins = await sb.from('jobs').insert(base).select('id, job_number').single();
+      if (ins.error) { const { priority, notes, ...core } = base; ins = await sb.from('jobs').insert(core).select('id, job_number').single(); }
+      if (!ins.error) scheduled = ins.data;
+    }
+  } catch (_) {}
   await logEvent(sb, est, 'approved', { method: 'link', actor: name, actorRole: 'customer', ip, ua, amount: total, note: consentText });
-  await notify(`✅ **Estimate APPROVED — signed proof captured** · ${name}${est.job_number ? ` · job ${est.job_number}` : ''} approved ${'$' + total.toLocaleString()} on their device (${est.tech_name || ''}).`);
+  await notify(`✅ **Estimate APPROVED — signed proof captured** · ${name}${est.job_number ? ` · job ${est.job_number}` : ''} approved ${'$' + total.toLocaleString()} on their device (${est.tech_name || ''}).${scheduled ? ` 📆 New work order created — SCHEDULE IT.` : ''}`);
   revalidatePath(`/e/${est.token}`);
   return { ok: true, msg: 'Approved! Your tech will get you scheduled.', approvedName: name };
 }
