@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireRole } from '@/lib/guard';
 import Maintenance from './Maintenance';
+import TruckScan from './TruckScan';
 
 export const dynamic = 'force-dynamic';
 
@@ -101,85 +102,130 @@ export default async function MyTruck({ searchParams }) {
   } catch (_) {}
   const shopLabel = (k) => ({ richmond: 'Richmond', lexington: 'Lexington' }[k] || (k.charAt(0).toUpperCase() + k.slice(1)));
 
-  return (
-    <div className="wrap">
-      <div className="h1">🚐 {role === 'tech' ? 'My Truck' : detailTech + '’s Truck'}</div>
-      <p className="muted">{role === 'owner' ? <Link href="/my-truck">← back to the fleet</Link> : 'Your van parts + tools issued to you.'}</p>
+  // 🚐 My Truck sub-tabs (gold pane-tools: My Van · Truck-Wide Search · Shop Inventory · My Tools · Maintenance).
+  const sub = ['search', 'shop', 'tools', 'maint'].includes(searchParams?.sub) ? searchParams.sub : 'van';
+  const techQ = role === 'tech' ? '' : `tech=${encodeURIComponent(detailTech)}&`;
+  const subHref = (s) => `/my-truck?${techQ}sub=${s}`;
+  const lowParts = parts.filter(isLow);
+  const SUBS = [['van', '🚐 My Van'], ['search', '🔦 Find a Part'], ['shop', '🏪 Shop'], ['tools', '🔧 My Tools'], ['maint', '🛠 Maintenance']];
 
-      <div className="card card-amber" style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-        <div><div style={{ fontSize: 22, fontWeight: 800, color: 'var(--amber)' }}>{parts.length}</div><div className="muted" style={{ fontSize: 11 }}>parts on van</div></div>
-        <div><div style={{ fontSize: 22, fontWeight: 800, color: lowCount ? 'var(--red)' : 'var(--green)' }}>{lowCount}</div><div className="muted" style={{ fontSize: 11 }}>low stock</div></div>
-        <div><div style={{ fontSize: 22, fontWeight: 800 }}>{toolList.length}</div><div className="muted" style={{ fontSize: 11 }}>tools issued</div></div>
-        <div><div style={{ fontSize: 22, fontWeight: 800, color: 'var(--green-bright)' }}>{money(toolVal)}</div><div className="muted" style={{ fontSize: 11 }}>tools value</div></div>
+  return (
+    <div className="wrap" style={{ maxWidth: 880 }}>
+      <div className="h1">🚐 {role === 'tech' ? 'My Truck' : detailTech + '’s Truck'}</div>
+      <p className="muted">{role === 'owner' ? <Link href="/my-truck">← back to the fleet</Link> : 'Your van parts, tools & the shops — nearest part is one tap away.'}</p>
+
+      {/* sub-tab strip */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', overflowX: 'auto', margin: '4px 0 14px' }}>
+        {SUBS.map(([s, label]) => (
+          <Link key={s} href={subHref(s)} className="pill" style={{ textDecoration: 'none', whiteSpace: 'nowrap', fontWeight: sub === s ? 800 : 600, background: sub === s ? 'var(--amber)' : 'var(--surface-2)', color: sub === s ? '#1a1206' : 'var(--fg-2)', border: '1px solid var(--border)' }}>
+            {label}{s === 'van' && lowCount ? <span style={{ marginLeft: 5, color: sub === s ? '#7a1a1a' : 'var(--red)', fontWeight: 800 }}>{lowCount}⚠</span> : null}
+          </Link>
+        ))}
       </div>
 
-      {/* Tools lives under My Truck (matches the HTML rail). The full find-a-tool/part locator opens here. */}
-      <Link href="/tools" className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: 'inherit', marginTop: 10, borderLeft: '3px solid var(--amber)' }}>
-        <span style={{ fontSize: 26 }}>🔧</span>
-        <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>Find a tool or part</div><div className="muted" style={{ fontSize: 12 }}>Search every van, shop &amp; vendor — nearest first, route + reserve.</div></div>
-        <span style={{ color: 'var(--amber)', fontWeight: 800 }}>›</span>
-      </Link>
-
-      {/* 🔧 Maintenance — oil / health / docs / service log (HTML van pane). */}
-      <Maintenance maint={maint} serviceLog={serviceLog} oil={oil} health={health} tech={role === 'tech' ? '' : detailTech} />
-
-      {/* 🏪 Shop Inventory — what the shops have (read-only; the full locator does truck-wide search). */}
-      {Object.keys(shopStock).length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <h3 style={{ fontSize: 13, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '.05em', margin: 0, flex: 1 }}>🏪 Shop Inventory</h3>
-            <Link href="/tools" className="pill" style={{ fontSize: 10.5, color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>🔍 Truck-wide search →</Link>
-          </div>
-          {Object.entries(shopStock).map(([loc, items]) => (
-            <div key={loc} className="card" style={{ marginBottom: 8 }}>
-              <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>📍 {shopLabel(loc)} shop · {items.length} part{items.length === 1 ? '' : 's'}</div>
-              <div style={{ display: 'grid', gap: 3 }}>
-                {items.slice(0, 30).map((p, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '4px 0', borderTop: i ? '1px solid var(--border)' : 'none' }}>
-                    <span style={{ flex: 1, minWidth: 0 }}>{p.name}{p.bin ? <span className="muted" style={{ fontSize: 11 }}> · bin {p.bin}</span> : ''}</span>
-                    <span style={{ fontWeight: 700 }}>{Number(p.qty) || 0}</span>
-                  </div>
-                ))}
-                {items.length > 30 && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>+{items.length - 30} more — use truck-wide search.</div>}
-              </div>
-            </div>
-          ))}
+      {/* ───────── MY VAN ───────── */}
+      {sub === 'van' && (<>
+        <div className="card card-amber" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
+          <div><div style={{ fontSize: 22, fontWeight: 800, color: 'var(--amber)' }}>{parts.length}</div><div className="muted" style={{ fontSize: 10.5 }}>parts on van</div></div>
+          <div><div style={{ fontSize: 22, fontWeight: 800, color: lowCount ? 'var(--red)' : 'var(--green)' }}>{lowCount}</div><div className="muted" style={{ fontSize: 10.5 }}>low stock</div></div>
+          <div><div style={{ fontSize: 22, fontWeight: 800 }}>{toolList.length}</div><div className="muted" style={{ fontSize: 10.5 }}>tools issued</div></div>
+          <div><div style={{ fontSize: 22, fontWeight: 800, color: 'var(--green-bright)' }}>{money(toolVal)}</div><div className="muted" style={{ fontSize: 10.5 }}>tools value</div></div>
         </div>
-      )}
 
-      <Section title="🧰 Parts on the van">
-        {!parts.length && <div className="card"><span className="muted">No parts stocked yet.</span></div>}
-        {parts.length > 0 && (
-          <div className="card" style={{ padding: 0 }}>
-            {parts.map((p) => (
-              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 13 }}>{isLow(p) && <span className="alert-dot amber" aria-hidden="true" />}{p.name || p.sku}{p.bin ? <span className="muted" style={{ fontSize: 11 }}> · {p.bin}</span> : ''}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: isLow(p) ? 'var(--red)' : 'var(--fg-2)', whiteSpace: 'nowrap' }}>{Number(p.qty || 0)} {p.unit || 'ea'}{isLow(p) ? ' ⚠' : ''}</span>
+        <div style={{ marginTop: 10 }}><TruckScan /></div>
+
+        {lowParts.length > 0 && (
+          <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--red)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span className="alert-dot amber" aria-hidden="true" />
+              <strong style={{ fontSize: 13, color: 'var(--red)' }}>Low stock — {lowParts.length} to restock</strong>
+              <Link href={subHref('shop')} className="pill" style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>🏪 Restock →</Link>
+            </div>
+            <div className="muted" style={{ fontSize: 12 }}>{lowParts.slice(0, 8).map((p) => p.name || p.sku).join(', ')}{lowParts.length > 8 ? ` +${lowParts.length - 8} more` : ''}</div>
+          </div>
+        )}
+
+        <Section title="🧰 Parts on the van">
+          {!parts.length && <div className="card"><span className="muted">No parts stocked yet.</span></div>}
+          {parts.length > 0 && (
+            <div className="card" style={{ padding: 0 }}>
+              {parts.map((p) => (
+                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: 13 }}>{isLow(p) && <span className="alert-dot amber" aria-hidden="true" />}{p.name || p.sku}{p.bin ? <span className="muted" style={{ fontSize: 11 }}> · {p.bin}</span> : ''}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: isLow(p) ? 'var(--red)' : 'var(--fg-2)', whiteSpace: 'nowrap' }}>{Number(p.qty || 0)} {p.unit || 'ea'}{isLow(p) ? ' ⚠' : ''}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      </>)}
+
+      {/* ───────── FIND A PART (Google-Maps nearest locator) ───────── */}
+      {sub === 'search' && (<>
+        <TruckScan big />
+        <Link href="/tools" className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: 'inherit', marginTop: 10, borderLeft: '3px solid var(--amber)' }}>
+          <span style={{ fontSize: 26 }}>🗺️</span>
+          <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>Open the full locator</div><div className="muted" style={{ fontSize: 12 }}>Map of every van, shop &amp; vendor — ranked by drive time, with route + reserve.</div></div>
+          <span style={{ color: 'var(--amber)', fontWeight: 800 }}>›</span>
+        </Link>
+      </>)}
+
+      {/* ───────── SHOP INVENTORY ───────── */}
+      {sub === 'shop' && (
+        Object.keys(shopStock).length === 0
+          ? <div className="card"><span className="muted">No shop stock loaded yet. Use 🔦 Find a Part to search every source.</span></div>
+          : <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <h3 style={{ fontSize: 13, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '.05em', margin: 0, flex: 1 }}>🏪 Shop Inventory</h3>
+              <Link href={subHref('search')} className="pill" style={{ fontSize: 10.5, color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>🔦 Find nearest →</Link>
+            </div>
+            {Object.entries(shopStock).map(([loc, items]) => (
+              <div key={loc} className="card" style={{ marginBottom: 8 }}>
+                <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>📍 {shopLabel(loc)} shop · {items.length} part{items.length === 1 ? '' : 's'}</div>
+                <div style={{ display: 'grid', gap: 3 }}>
+                  {items.slice(0, 40).map((p, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '4px 0', borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                      <span style={{ flex: 1, minWidth: 0 }}>{p.name}{p.bin ? <span className="muted" style={{ fontSize: 11 }}> · bin {p.bin}</span> : ''}</span>
+                      <span style={{ fontWeight: 700 }}>{Number(p.qty) || 0}</span>
+                    </div>
+                  ))}
+                  {items.length > 40 && <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>+{items.length - 40} more — use 🔦 Find a Part.</div>}
+                </div>
               </div>
             ))}
-          </div>
-        )}
-      </Section>
+          </>
+      )}
 
-      <Section title="🔧 Tools issued">
-        {!toolList.length && <div className="card"><span className="muted">No tools issued yet.</span></div>}
-        {toolList.length > 0 && (
-          <div className="card" style={{ padding: 0 }}>
-            {toolList.map((t) => {
-              const loaned = /loan/i.test(String(t.status || ''));
-              return (
-                <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
-                    <div className="muted" style={{ fontSize: 10, fontFamily: 'monospace' }}>{[t.serial && 'SN: ' + t.serial, t.mfg, t.year, t.value && money(t.value)].filter(Boolean).join(' · ')}</div>
+      {/* ───────── MY TOOLS (custody) ───────── */}
+      {sub === 'tools' && (<>
+        <Link href="/tools" className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: 'inherit', borderLeft: '3px solid var(--amber)' }}>
+          <span style={{ fontSize: 24 }}>🔧</span>
+          <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>Find / loan a tool</div><div className="muted" style={{ fontSize: 12 }}>Every van, shop &amp; vendor — nearest first, route + reserve.</div></div>
+          <span style={{ color: 'var(--amber)', fontWeight: 800 }}>›</span>
+        </Link>
+        <Section title={`🔧 Tools issued to ${role === 'tech' ? 'you' : detailTech} · ${money(toolVal)}`}>
+          {!toolList.length && <div className="card"><span className="muted">No tools issued yet.</span></div>}
+          {toolList.length > 0 && (
+            <div className="card" style={{ padding: 0 }}>
+              {toolList.map((t) => {
+                const loaned = /loan/i.test(String(t.status || ''));
+                return (
+                  <div key={t.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
+                      <div className="muted" style={{ fontSize: 10, fontFamily: 'monospace' }}>{[t.serial && 'SN: ' + t.serial, t.mfg, t.year, t.value && money(t.value)].filter(Boolean).join(' · ')}</div>
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: loaned ? 'var(--red)' : 'var(--green-bright)', whiteSpace: 'nowrap' }}>{loaned ? '🔄 LOANED' : '✓ ON VAN'}</span>
                   </div>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: loaned ? 'var(--red)' : 'var(--green-bright)', whiteSpace: 'nowrap' }}>{loaned ? '🔄 LOANED' : '✓ ON VAN'}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Section>
+                );
+              })}
+            </div>
+          )}
+        </Section>
+      </>)}
+
+      {/* ───────── MAINTENANCE ───────── */}
+      {sub === 'maint' && <Maintenance maint={maint} serviceLog={serviceLog} oil={oil} health={health} tech={role === 'tech' ? '' : detailTech} />}
     </div>
   );
 }
