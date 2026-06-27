@@ -5,8 +5,30 @@ import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { POLICY_VERSIONS } from '@/lib/onboarding';
+import { sendOne, isEmailConfigured } from '@/lib/email';
 
 const LEVELS = ['PG', 'PG-13', 'R'];
+
+// Email the signing employee a copy of the Handbook / NDA so they can actually READ what they're agreeing
+// to (and keep a copy). Sends a link to the hosted doc (HANDBOOK_URL / NDA_URL in Vercel). Compliance: a
+// signature on a doc you couldn't read is weak — this closes that.
+export async function emailMeDoc(which) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Not signed in.' };
+  const to = user.email;
+  if (!to) return { ok: false, msg: 'No email on your account.' };
+  if (!isEmailConfigured) return { ok: false, msg: 'Email isn’t set up yet — ask the office for a copy.' };
+  const doc = which === 'nda'
+    ? { name: 'Non-Disclosure Agreement', url: process.env.NDA_URL }
+    : { name: 'Employee Handbook', url: process.env.HANDBOOK_URL };
+  const body = doc.url
+    ? `<p>Here’s the CB <strong>${doc.name}</strong> you’re signing in the app — please read the full document, then sign.</p><p><a href="${doc.url}" style="display:inline-block;background:#caa14a;color:#1a1206;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:700">📖 Open the ${doc.name}</a></p>`
+    : `<p>You asked for a copy of the CB <strong>${doc.name}</strong>. The office will email you the current signed copy shortly.</p>`;
+  const r = await sendOne({ to, subject: `Your copy — CB ${doc.name}`, html: `${body}<p style="color:#888;font-size:12px;margin-top:18px">Clog Busterz Plumbing · keep this for your records.</p>` });
+  if (!r || !r.ok) return { ok: false, msg: 'Could not send — try again, or ask the office.' };
+  return { ok: true, msg: `Sent to ${to}.` };
+}
 const initials = (v) => String(v || '').trim().toUpperCase().slice(0, 4);
 
 // Complete the tech onboarding gate in one shot: records the Monitoring, Handbook, and NDA acceptances

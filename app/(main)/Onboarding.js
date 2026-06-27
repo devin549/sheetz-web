@@ -6,16 +6,30 @@
 // server-timestamped into policy_acks on Finish. iPad-first: cream/gold, big tap targets.
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { completeOnboarding } from './onboardingActions';
+import { completeOnboarding, emailMeDoc } from './onboardingActions';
 
 const cardStyle = { background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 18px' };
 const initInput = { width: '100%', boxSizing: 'border-box', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', padding: '12px', borderRadius: 8, fontSize: 18, textAlign: 'center', textTransform: 'uppercase', letterSpacing: 4, fontFamily: "'JetBrains Mono',monospace" };
 const primaryBtn = { width: '100%', padding: 15, borderRadius: 11, border: 'none', background: 'var(--amber)', color: '#1a1206', fontSize: 16, fontWeight: 800, cursor: 'pointer' };
 
-export default function Onboarding({ name }) {
+export default function Onboarding({ name, handbookUrl = '', ndaUrl = '' }) {
   const router = useRouter();
   const [pending, start] = useTransition();
+  const [docMsg, setDocMsg] = useState({});     // per-doc "Sent ✓" / error feedback
+  const [docBusy, setDocBusy] = useState('');
   const [step, setStep] = useState(0);          // 0 monitoring · 1 handbook · 2 nda · 3 roast
+
+  // Read it / email me a copy — so the employee can actually read what they're signing.
+  const emailDoc = (which) => { setDocBusy(which); setDocMsg((m) => ({ ...m, [which]: null })); emailMeDoc(which).then((r) => { setDocBusy(''); setDocMsg((m) => ({ ...m, [which]: r })); }).catch(() => { setDocBusy(''); setDocMsg((m) => ({ ...m, [which]: { ok: false, msg: 'Try again.' } })); }); };
+  const DocAccess = ({ which, url, label }) => (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', margin: '0 0 12px' }}>
+      {url
+        ? <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', textDecoration: 'none', border: '1px solid var(--amber-dim)', borderRadius: 8, padding: '7px 11px' }}>📖 Read the {label} ↗</a>
+        : <span className="muted" style={{ fontSize: 11 }}>Office will email you the full copy.</span>}
+      <button type="button" onClick={() => emailDoc(which)} disabled={docBusy === which} style={{ fontSize: 12, fontWeight: 700, color: 'var(--fg-1)', background: 'var(--surface-2)', border: '1px solid var(--border-strong)', borderRadius: 8, padding: '7px 11px', cursor: 'pointer', opacity: docBusy === which ? 0.6 : 1 }}>{docBusy === which ? 'Sending…' : '✉️ Email me a copy'}</button>
+      {docMsg[which] && <span style={{ fontSize: 11.5, fontWeight: 700, color: docMsg[which].ok ? 'var(--green)' : 'var(--red)' }}>{docMsg[which].msg}</span>}
+    </div>
+  );
   const [monitoring, setMonitoring] = useState(false);
   const [hb, setHb] = useState('');
   const [nda, setNda] = useState('');
@@ -76,6 +90,7 @@ export default function Onboarding({ name }) {
           <div style={cardStyle}>
             <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>1 · Employee Handbook</div>
             <p style={{ fontSize: 12.5, color: 'var(--fg-2)', lineHeight: 1.65 }}>I have read and agree to the current CB Employee Handbook — pay policy, callbacks, conduct, and monitoring (§17).</p>
+            <DocAccess which="handbook" url={handbookUrl} label="Handbook" />
             <label className="muted" style={{ fontSize: 11, display: 'block', marginBottom: 6 }}>Type your initials to sign</label>
             <input value={hb} onChange={(e) => setHb(e.target.value)} maxLength={4} placeholder="e.g. MS" style={initInput} />
             <button style={{ ...primaryBtn, marginTop: 14, opacity: hb.trim().length >= 2 ? 1 : 0.5, cursor: hb.trim().length >= 2 ? 'pointer' : 'not-allowed' }} disabled={hb.trim().length < 2} onClick={next}>Sign &amp; continue →</button>
@@ -88,6 +103,7 @@ export default function Onboarding({ name }) {
           <div style={cardStyle}>
             <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>2 · Non-Disclosure Agreement</div>
             <p style={{ fontSize: 12.5, color: 'var(--fg-2)', lineHeight: 1.65 }}>I agree to the CB NDA — customer data, pricing, recordings, and trade secrets stay confidential, on and off the clock.</p>
+            <DocAccess which="nda" url={ndaUrl} label="NDA" />
             <label className="muted" style={{ fontSize: 11, display: 'block', marginBottom: 6 }}>Type your initials to sign</label>
             <input value={nda} onChange={(e) => setNda(e.target.value)} maxLength={4} placeholder="e.g. MS" style={initInput} />
             <button style={{ ...primaryBtn, marginTop: 14, opacity: nda.trim().length >= 2 ? 1 : 0.5, cursor: nda.trim().length >= 2 ? 'pointer' : 'not-allowed' }} disabled={nda.trim().length < 2} onClick={next}>Sign &amp; continue →</button>
