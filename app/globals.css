@@ -253,6 +253,14 @@ html.cb-reduce-motion *, html.cb-reduce-motion *::before, html.cb-reduce-motion 
 }
 html.cb-reduce-motion .cb-spark, html.cb-reduce-motion .cb-confetti { display: none !important; }
 
+/* 📱 iPad-first nav: side icon rail on desktop, bottom tab bar on iPad/narrow (≤1024px). */
+.cb-bottombar { display: flex; }
+@media (min-width: 1025px) { .cb-bottombar { display: none; } }
+@media (max-width: 1024px) {
+  html.cb-tech .cb-siderail { display: none !important; } /* beat the rail's inline display:flex */
+  .cb-techmain { padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
+}
+
 /* Print — clean legal documents (lawyer packet, statements): hide app chrome. */
 @media print {
   .topbar, aside, .no-print { display: none !important; }

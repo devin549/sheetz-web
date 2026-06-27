@@ -11,6 +11,7 @@ import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import Watermark from './Watermark';
 import ThemeToggle from '@/components/ThemeToggle';
+import BottomBar from './BottomBar';
 
 const RAIL = [
   { group: 'Work', items: [
@@ -204,7 +205,7 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
 
       {/* ── BODY: left rail + content ────────────────────────────── */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        <nav style={{ width: 84, flexShrink: 0, background: 'var(--surface-1)', borderRight: '1px solid var(--border)', padding: '8px 4px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
+        <nav className="cb-siderail" style={{ width: 84, flexShrink: 0, background: 'var(--surface-1)', borderRight: '1px solid var(--border)', padding: '8px 4px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
           {rail.map((grp) => {
             if (cust && grp.money) return null; // hide the whole "Me" money group in customer view
             return (
@@ -228,8 +229,11 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
           })}
         </nav>
 
-        <main style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>{children}</main>
+        <main className="cb-techmain" style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>{children}</main>
       </div>
+
+      {/* 📱 iPad bottom tab bar — thumb nav (hidden in customer view + on wide desktop, where the side rail shows). */}
+      {!cust && <BottomBar rail={rail} />}
     </div>
   );
 }
