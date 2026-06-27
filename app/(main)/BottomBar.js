@@ -13,6 +13,7 @@ const PRIMARY = [
   { icon: '🧲', label: 'Bids', href: '/bids' },
   { icon: '🚚', label: 'Truck', href: '/my-truck' },
   { icon: '💬', label: 'Chat', href: '/messages' },
+  { icon: '🪠', label: 'Hank', href: '/hank' },
 ];
 
 export default function BottomBar({ rail = [] }) {
