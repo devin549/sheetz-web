@@ -113,7 +113,8 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', width: '100%' }}>
-      <Watermark label={wmLabel} />
+      {/* Leak-trace watermark — INTERNAL only. Never shown once the iPad is handed to a customer. */}
+      {!cust && <Watermark label={wmLabel} />}
       {/* ── HEADER ───────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px', borderBottom: '1px solid var(--border)', background: 'var(--surface-1)', flexWrap: 'wrap' }}>
         <div style={{ fontWeight: 800, color: 'var(--amber)', fontSize: 15, whiteSpace: 'nowrap' }}>⚡ CB Dispatch</div>
