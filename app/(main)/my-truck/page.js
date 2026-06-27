@@ -8,6 +8,7 @@ import TruckScan from './TruckScan';
 import IdentifyClient from '../identify/IdentifyClient';
 import AddTool from '../tools/AddTool';
 import ToolRemoveBtn from './ToolRemoveBtn';
+import ShopSelfCheckout from './ShopSelfCheckout';
 
 export const dynamic = 'force-dynamic';
 
@@ -184,9 +185,10 @@ export default async function MyTruck({ searchParams }) {
         </Link>
       </>)}
 
-      {/* ───────── SHOP INVENTORY ───────── */}
-      {sub === 'shop' && (
-        Object.keys(shopStock).length === 0
+      {/* ───────── SHOP INVENTORY + after-hours self-checkout ───────── */}
+      {sub === 'shop' && (<>
+        <ShopSelfCheckout defaultJob={activeJob?.job_number || ''} />
+        {Object.keys(shopStock).length === 0
           ? <div className="card"><span className="muted">No shop stock loaded yet. Use 🔦 Find a Part to search every source.</span></div>
           : <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -208,7 +210,8 @@ export default async function MyTruck({ searchParams }) {
               </div>
             ))}
           </>
-      )}
+        }
+      </>)}
 
       {/* ───────── MY TOOLS (custody) ───────── */}
       {sub === 'tools' && (<>
