@@ -32,6 +32,7 @@ const r = {
 export default async function Races() {
   const { user, profile } = await requirePerm('seeOwnPayOnly', 'seeOwnOnly', 'changeStatus');
   const name = profile.name || user.email;
+  const roastLevel = profile.roastLevel || 'PG'; // the intensity the tech picked in Settings (PG · PG-13 · R)
 
   // Live leaderboard from this week's jobs (revenue + completions). Falls back to sample if unavailable.
   let board = r.board, rank = r.rank, you$ = r.you$, toFirst = r.toFirst, live = false, fieldTotal = r.board.length;
@@ -237,7 +238,7 @@ export default async function Races() {
                   <span style={{ position: 'absolute', top: '50%', left: `calc(${pct}% - 16px)`, transform: 'translateY(-50%)', fontSize: 15 }}>{racer}</span>
                 </div>
                 {/* 🌽💩 your personal roast — tuned to your rank in THIS race */}
-                {b.me && (() => { const rt = laneRoast(b.n, fieldTotal, { seed: name }); return (
+                {b.me && (() => { const rt = laneRoast(b.n, fieldTotal, { seed: name, level: roastLevel }); return (
                   <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: rt.tier === 'leader' ? 'var(--green)' : rt.tier === 'top3' ? 'var(--amber)' : '#ff8a65' }}>{rt.text}</div>
                 ); })()}
               </div>
@@ -263,7 +264,7 @@ export default async function Races() {
                 <div key={x.n} style={{ marginBottom: 9 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 2 }}><span style={{ fontWeight: x.me ? 800 : 600 }}>{rowBadge(x.n) ? rowBadge(x.n) + ' ' : ''}{x.who}{x.me ? ' (YOU)' : ''}</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>{x.pts} pts · {x.reviews} rev</span></div>
                   <div style={{ position: 'relative', height: 20, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid ' + (x.me ? '#64b5f6' : 'var(--border)'), overflow: 'hidden' }}><div style={{ height: '100%', width: pct + '%', background: grad, borderRadius: 10 }} /></div>
-                  {x.me && (() => { const rt = laneRoast(x.n, rev.length, { seed: name + 'review' }); return <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: rt.tier === 'leader' ? 'var(--green)' : rt.tier === 'top3' ? '#64b5f6' : '#ff8a65' }}>{rt.text}</div>; })()}
+                  {x.me && (() => { const rt = laneRoast(x.n, rev.length, { seed: name + 'review', level: roastLevel }); return <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: rt.tier === 'leader' ? 'var(--green)' : rt.tier === 'top3' ? '#64b5f6' : '#ff8a65' }}>{rt.text}</div>; })()}
                 </div>
               );
             })}
@@ -284,7 +285,7 @@ export default async function Races() {
                 <div key={h.n} style={{ marginBottom: 9 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 2 }}><span style={{ fontWeight: h.me ? 800 : 600 }}>{rowBadge(h.n) ? rowBadge(h.n) + ' ' : ''}{h.who}{h.me ? ' (YOU)' : ''}</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>{h.x}× pickups</span></div>
                   <div style={{ position: 'relative', height: 20, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid ' + (h.me ? '#b08b4a' : 'var(--border)'), overflow: 'hidden' }}><div style={{ height: '100%', width: pct + '%', background: h.n === 1 ? 'linear-gradient(90deg,#8a6d3b,#d9b24a)' : 'linear-gradient(90deg,#6b5a3b,#b08b4a)', borderRadius: 10 }} /></div>
-                  {h.me && (() => { const rt = laneRoast(h.n, hh.length, { seed: name + 'hhwp', hhwp: true }); return <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: rt.tier === 'leader' ? 'var(--green)' : '#ff8a65' }}>{rt.text}</div>; })()}
+                  {h.me && (() => { const rt = laneRoast(h.n, hh.length, { seed: name + 'hhwp', hhwp: true, level: roastLevel }); return <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600, color: rt.tier === 'leader' ? 'var(--green)' : '#ff8a65' }}>{rt.text}</div>; })()}
                 </div>
               );
             })}
