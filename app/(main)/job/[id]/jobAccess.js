@@ -76,6 +76,20 @@ export async function canViewJob(sb, user, profile, role, job) {
   return false;
 }
 
+// Does this user "work" this customer — i.e. can broadly see jobs (office/dispatch/crew), or is a field tech
+// who has a job for this customer? Lets a tech view a customer's PRIOR invoices/photos for the customer
+// they're serving, WITHOUT opening the full job cockpit of a visit another tech ran (caller keeps it
+// read-only for that case). Returns boolean.
+export async function worksThisCustomer(sb, role, profile, customerId) {
+  if (!customerId) return false;
+  if (can(role, 'seeAllJobs') || can(role, 'seeQueue') || can(role, 'seeCrew')) return true;
+  if (can(role, 'seeOwnOnly') && profile?.tech_id) {
+    const { data } = await sb.from('jobs').select('id').eq('customer_id', customerId).eq('tech_id', profile.tech_id).limit(1);
+    return (data || []).length > 0;
+  }
+  return false;
+}
+
 export function canUploadPhotos(role) {
   return can(role, 'changeStatus') ||
     can(role, 'createJobs') ||

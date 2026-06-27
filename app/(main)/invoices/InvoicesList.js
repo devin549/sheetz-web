@@ -37,8 +37,8 @@ export default function InvoicesList({ rows }) {
       <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead><tr>
-            {['Invoice', 'Customer', 'Date', 'Status', 'Total', 'Balance'].map((h, i) => (
-              <th key={h} style={{ padding: '8px 12px', textAlign: i > 3 ? 'right' : 'left', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--fg-3)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+            {['Invoice', 'Customer', 'Date', 'Status', 'Total', 'Balance', 'Proof'].map((h, i) => (
+              <th key={h} style={{ padding: '8px 12px', textAlign: i > 3 && i < 6 ? 'right' : 'left', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--fg-3)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -50,9 +50,10 @@ export default function InvoicesList({ rows }) {
                 <td style={{ padding: '9px 12px' }}><span className="pill" style={{ fontSize: 10.5, color: statusColor(r.status), textTransform: 'capitalize' }}>{r.status}</span></td>
                 <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'var(--mono)' }}>{money(r.total)}</td>
                 <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: r.balance > 0 ? 'var(--red)' : 'var(--fg-3)' }}>{r.balance > 0 ? money(r.balance) : '—'}</td>
+                <td style={{ padding: '9px 12px' }}>{r.jobId ? <a href={`/job/${r.jobId}/photos`} style={{ color: 'var(--amber)', textDecoration: 'none', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap' }}>📷 Photos</a> : <span style={{ color: 'var(--fg-3)' }}>—</span>}</td>
               </tr>
             ))}
-            {!shown.length && <tr><td colSpan={6} style={{ padding: 16 }}><span className="muted">No invoices match.</span></td></tr>}
+            {!shown.length && <tr><td colSpan={7} style={{ padding: 16 }}><span className="muted">No invoices match.</span></td></tr>}
           </tbody>
         </table>
       </div>

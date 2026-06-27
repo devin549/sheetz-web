@@ -1,7 +1,7 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref, requirePerm } from '@/lib/guard';
-import { can } from '@/lib/roles';
 import { canSee } from '@/lib/nav';
+import { worksThisCustomer } from '../job/[id]/jobAccess';
 import { redirect } from 'next/navigation';
 import InvoicesList from './InvoicesList';
 
@@ -10,16 +10,11 @@ export const dynamic = 'force-dynamic';
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 // Can this viewer see THIS customer's invoices? Office/AR roles (who can see the whole book): any customer.
-// Field roles: ONLY if they actually have a job for this customer (own jobs when own-only) — so a tech sees
-// the invoices for customers they're working, but can't enumerate the rest of the book.
+// Field roles: ONLY if they actually work this customer (have a job for them) — so a tech sees the invoices
+// for customers they're serving, but can't enumerate the rest of the book.
 async function canViewCustomerInvoices(sb, role, profile, customerId) {
   if (canSee('/invoices', role)) return true; // owner/admin/gm/dispatcher/csr/om/accounting/sales
-  const ownOnly = !can(role, 'seeAllJobs') && can(role, 'seeOwnOnly');
-  if (ownOnly && !profile.tech_id) return false;
-  let q = sb.from('jobs').select('id').eq('customer_id', customerId).limit(1);
-  if (ownOnly) q = q.eq('tech_id', profile.tech_id);
-  const { data } = await q;
-  return (data || []).length > 0;
+  return worksThisCustomer(sb, role, profile, customerId);
 }
 
 export default async function Invoices({ searchParams }) {
@@ -37,7 +32,7 @@ export default async function Invoices({ searchParams }) {
   if (customerId && !(await canViewCustomerInvoices(sb, role, profile, customerId))) redirect('/');
 
   let q = sb.from('invoices')
-    .select('id, invoice_number, invoice_date, status, total, balance, customer_id')
+    .select('id, invoice_number, invoice_date, status, total, balance, customer_id, job_id')
     .order('invoice_date', { ascending: false, nullsFirst: false });
   q = customerId ? q.eq('customer_id', customerId) : q.limit(300);
   const { data, error } = await q;
@@ -53,7 +48,7 @@ export default async function Invoices({ searchParams }) {
 
   const rows = (data || []).map((i) => ({
     id: i.id, number: i.invoice_number || '', date: i.invoice_date || '', status: String(i.status || 'open').toLowerCase(),
-    total: Number(i.total) || 0, balance: Number(i.balance) || 0, customer: nameById[i.customer_id] || 'Customer',
+    total: Number(i.total) || 0, balance: Number(i.balance) || 0, customer: nameById[i.customer_id] || 'Customer', jobId: i.job_id || null,
   }));
   const openBalance = rows.filter((r) => r.balance > 0).reduce((s, r) => s + r.balance, 0);
   const custName = customerId ? (nameById[customerId] || 'this customer') : null;

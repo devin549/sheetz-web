@@ -4,7 +4,7 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requirePerm } from '@/lib/guard';
 import { can } from '@/lib/roles';
 import { computeCloseout, ruleForJob } from '@/lib/qa';
-import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from '../jobAccess';
+import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob, worksThisCustomer } from '../jobAccess';
 import JobPhotos from '../JobPhotos';
 import JobVideo from '../JobVideo';
 import ProofTiles from '../ProofTiles';
@@ -32,7 +32,11 @@ export default async function JobPhotosScreen({ params }) {
   const sb = getSupabaseAdmin();
   const { data: job, error } = await loadJob(sb, id);
   if (error || !job) notFound();
-  if (!(await canViewJob(sb, user, profile, role, job))) notFound();
+  // Owns = this is the viewer's job (full controls). Otherwise allow a READ-ONLY view if they work this
+  // customer (a tech pulling up a prior visit's proof for the customer they're serving). Else 404.
+  const owns = await canViewJob(sb, user, profile, role, job);
+  const readOnly = !owns;
+  if (!owns && !(await worksThisCustomer(sb, role, profile, job.customer_id))) notFound();
 
   const { photos, error: photoError } = await loadPhotos(sb, id);
   let reviews = [];
@@ -53,7 +57,7 @@ export default async function JobPhotosScreen({ params }) {
   const stillPhotos = photos.filter((p) => !isVid(p));
   const closeout = computeCloseout({ photos, reviews, rule: ruleForJob(job) });
   const customer = job.customers || {};
-  const canUpload = canUploadPhotos(role);
+  const canUpload = canUploadPhotos(role) && !readOnly;
   // Crew sessions to attribute proof to (fail-soft pre-87).
   let segments = [];
   try { const { data } = await sb.from('job_segments').select('id, segment_no, kind, assigned_tech_name, status').eq('parent_job_id', id).neq('status', 'cancelled').order('created_at', { ascending: true }); segments = data || []; } catch (_) {}
@@ -62,9 +66,10 @@ export default async function JobPhotosScreen({ params }) {
 
   return (
     <div className="wrap" style={{ maxWidth: 1040 }}>
-      <Link href={`/job/${id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--amber)', textDecoration: 'none' }}><ArrowLeft size={14} /> Job Cockpit</Link>
+      <Link href={readOnly ? `/invoices?customer=${job.customer_id}` : `/job/${id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--amber)', textDecoration: 'none' }}><ArrowLeft size={14} /> {readOnly ? `Back to ${customer.name || 'customer'} invoices` : 'Job Cockpit'}</Link>
       <div className="h1" style={{ marginTop: 6, marginBottom: 2 }}>🧾 Proof · {customer.name || 'Customer'}</div>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{jobTitle(job)}{job.job_number ? ` · #${job.job_number}` : ''} — tap a tile, the camera opens. Proof attaches to this job only.</div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{jobTitle(job)}{job.job_number ? ` · #${job.job_number}` : ''} — {readOnly ? 'prior visit · read-only.' : 'tap a tile, the camera opens. Proof attaches to this job only.'}</div>
+      {readOnly && <div className="card" style={{ borderLeft: '3px solid var(--amber)', marginBottom: 10, fontSize: 12.5 }}>👀 Read-only — you’re viewing a previous visit’s photos for {customer.name || 'this customer'}. You can’t add or change proof on another visit.</div>}
 
       {/* Required proof checklist */}
       {!photoError && (closeout.requiredKinds?.length > 0 || closeout.requireVideo || closeout.minPhotos > 0) && (
@@ -96,8 +101,8 @@ export default async function JobPhotosScreen({ params }) {
 
       <div style={{ marginTop: 10 }}>
         <JobPhotos jobId={id} photos={stillPhotos} reviewByPhoto={reviewByPhoto} closeout={closeout}
-          canUpload={canUpload && !photoError} hideAddForm canArchive={can(role, 'deleteJobs') || can(role, 'manageUsers') || can(role, 'assignJobs')}
-          canReview={can(role, 'qaReview') && !photoError} canOverride={can(role, 'qaOverride') && !photoError} isDone={isDone} currentUserId={user.id} />
+          canUpload={canUpload && !photoError} hideAddForm canArchive={!readOnly && (can(role, 'deleteJobs') || can(role, 'manageUsers') || can(role, 'assignJobs'))}
+          canReview={!readOnly && can(role, 'qaReview') && !photoError} canOverride={!readOnly && can(role, 'qaOverride') && !photoError} isDone={isDone} currentUserId={user.id} />
       </div>
     </div>
   );
