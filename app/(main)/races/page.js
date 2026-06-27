@@ -165,15 +165,33 @@ export default async function Races() {
           </div>
         </div>
       </div>
-      <div style={{ marginTop: 8, display: 'grid', gap: 5 }}>
-        {board.map((b) => (
-          <div key={b.n} className={b.n === 1 ? 'cb-gold' : b.n === 2 ? 'cb-silver' : b.n === 3 ? 'cb-bronze' : ''} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 9, background: b.me ? 'color-mix(in oklab, var(--amber) 14%, var(--surface-2))' : 'var(--surface-2)', border: '1px solid ' + (b.n === 1 ? '#ffd24a' : b.me ? 'var(--amber)' : 'var(--border)') }}>
-            <span style={{ fontWeight: 800, color: b.n === 1 ? '#ffd24a' : 'var(--fg-2)', minWidth: 28 }}>#{b.n}</span>
-            {rowBadge(b.n) && <span style={{ fontSize: 15 }}>{rowBadge(b.n)}</span>}
-            <span style={{ flex: 1, fontWeight: b.me ? 800 : 600 }}>{b.who}{b.me ? ' (YOU)' : ''}</span>
-            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>{b.amt}</span>
-          </div>
-        ))}
+      {/* 🏁 THIS WEEK'S RACE · REVENUE — horizontal racing lanes (ported from the HTML): each tech races a
+          bar toward the leader's pace = the finish line; plunger leads, poop trails. */}
+      <div className="card" style={{ marginTop: 10 }}>
+        <div style={{ fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--amber-dim)', marginBottom: 8 }}>🏁 This week's race · revenue</div>
+        {(() => {
+          const revs = board.map((b) => Number(String(b.amt).replace(/[^0-9.]/g, '')) || 0);
+          const maxRev = Math.max(1, ...revs);
+          return board.map((b, i) => {
+            const pct = Math.max(5, Math.round((revs[i] / maxRev) * 100));
+            const last = fieldTotal > 1 && b.n === fieldTotal;
+            const racer = b.n === 1 ? '🪠' : last ? '💩' : '🪠';
+            const grad = b.n === 1 ? 'linear-gradient(90deg,#bfa12e,#ffd24a)' : b.me ? 'linear-gradient(90deg,#9c7b2e,#e0b94a)' : 'linear-gradient(90deg,#8a7a5e,#b6a489)';
+            return (
+              <div key={b.n} style={{ marginBottom: 9 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 2 }}>
+                  <span style={{ fontWeight: b.me ? 800 : 600 }}>{rowBadge(b.n) ? rowBadge(b.n) + ' ' : ''}{b.who}{b.me ? ' (YOU)' : ''}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>{b.amt}</span>
+                </div>
+                <div style={{ position: 'relative', height: 22, borderRadius: 11, background: 'var(--surface-2)', border: '1px solid ' + (b.me ? 'var(--amber)' : 'var(--border)'), overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: pct + '%', background: grad, borderRadius: 11 }} />
+                  <span style={{ position: 'absolute', top: '50%', left: `calc(${pct}% - 16px)`, transform: 'translateY(-50%)', fontSize: 15 }}>{racer}</span>
+                </div>
+              </div>
+            );
+          });
+        })()}
+        <div className="muted" style={{ fontSize: 10.5 }}>🏁 leader's pace = finish line · catch them by Saturday</div>
       </div>
       <div className="card" style={{ marginTop: 10 }}>
         <div style={{ fontWeight: 800, marginBottom: 6 }}>🌟 Other awards this week</div>
