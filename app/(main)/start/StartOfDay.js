@@ -27,11 +27,17 @@ function Tile({ label, value, tone = 'mid', hint }) {
 }
 
 function RankRow({ label, chip }) {
-  const c = chip.tone === 'king' ? '#ffd24a' : chip.tone === 'podium' ? 'var(--green)' : chip.tone === 'basement' ? '#c98a2a' : 'var(--fg-2)';
+  // Punchier rank card: a medal for the podium, a tone-tinted background + left accent, big mono rank.
+  const accent = chip.tone === 'king' ? '#ffd24a' : chip.tone === 'podium' ? 'var(--green-bright, #46c178)' : chip.tone === 'basement' ? '#ff8a65' : 'var(--fg-3)';
+  const medal = chip.rank === 1 ? '🥇' : chip.rank === 2 ? '🥈' : chip.rank === 3 ? '🥉' : null;
+  const tinted = chip.tone !== 'mid' && chip.rank != null;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border)' }}>
-      <span style={{ fontSize: 12, color: 'var(--fg-2)', flex: 1 }}>{label}</span>
-      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 13, color: c }}>{chip.tone === 'king' ? '👑 ' : ''}{chip.txt}</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, borderLeft: `4px solid ${accent}`,
+      border: `1px solid ${tinted ? accent : 'var(--border)'}`, borderLeftWidth: 4,
+      background: tinted ? `color-mix(in oklab, ${accent} 13%, var(--surface-2))` : 'var(--surface-2)' }}>
+      <span style={{ fontSize: 17, minWidth: 22, textAlign: 'center' }}>{medal || '📊'}</span>
+      <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--fg-1)', flex: 1 }}>{label}</span>
+      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 15, color: accent }}>{chip.txt}</span>
     </div>
   );
 }

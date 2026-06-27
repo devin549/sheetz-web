@@ -63,12 +63,12 @@ export default function TechChat({ messages = [], me = '' }) {
   };
 
   return (
-    <div className="wrap" style={{ maxWidth: 560 }}>
+    <div className="wrap" style={{ maxWidth: 1100 }}>
       <div className="h1" style={{ fontSize: 20 }}>👥 Team Chat</div>
       <p className="muted" style={{ fontSize: 12.5 }}>The whole crew + office in #sheetz. Quick question, status, or a heads-up — everyone sees it. 🪠 Hank chimes in when he can help.</p>
 
       {/* post box */}
-      <form ref={formRef} onSubmit={send} className="card card-amber" style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+      <form ref={formRef} onSubmit={send} className="card card-amber" style={{ display: 'flex', gap: 8, alignItems: 'flex-end', maxWidth: 620 }}>
         <textarea name="text" rows={2} required placeholder="Message the team…" style={{ flex: 1, resize: 'vertical', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 14 }} />
         <button className="btn" type="submit" disabled={pending}>{pending ? '…' : 'Send'}</button>
       </form>
@@ -77,23 +77,29 @@ export default function TechChat({ messages = [], me = '' }) {
       {/* feed — broken down by category */}
       {messages.length === 0 && <div className="card" style={{ marginTop: 12 }}><span className="muted">No team messages yet. Say hi 👋</span></div>}
 
-      {messages.length > 0 && SECTIONS.map((s) => {
-        const list = buckets[s.tag];
-        if (!list || list.length === 0) return null;
-        return (
-          <div key={s.tag} style={{ marginTop: 16 }}>
-            {/* section header — colored to the category's importance */}
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '4px 2px 8px', borderBottom: `2px solid ${s.color}`, marginBottom: 10 }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: s.color, textTransform: 'uppercase', letterSpacing: 0.4 }}>{s.label}</span>
-              <span className="pill" style={{ fontSize: 10, color: s.color, border: `1px solid ${s.color}` }}>{list.length}</span>
-              <span className="muted" style={{ fontSize: 10.5, marginLeft: 'auto' }}>{s.hint}</span>
-            </div>
-            <div style={{ display: 'grid', gap: 8 }}>
-              {list.map((m) => renderMsg(m, s.color))}
-            </div>
-          </div>
-        );
-      })}
+      {/* feed in COLUMNS — one column per category (auto-stacks to 1 column on a narrow iPad). */}
+      {messages.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: 14, marginTop: 16, alignItems: 'start' }}>
+          {SECTIONS.map((s) => {
+            const list = buckets[s.tag] || [];
+            return (
+              <div key={s.tag}>
+                {/* column header — colored to the category's importance */}
+                <div style={{ padding: '4px 2px 8px', borderBottom: `2px solid ${s.color}`, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: s.color, textTransform: 'uppercase', letterSpacing: 0.4 }}>{s.label}</span>
+                    <span className="pill" style={{ fontSize: 10, color: s.color, border: `1px solid ${s.color}` }}>{list.length}</span>
+                  </div>
+                  <div className="muted" style={{ fontSize: 10, marginTop: 2 }}>{s.hint}</div>
+                </div>
+                {list.length === 0
+                  ? <div className="muted" style={{ fontSize: 11.5, padding: '6px 2px', fontStyle: 'italic' }}>Nothing here yet.</div>
+                  : <div style={{ display: 'grid', gap: 8 }}>{list.map((m) => renderMsg(m, s.color))}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

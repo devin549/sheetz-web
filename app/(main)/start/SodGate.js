@@ -54,12 +54,12 @@ export default function SodGate({ sod = {}, tools = [], handbook = {}, helper = 
       </div>
 
       {/* 🚐 PRE-TRIP */}
-      <SectionShell icon="🚐" title="Van Pre-Trip" sub="Odometer, gas, safety check + no-text-&-drive" green={g.pretrip} required>
+      <SectionShell icon="🚐" title="Van Pre-Trip" sub="Gas, safety check + no-text-&-drive" green={g.pretrip} required>
         {g.pretrip && !editPretrip ? (
-          <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>✓ {sod.odometer ? `${sod.odometer.toLocaleString()} mi · ` : ''}{sod.gas_level ? `gas ${sod.gas_level} · ` : ''}safety checked. <button onClick={() => setEditPretrip(true)} className="pill" style={{ cursor: 'pointer', marginLeft: 6 }}>redo</button></div>
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>✓ {sod.gas_level ? `gas ${sod.gas_level} · ` : ''}safety checked. <button onClick={() => setEditPretrip(true)} className="pill" style={{ cursor: 'pointer', marginLeft: 6 }}>redo</button></div>
         ) : (
           <form action={onPretrip} style={{ display: 'grid', gap: 9, marginTop: 9 }}>
-            <input name="odometer" type="number" inputMode="numeric" placeholder="Odometer (start)" defaultValue={sod.odometer || ''} style={inp} />
+            {/* Odometer captured only at END of shift (Devin) — pre-trip is gas + safety + no-text-&-drive. */}
             <div>
               <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>Gas level (start)</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
