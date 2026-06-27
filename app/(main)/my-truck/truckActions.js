@@ -85,6 +85,29 @@ export async function truckWideSearch(query) {
   return { ok: true, shops, vans };
 }
 
+// ➖ Use a part from the van ON a job (moment-of-use): decrement van stock by 1 + log it to the job so it
+// bills + feeds the most-used signal. The other half of the scan loop (load-out adds, use subtracts).
+export async function useFromVan(partId, jobId) {
+  const me = await whoami();
+  if (!me) return { ok: false, msg: 'Not signed in.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const job = clean(jobId, 40);
+  if (!job) return { ok: false, msg: 'No active job to use it on.' };
+  try {
+    const { data: p } = await sb.from('truck_inventory').select('id, name, sku, qty').eq('id', partId).maybeSingle();
+    if (!p) return { ok: false, msg: 'Part not found on the van.' };
+    if ((Number(p.qty) || 0) <= 0) return { ok: false, msg: 'None left on the van.' };
+    await sb.from('truck_inventory').update({ qty: Number(p.qty) - 1, updated_at: new Date().toISOString() }).eq('id', p.id);
+    // Record on the job (feeds billing + most-used). Best-effort — never block the decrement.
+    try { await sb.from('shop_issues').insert({ job_id: job, item_name: p.name, sku: p.sku || null, qty: 1, unit: 'ea', unit_cost_cents: 0, total_cost_cents: 0, kind: 'issue', status: 'out', issued_to: me.name, issued_by: me.name, note: '➖ used from van' }); } catch (_) {}
+    revalidatePath('/my-truck');
+    return { ok: true, msg: `Used 1× ${p.name} → job #${job} (van now ${Number(p.qty) - 1}).` };
+  } catch (e) {
+    return { ok: false, msg: String(e?.message || e).slice(0, 160) };
+  }
+}
+
 // 🔄 Request a van-to-van transfer — drops a message into the team feed tagging the holder (no silent
 // auto-move; the holder coordinates). Real + auditable via the existing comms feed.
 export async function requestPartTransfer({ part, qty, fromTech }) {

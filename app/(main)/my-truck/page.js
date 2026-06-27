@@ -11,6 +11,7 @@ import ToolRemoveBtn from './ToolRemoveBtn';
 import ShopSelfCheckout from './ShopSelfCheckout';
 import StockVan from './StockVan';
 import TruckWideSearch from './TruckWideSearch';
+import UsePartBtn from './UsePartBtn';
 
 export const dynamic = 'force-dynamic';
 
@@ -208,9 +209,10 @@ export default async function MyTruck({ searchParams }) {
           {parts.length > 0 && (
             <div className="card" style={{ padding: 0 }}>
               {parts.map((p) => (
-                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
-                  <span style={{ fontSize: 13 }}>{isLow(p) && <span className="alert-dot amber" aria-hidden="true" />}{p.name || p.sku}{p.bin ? <span className="muted" style={{ fontSize: 11 }}> · {p.bin}</span> : ''}</span>
+                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: 13, flex: 1, minWidth: 0 }}>{isLow(p) && <span className="alert-dot amber" aria-hidden="true" />}{p.name || p.sku}{p.bin ? <span className="muted" style={{ fontSize: 11 }}> · {p.bin}</span> : ''}</span>
                   <span style={{ fontSize: 13, fontWeight: 700, color: isLow(p) ? 'var(--red)' : 'var(--fg-2)', whiteSpace: 'nowrap' }}>{Number(p.qty || 0)} {p.unit || 'ea'}{isLow(p) ? ' ⚠' : ''}</span>
+                  {activeJob && role !== 'owner' && <UsePartBtn partId={p.id} jobId={activeJob.id} jobNumber={activeJob.job_number} />}
                 </div>
               ))}
             </div>
