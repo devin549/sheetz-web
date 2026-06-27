@@ -7,6 +7,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { recordSale } from './actions';
 import { createEstimate } from './estimateActions';
+import BarcodeScan from './BarcodeScan';
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString();
 const TIER_STYLE = { good: { c: 'var(--fg-2)' }, better: { c: 'var(--amber)' }, best: { c: 'var(--green)' } };
@@ -33,6 +34,8 @@ export default function PricebookClient({ job, customer, items = [], categories 
   const memberPrice = (p) => Math.round((Number(p) || 0) * (1 - memberDisc) * 100) / 100;
 
   const add = (it) => { setLink(null); setCart((c) => c.find((x) => x.id === it.id) ? c : [...c, { id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: it.internal?.minimum ?? null }]); };
+  // A barcode-scanned service comes from the API (flat shape: minimum at top level, not it.internal).
+  const addScanned = (it) => { setLink(null); setCart((c) => c.find((x) => x.id === it.id) ? c : [...c, { id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: it.minimum ?? null }]); };
   const addTier = (tier) => { setLink(null); setTierKey(tier.key); setCart(() => tier.items.map((it) => ({ id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: null }))); };
   const remove = (id) => setCart((c) => c.filter((x) => x.id !== id));
   const setPrice = (id, v) => setCart((c) => c.map((x) => x.id === id ? { ...x, soldPrice: v } : x));
@@ -128,6 +131,7 @@ export default function PricebookClient({ job, customer, items = [], categories 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
         {/* Suggestions / search / categories */}
         <div>
+          <BarcodeScan onAdd={addScanned} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search price, part, symptom, SKU — try seesnake, wax ring, water heater" style={{ ...input, width: '100%', marginBottom: 10 }} />
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
             <button onClick={() => setCat('suggested')} className="pill" style={{ cursor: 'pointer', fontWeight: cat === 'suggested' ? 800 : 600, border: cat === 'suggested' ? '1px solid var(--amber)' : '1px solid var(--border)' }}>⭐ Suggested</button>
