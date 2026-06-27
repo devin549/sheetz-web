@@ -18,8 +18,10 @@ export default function Watermark({ label }) {
     return () => obs.disconnect();
   }, []);
   if (!label) return null;
-  // Light cream → a warm low-contrast tone at low opacity; dark → soft gray. Both barely visible.
-  const fill = light ? 'rgba(120,108,86,0.035)' : 'rgba(150,150,150,0.045)';
+  // Tuned to SURVIVE a social-media repost (compression) while staying low-contrast in normal use:
+  // on light cream a warm tan that blends with the background, on dark a soft gray. The reveal tool
+  // (owner-only) boosts contrast to read it back off a leaked image.
+  const fill = light ? 'rgba(168,150,116,0.06)' : 'rgba(155,155,155,0.052)';
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='360' height='190'>` +
     `<text x='8' y='120' transform='rotate(-28 8 120)' fill='${fill}' font-size='13' font-family='monospace' font-weight='700'>${label}</text></svg>`;
   const uri = `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
