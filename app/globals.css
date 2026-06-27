@@ -253,10 +253,12 @@ html.cb-reduce-motion *, html.cb-reduce-motion *::before, html.cb-reduce-motion 
 }
 html.cb-reduce-motion .cb-spark, html.cb-reduce-motion .cb-confetti { display: none !important; }
 
-/* 📱 iPad-first nav: side icon rail on desktop, bottom tab bar on iPad/narrow (≤1024px). */
+/* 📱 iPad-first nav: bottom tab bar on any TOUCH device (iPad — incl. landscape, since the guys hold it
+   horizontal) or narrow width; full side icon rail only on a mouse-driven desktop. (pointer: coarse) =
+   touch primary input = iPad/phone; (pointer: fine) = mouse = desktop. */
 .cb-bottombar { display: flex; }
-@media (min-width: 1025px) { .cb-bottombar { display: none; } }
-@media (max-width: 1024px) {
+@media (min-width: 1025px) and (pointer: fine) { .cb-bottombar { display: none; } }
+@media (max-width: 1024px), (pointer: coarse) {
   html.cb-tech .cb-siderail { display: none !important; } /* beat the rail's inline display:flex */
   .cb-techmain { padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px)); }
 }
