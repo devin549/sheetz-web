@@ -50,7 +50,7 @@ export default function BrainKbClient({ entries, needsMig }) {
         </div>
         <input placeholder="Source URL (optional)" value={form.source_url} onChange={(e) => upd('source_url', e.target.value)} style={{ ...inp, width: '100%', marginBottom: 10 }} />
         <button className="btn btn-primary" disabled={busy || !form.topic.trim() || !form.body.trim()} onClick={submit}>{busy ? 'Saving…' : 'Add to Brain'}</button>
-        {msg && <span style={{ marginLeft: 12, color: msg.ok ? '#3fae6a' : '#d9534f', fontSize: 13 }}>{msg.text}</span>}
+        {msg && <span style={{ marginLeft: 12, color: msg.ok ? 'var(--green)' : 'var(--red)', fontSize: 13 }}>{msg.text}</span>}
       </div>
 
       {/* List */}
@@ -68,15 +68,15 @@ function KbRow({ e }) {
   const toggle = async () => { const n = !active; setActive(n); await toggleKbEntry(e.id, n); };
   const del = async () => { if (!confirm('Delete this entry?')) return; setGone(true); await deleteKbEntry(e.id); };
   return (
-    <div style={{ border: '1px solid var(--line, #2a2a2a)', borderRadius: 9, padding: 12, marginBottom: 10, opacity: active ? 1 : 0.55 }}>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 9, padding: 12, marginBottom: 10, opacity: active ? 1 : 0.55 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
         <div style={{ fontWeight: 700 }}>{e.topic} {e.category ? <span style={{ fontSize: 11, color: 'var(--mute)' }}>· {e.category}</span> : null}</div>
         <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
           <button onClick={toggle} style={tinyBtn}>{active ? 'On' : 'Off'}</button>
-          <button onClick={del} style={{ ...tinyBtn, color: '#d9534f' }}>Delete</button>
+          <button onClick={del} style={{ ...tinyBtn, color: 'var(--red)' }}>Delete</button>
         </div>
       </div>
-      <div style={{ fontSize: 13, color: 'var(--fg, #ddd)', margin: '6px 0' }}>{e.body}</div>
+      <div style={{ fontSize: 13, color: 'var(--fg-1)', margin: '6px 0' }}>{e.body}</div>
       <div style={{ fontSize: 11, color: 'var(--mute)' }}>
         {(e.tags || []).join(', ')}{e.source_label ? ` · Source: ${e.source_label}` : ''}{e.created_by_name ? ` · by ${e.created_by_name}` : ''}
       </div>

@@ -60,7 +60,7 @@ export default function ReferToSales({ jobId, customerName }) {
         <div style={{ marginTop: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <span style={{ fontSize: 22 }}>{t.icon}</span>
-            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800, color: '#64b5f6' }}>Refer to {t.label}</div><div className="muted" style={{ fontSize: 11 }}>{customerName ? `For ${customerName} · ` : ''}job {jobId}</div></div>
+            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800, color: 'var(--blue)' }}>Refer to {t.label}</div><div className="muted" style={{ fontSize: 11 }}>{customerName ? `For ${customerName} · ` : ''}job {jobId}</div></div>
             <button onClick={close} style={{ background: 'transparent', border: 'none', color: 'var(--fg-2)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>×</button>
           </div>
 

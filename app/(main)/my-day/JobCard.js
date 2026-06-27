@@ -180,7 +180,7 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
         <div style={{ marginTop: 8 }}>
           {!payOpen ? (
             <button onClick={() => { setPayOpen(true); setPayLink(null); setPayErr(null); }}
-              style={{ width: '100%', padding: '11px', borderRadius: 10, border: '1px solid #635bff', background: 'rgba(99,91,255,.10)', color: '#8a84ff', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+              style={{ width: '100%', padding: '11px', borderRadius: 10, border: '1px solid #635bff', background: 'rgba(99,91,255,.10)', color: 'var(--purple)', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
               💳 Collect payment
             </button>
           ) : (
@@ -199,7 +199,7 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
                 </>
               ) : (
                 <>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: '#8a84ff', marginBottom: 6 }}>💳 Ready — customer pays {money(payLink.totalDollars)} ({money(payLink.baseDollars)} + {money(payLink.feeDollars)} fee)</div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--purple)', marginBottom: 6 }}>💳 Ready — customer pays {money(payLink.totalDollars)} ({money(payLink.baseDollars)} + {money(payLink.feeDollars)} fee)</div>
                   <input readOnly value={payLink.url} onFocus={(e) => e.target.select()} style={{ width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '8px 10px', fontSize: 12, marginBottom: 8 }} />
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {tel && <a href={`sms:${tel}?body=${encodeURIComponent('Pay your Clog Busterz Plumbing invoice here: ' + payLink.url)}`} className="btn" style={{ flex: 1, textAlign: 'center', minWidth: 120, textDecoration: 'none' }}>✉️ Text customer</a>}

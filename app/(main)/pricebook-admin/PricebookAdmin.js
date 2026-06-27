@@ -90,19 +90,19 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
         </label>
         <button className="btn btn-primary" disabled={busy || !form.name.trim()} onClick={add}>{busy ? 'Saving…' : 'Add to pricebook'}</button>
         <button className="btn" disabled={busy} onClick={announce} style={{ marginLeft: 8 }}>🚀 Announce drop (Flush Gordon)</button>
-        {msg && <span style={{ marginLeft: 12, color: msg.ok ? '#3fae6a' : '#d9534f', fontSize: 13 }}>{msg.t}</span>}
+        {msg && <span style={{ marginLeft: 12, color: msg.ok ? 'var(--green)' : 'var(--red)', fontSize: 13 }}>{msg.t}</span>}
       </div>
 
       {/* 📉 Margin Watch — AI suggests, you approve. Never auto-changes a price. */}
       <div className="card" style={{ marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontWeight: 800 }}>📉 Margin Watch {reqs.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#ff8a3d', border: '1px solid #ff8a3d', borderRadius: 6, padding: '1px 6px' }}>{reqs.length} to review</span>}</div>
+            <div style={{ fontWeight: 800 }}>📉 Margin Watch {reqs.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: 'var(--red)', border: '1px solid var(--red)', borderRadius: 6, padding: '1px 6px' }}>{reqs.length} to review</span>}</div>
             <div style={{ color: 'var(--mute)', fontSize: 12.5, marginTop: 2 }}>The AI flags items priced under target margin. <strong>It never changes a price</strong> — you approve or reject each one.</div>
           </div>
           <button className="btn" disabled={scan} onClick={watch}>{scan ? 'Scanning…' : '🔍 Run margin scan'}</button>
         </div>
-        {scanMsg && <div style={{ marginTop: 8, color: scanMsg.ok ? '#3fae6a' : '#d9534f', fontSize: 13 }}>{scanMsg.t}</div>}
+        {scanMsg && <div style={{ marginTop: 8, color: scanMsg.ok ? 'var(--green)' : 'var(--red)', fontSize: 13 }}>{scanMsg.t}</div>}
         {reqs.length > 0 && (
           <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
             {reqs.map((r) => (
@@ -113,11 +113,11 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
                     <div style={{ fontSize: 13, marginTop: 3 }}>
                       <span style={{ color: 'var(--fg-3)', textDecoration: 'line-through' }}>${r.old_price}</span>
                       <span style={{ margin: '0 7px', color: 'var(--fg-3)' }}>→</span>
-                      <span style={{ fontWeight: 800, color: '#3fae6a' }}>${r.recommended_price}</span>
+                      <span style={{ fontWeight: 800, color: 'var(--green)' }}>${r.recommended_price}</span>
                       {r.source && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--fg-3)' }}>· {r.source === 'margin-watch' ? 'AI' : r.source}</span>}
                     </div>
                     <div style={{ color: 'var(--mute)', fontSize: 12, marginTop: 3 }}>{r.reason}</div>
-                    {r.err && <div style={{ color: '#d9534f', fontSize: 12, marginTop: 3 }}>{r.err}</div>}
+                    {r.err && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 3 }}>{r.err}</div>}
                   </div>
                   <div style={{ display: 'flex', gap: 7 }}>
                     <button className="btn btn-primary" disabled={r.busy} onClick={() => decide(r.id, true)} style={{ fontSize: 12 }}>{r.busy ? '…' : '✓ Approve'}</button>
@@ -152,7 +152,7 @@ function ItemRow({ i }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 700, fontSize: 13 }}>{i.customer_name || i.name}{i.isNew && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: '#ff8a3d', border: '1px solid #ff8a3d', borderRadius: 6, padding: '1px 5px' }}>🆕 NEW</span>}{i.customer_visible === false && <span style={{ marginLeft: 6, fontSize: 9, color: 'var(--fg-3)' }}>· internal</span>}</div>
+        <div style={{ fontWeight: 700, fontSize: 13 }}>{i.customer_name || i.name}{i.isNew && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: 'var(--red)', border: '1px solid var(--red)', borderRadius: 6, padding: '1px 5px' }}>🆕 NEW</span>}{i.customer_visible === false && <span style={{ marginLeft: 6, fontSize: 9, color: 'var(--fg-3)' }}>· internal</span>}</div>
       </div>
       <span style={{ color: 'var(--fg-3)', fontSize: 13 }}>$</span>
       <input type="number" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} style={{ ...inp, width: 92, padding: '6px 8px' }} />

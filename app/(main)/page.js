@@ -103,7 +103,7 @@ function AgingWidget({ aging }) {
 function JobsWidget({ s }) {
   const rows = [
     { label: 'Scheduled', v: s.scheduled, c: 'var(--fg-2)' },
-    { label: 'En route', v: s.enroute, c: '#ff8a65' },
+    { label: 'En route', v: s.enroute, c: 'var(--amber)' },
     { label: 'On site', v: s.onsite, c: 'var(--green)' },
     { label: 'Done', v: s.done, c: 'var(--green-bright)' },
     { label: 'Cancelled', v: s.cancelled, c: 'var(--red)' },
@@ -207,7 +207,7 @@ export default async function Home({ searchParams }) {
     { show: canSee('/my-day', role), el: <Kpi key="urg" value={kpis.urgent} label="urgent" href="/my-day" color={kpis.urgent ? 'var(--red)' : 'var(--green)'} blink={kpis.urgent > 0} /> },
     { show: canSee('/customers', role), el: <Kpi key="cust" value={kpis.customers.toLocaleString()} label="customers" href="/customers" /> },
     { show: canSee('/my-truck', role), el: <Kpi key="trk" value={kpis.trucks} label="trucks" href="/my-truck" /> },
-    { show: canSee('/shop', role) || isField(role), el: <Kpi key="low" value={kpis.lowStock} label="low stock" href={canSee('/shop', role) ? '/shop' : '/my-truck'} color={kpis.lowStock ? '#ff8a65' : 'var(--green)'} blink={kpis.lowStock > 0} /> },
+    { show: canSee('/shop', role) || isField(role), el: <Kpi key="low" value={kpis.lowStock} label="low stock" href={canSee('/shop', role) ? '/shop' : '/my-truck'} color={kpis.lowStock ? 'var(--red)' : 'var(--green)'} blink={kpis.lowStock > 0} /> },
     { show: canSee('/my-truck', role), el: <Kpi key="tv" value={money(kpis.toolVal)} label="tools on vans" href="/my-truck" color="var(--green-bright)" /> },
   ].filter((k) => k.show) : [];
 

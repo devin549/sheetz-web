@@ -55,11 +55,11 @@ export default async function MyTruck({ searchParams }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
                 <span style={{ fontWeight: 800, fontSize: 15 }}>{t}</span>
                 <span className="muted" style={{ fontSize: 12 }}>
-                  {r.parts} parts · <span style={{ color: r.low ? '#ff8a65' : 'var(--green)' }}>{r.low} low</span> · {r.tools} tools · {money(r.value)} →
+                  {r.parts} parts · <span style={{ color: r.low ? 'var(--red)' : 'var(--green)' }}>{r.low} low</span> · {r.tools} tools · {money(r.value)} →
                 </span>
               </div>
               {r.lowItems.length > 0 && (
-                <div className="meta" style={{ marginTop: 6, color: '#ff8a65' }}>
+                <div className="meta" style={{ marginTop: 6, color: 'var(--red)' }}>
                   <span className="alert-dot amber" aria-hidden="true" />needs restock: {r.lowItems.join(', ')}{r.low > r.lowItems.length ? ` +${r.low - r.lowItems.length} more` : ''}
                 </div>
               )}
@@ -108,7 +108,7 @@ export default async function MyTruck({ searchParams }) {
 
       <div className="card card-amber" style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
         <div><div style={{ fontSize: 22, fontWeight: 800, color: 'var(--amber)' }}>{parts.length}</div><div className="muted" style={{ fontSize: 11 }}>parts on van</div></div>
-        <div><div style={{ fontSize: 22, fontWeight: 800, color: lowCount ? '#ff8a65' : 'var(--green)' }}>{lowCount}</div><div className="muted" style={{ fontSize: 11 }}>low stock</div></div>
+        <div><div style={{ fontSize: 22, fontWeight: 800, color: lowCount ? 'var(--red)' : 'var(--green)' }}>{lowCount}</div><div className="muted" style={{ fontSize: 11 }}>low stock</div></div>
         <div><div style={{ fontSize: 22, fontWeight: 800 }}>{toolList.length}</div><div className="muted" style={{ fontSize: 11 }}>tools issued</div></div>
         <div><div style={{ fontSize: 22, fontWeight: 800, color: 'var(--green-bright)' }}>{money(toolVal)}</div><div className="muted" style={{ fontSize: 11 }}>tools value</div></div>
       </div>
@@ -154,7 +154,7 @@ export default async function MyTruck({ searchParams }) {
             {parts.map((p) => (
               <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 14px', borderBottom: '1px solid var(--border)' }}>
                 <span style={{ fontSize: 13 }}>{isLow(p) && <span className="alert-dot amber" aria-hidden="true" />}{p.name || p.sku}{p.bin ? <span className="muted" style={{ fontSize: 11 }}> · {p.bin}</span> : ''}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: isLow(p) ? '#ff8a65' : 'var(--fg-2)', whiteSpace: 'nowrap' }}>{Number(p.qty || 0)} {p.unit || 'ea'}{isLow(p) ? ' ⚠' : ''}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: isLow(p) ? 'var(--red)' : 'var(--fg-2)', whiteSpace: 'nowrap' }}>{Number(p.qty || 0)} {p.unit || 'ea'}{isLow(p) ? ' ⚠' : ''}</span>
               </div>
             ))}
           </div>
@@ -173,7 +173,7 @@ export default async function MyTruck({ searchParams }) {
                     <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
                     <div className="muted" style={{ fontSize: 10, fontFamily: 'monospace' }}>{[t.serial && 'SN: ' + t.serial, t.mfg, t.year, t.value && money(t.value)].filter(Boolean).join(' · ')}</div>
                   </div>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: loaned ? '#ff8a65' : 'var(--green-bright)', whiteSpace: 'nowrap' }}>{loaned ? '🔄 LOANED' : '✓ ON VAN'}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: loaned ? 'var(--red)' : 'var(--green-bright)', whiteSpace: 'nowrap' }}>{loaned ? '🔄 LOANED' : '✓ ON VAN'}</span>
                 </div>
               );
             })}

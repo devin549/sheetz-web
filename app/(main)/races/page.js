@@ -142,7 +142,7 @@ export default async function Races() {
             </div>
             {/* Corn + Turd coaching */}
             <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, borderLeft: '3px solid var(--green)', background: 'color-mix(in oklab, var(--green) 7%, transparent)', fontSize: 12 }}><strong style={{ color: 'var(--green)' }}>🌽 Mr. Corn:</strong> {cornSays}</div>
-            <div style={{ marginTop: 6, padding: '8px 10px', borderRadius: 8, borderLeft: '3px solid #8a6d3b', background: 'color-mix(in oklab, #8a6d3b 9%, transparent)', fontSize: 12 }}><strong style={{ color: '#b08b4a' }}>💩 Golden Turd:</strong> {turdSays}</div>
+            <div style={{ marginTop: 6, padding: '8px 10px', borderRadius: 8, borderLeft: '3px solid #8a6d3b', background: 'color-mix(in oklab, #8a6d3b 9%, transparent)', fontSize: 12 }}><strong style={{ color: 'var(--amber)' }}>💩 Golden Turd:</strong> {turdSays}</div>
           </div>
         );
       })()}
@@ -244,7 +244,7 @@ export default async function Races() {
                 </div>
                 {/* 🌽💩 your personal roast — tuned to your rank in THIS race */}
                 {b.me && (() => { const rt = laneRoast(b.n, fieldTotal, { seed: name, level: roastLevel }); return (
-                  <LaneRoast template={rt.text} race="revenue" rank={b.n} total={fieldTotal} color={rt.tier === 'leader' ? 'var(--green)' : rt.tier === 'top3' ? 'var(--amber)' : '#ff8a65'} />
+                  <LaneRoast template={rt.text} race="revenue" rank={b.n} total={fieldTotal} color={rt.tier === 'leader' ? 'var(--green)' : rt.tier === 'top3' ? 'var(--amber)' : 'var(--red)'} />
                 ); })()}
               </div>
             );
@@ -262,14 +262,14 @@ export default async function Races() {
         const max = Math.max(1, ...rev.map((x) => x.pts));
         return (
           <div className="card" style={{ marginTop: 10 }}>
-            <div style={{ fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em', color: '#64b5f6', marginBottom: 4 }}>⭐ Review Race · customer love</div>
+            <div style={{ fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--blue)', marginBottom: 4 }}>⭐ Review Race · customer love</div>
             <div className="muted" style={{ fontSize: 10.5, marginBottom: 8 }}>5★ +10 · 4★ +8 · 3★ −5 · 1★ 💀 · $15 floor at 5+ reviews · Pete calls the customer 15 min after the job</div>
             {rev.map((x) => { const pct = Math.max(5, Math.round((x.pts / max) * 100)); const grad = x.n === 1 ? 'linear-gradient(90deg,#1565c0,#42a5f5)' : x.me ? 'linear-gradient(90deg,#1976d2,#64b5f6)' : 'linear-gradient(90deg,#5c6b7a,#90a4ae)';
               return (
                 <div key={x.n} style={{ marginBottom: 9 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 2 }}><span style={{ fontWeight: x.me ? 800 : 600 }}>{rowBadge(x.n) ? rowBadge(x.n) + ' ' : ''}{x.who}{x.me ? ' (YOU)' : ''}</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>{x.pts} pts · {x.reviews} rev</span></div>
                   <div style={{ position: 'relative', height: 20, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid ' + (x.me ? '#64b5f6' : 'var(--border)'), overflow: 'hidden' }}><div style={{ height: '100%', width: pct + '%', background: grad, borderRadius: 10 }} /></div>
-                  {x.me && (() => { const rt = laneRoast(x.n, rev.length, { seed: name + 'review', level: roastLevel }); return <LaneRoast template={rt.text} race="review" rank={x.n} total={rev.length} color={rt.tier === 'leader' ? 'var(--green)' : rt.tier === 'top3' ? '#64b5f6' : '#ff8a65'} />; })()}
+                  {x.me && (() => { const rt = laneRoast(x.n, rev.length, { seed: name + 'review', level: roastLevel }); return <LaneRoast template={rt.text} race="review" rank={x.n} total={rev.length} color={rt.tier === 'leader' ? 'var(--green)' : rt.tier === 'top3' ? 'var(--blue)' : 'var(--red)'} />; })()}
                 </div>
               );
             })}
@@ -283,14 +283,14 @@ export default async function Races() {
         const max = Math.max(1, ...hh.map((h) => h.x));
         return (
           <div className="card" style={{ marginTop: 10 }}>
-            <div style={{ fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em', color: '#b08b4a', marginBottom: 4 }}>🤝 HHWP Race · tech day-off on-call</div>
+            <div style={{ fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--amber)', marginBottom: 4 }}>🤝 HHWP Race · tech day-off on-call</div>
             <div className="muted" style={{ fontSize: 10.5, marginBottom: 8 }}>Cover on-call on your DAY OFF · ranked by # of pickups · 🥇 $250 · 🥈 $100 · 🥉 $50</div>
             {hh.map((h) => { const pct = Math.max(5, Math.round((h.x / max) * 100));
               return (
                 <div key={h.n} style={{ marginBottom: 9 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 2 }}><span style={{ fontWeight: h.me ? 800 : 600 }}>{rowBadge(h.n) ? rowBadge(h.n) + ' ' : ''}{h.who}{h.me ? ' (YOU)' : ''}</span><span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>{h.x}× pickups</span></div>
                   <div style={{ position: 'relative', height: 20, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid ' + (h.me ? '#b08b4a' : 'var(--border)'), overflow: 'hidden' }}><div style={{ height: '100%', width: pct + '%', background: h.n === 1 ? 'linear-gradient(90deg,#8a6d3b,#d9b24a)' : 'linear-gradient(90deg,#6b5a3b,#b08b4a)', borderRadius: 10 }} /></div>
-                  {h.me && (() => { const rt = laneRoast(h.n, hh.length, { seed: name + 'hhwp', hhwp: true, level: roastLevel }); return <LaneRoast template={rt.text} race="hhwp" rank={h.n} total={hh.length} hhwp color={rt.tier === 'leader' ? 'var(--green)' : '#ff8a65'} />; })()}
+                  {h.me && (() => { const rt = laneRoast(h.n, hh.length, { seed: name + 'hhwp', hhwp: true, level: roastLevel }); return <LaneRoast template={rt.text} race="hhwp" rank={h.n} total={hh.length} hhwp color={rt.tier === 'leader' ? 'var(--green)' : 'var(--red)'} />; })()}
                 </div>
               );
             })}

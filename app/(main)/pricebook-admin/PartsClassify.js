@@ -107,7 +107,7 @@ export default function PartsClassify({ items = [] }) {
           </div>
         </div>
       )}
-      {msg && <div style={{ fontSize: 12, marginTop: 8, color: msg.ok ? '#3fae6a' : '#d9534f' }}>{msg.t}</div>}
+      {msg && <div style={{ fontSize: 12, marginTop: 8, color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.t}</div>}
     </div>
   );
 }

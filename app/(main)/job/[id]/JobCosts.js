@@ -45,8 +45,8 @@ export default function JobCosts({ jobId, materialCents, dispatchCents, subCents
           <span style={{ fontSize: 30, lineHeight: 1 }}>{verdict.char}</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <strong style={{ fontSize: 13, color: verdict.tier === 'corn' ? 'var(--green)' : '#ff8a80' }}>{verdict.speaker} says…</strong>
-              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 13, color: verdict.tier === 'corn' ? 'var(--green)' : '#ff8a80' }}>{verdict.pct}% margin</span>
+              <strong style={{ fontSize: 13, color: verdict.tier === 'corn' ? 'var(--green)' : 'var(--red)' }}>{verdict.speaker} says…</strong>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 13, color: verdict.tier === 'corn' ? 'var(--green)' : 'var(--red)' }}>{verdict.pct}% margin</span>
               <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--fg-3)' }}>🔒 private · roast {roastLevel}</span>
             </div>
             <div style={{ fontSize: 13, color: 'var(--fg-1)', lineHeight: 1.5, marginTop: 4 }}>{verdict.body}</div>

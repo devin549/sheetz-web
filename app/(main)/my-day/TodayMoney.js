@@ -22,9 +22,9 @@ export default function TodayMoney({
       {/* HEADLINE NUMBERS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 14 }}>
         <div style={{ background: 'linear-gradient(135deg,rgba(46,230,160,0.14),rgba(46,230,160,0.03))', border: '1px solid #2ee6a0', borderRadius: 12, padding: '14px 16px', boxShadow: '0 0 14px rgba(46,230,160,0.18)' }}>
-          <div style={{ fontSize: 10, color: '#8fe9c4', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 800 }}>Revenue booked today</div>
-          <div style={{ fontFamily: mono, fontSize: 30, fontWeight: 800, color: '#69f0ae', textShadow: '0 0 10px rgba(105,240,174,0.4)' }}>{money(revenue)}</div>
-          <div style={{ fontSize: 11, color: '#a5d6a7' }}>{justNow ? `+${money(justNow.amount)} just now from ${justNow.name}${justNow.jobNumber ? ` · ${justNow.jobNumber}` : ''}` : 'closed jobs booked to you today'}</div>
+          <div style={{ fontSize: 10, color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 800 }}>Revenue booked today</div>
+          <div style={{ fontFamily: mono, fontSize: 30, fontWeight: 800, color: 'var(--green-bright)', textShadow: '0 0 10px rgba(105,240,174,0.4)' }}>{money(revenue)}</div>
+          <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 600 }}>{justNow ? `+${money(justNow.amount)} just now from ${justNow.name}${justNow.jobNumber ? ` · ${justNow.jobNumber}` : ''}` : 'closed jobs booked to you today'}</div>
         </div>
         <div style={{ background: 'linear-gradient(135deg,var(--amber-deep,#3a2600),var(--surface-1))', border: '1px solid var(--amber)', borderRadius: 12, padding: '14px 16px' }}>
           <div style={{ fontSize: 10, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '.5px', fontWeight: 800 }}>Your pay so far</div>
@@ -54,7 +54,7 @@ export default function TodayMoney({
         <div className="card muted" style={{ fontSize: 13 }}>Nothing closed yet today.</div>
       ) : breakdown.map((j) => (
         <Link key={j.id} href={`/job/${j.id}`} style={{ background: 'var(--surface-1)', border: `1px solid ${j.live ? 'var(--amber)' : 'var(--border)'}`, borderRadius: 8, padding: '10px 12px', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit', boxShadow: j.live ? '0 0 10px rgba(255,179,0,0.12)' : 'none' }}>
-          <span style={{ background: j.live ? 'rgba(255,179,0,0.2)' : 'rgba(76,175,80,0.2)', color: j.live ? 'var(--amber)' : '#a5d6a7', padding: '1px 6px', borderRadius: 8, fontSize: 9, fontWeight: 800, whiteSpace: 'nowrap' }}>{j.live ? '🏠 ON-SITE' : '✓ DONE'}</span>
+          <span style={{ background: j.live ? 'rgba(255,179,0,0.2)' : 'rgba(76,175,80,0.2)', color: j.live ? 'var(--amber)' : 'var(--green)', padding: '1px 6px', borderRadius: 8, fontSize: 9, fontWeight: 800, whiteSpace: 'nowrap' }}>{j.live ? '🏠 ON-SITE' : '✓ DONE'}</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, color: 'var(--fg-1)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.name}{j.jobType ? ` · ${j.jobType}` : ''}</div>
             <div style={{ fontSize: 10, color: 'var(--fg-3)' }}>{[j.jobNumber, fmtTime(j.time), j.live ? 'in progress' : ''].filter(Boolean).join(' · ')}</div>

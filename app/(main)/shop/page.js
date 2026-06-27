@@ -89,7 +89,7 @@ export default async function Shop() {
       </Section>
 
       <div className="card card-amber" style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginTop: 8 }}>
-        <div><div style={{ fontSize: 24, fontWeight: 800, color: low.length ? '#ff8a65' : 'var(--green)', display: 'flex', alignItems: 'center', gap: 6 }}>{low.length > 0 && <span className="alert-dot amber" aria-hidden="true" />}{low.length}</div><div className="muted" style={{ fontSize: 11 }}>low line-items</div></div>
+        <div><div style={{ fontSize: 24, fontWeight: 800, color: low.length ? 'var(--red)' : 'var(--green)', display: 'flex', alignItems: 'center', gap: 6 }}>{low.length > 0 && <span className="alert-dot amber" aria-hidden="true" />}{low.length}</div><div className="muted" style={{ fontSize: 11 }}>low line-items</div></div>
         <div><div style={{ fontSize: 24, fontWeight: 800, color: 'var(--amber)' }}>{purchaseList.length}</div><div className="muted" style={{ fontSize: 11 }}>parts to reorder</div></div>
         <div><div style={{ fontSize: 24, fontWeight: 800 }}>{trucks.length}</div><div className="muted" style={{ fontSize: 11 }}>trucks need a run</div></div>
         <div><div style={{ fontSize: 24, fontWeight: 800 }}>{rows.length}</div><div className="muted" style={{ fontSize: 11 }}>total line-items</div></div>
@@ -128,7 +128,7 @@ export default async function Shop() {
               <span style={{ fontWeight: 800, fontSize: 14 }}>{t}</span>
               <Link href={`/my-truck?tech=${encodeURIComponent(t)}`} className="muted" style={{ fontSize: 12 }}>full truck →</Link>
             </div>
-            <div className="meta" style={{ marginTop: 6, color: '#ff8a65' }}>
+            <div className="meta" style={{ marginTop: 6, color: 'var(--red)' }}>
               {byTruck[t].map((p) => `${p.name || p.sku} (${Number(p.qty || 0)}${p.unit ? ' ' + p.unit : ''})`).join(' · ')}
             </div>
           </div>

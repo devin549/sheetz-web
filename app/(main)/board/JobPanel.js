@@ -94,7 +94,7 @@ export default function JobPanel({ job, techName, techs = [], canStatus, canAssi
 
           <Section label="Customer">
             <div style={{ fontSize: 13.5, fontWeight: 700 }}>{job.customer || 'Customer'}</div>
-            {job.phone && <a href={'tel:' + tel} style={{ display: 'block', fontSize: 12, color: '#64b5f6', marginTop: 4 }}>📞 {job.phone}</a>}
+            {job.phone && <a href={'tel:' + tel} style={{ display: 'block', fontSize: 12, color: 'var(--blue)', marginTop: 4 }}>📞 {job.phone}</a>}
             {job.address && <div onClick={openMap} title="Open in Maps" style={{ fontSize: 12, color: '#64b5f6', cursor: 'pointer', marginTop: 4, lineHeight: 1.4 }}>📍 {job.address}</div>}
           </Section>
 

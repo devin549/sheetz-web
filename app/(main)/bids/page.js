@@ -66,7 +66,7 @@ export default async function Bids() {
     const border = escalated ? 'var(--red)' : contacted ? 'var(--green)' : due ? 'var(--amber)' : 'var(--border)';
     // Commission stakes line.
     const comm = !magnet ? null
-      : escalated ? { c: '#ff8a80', t: '💸 You forfeited your 5% — Sales gets it if they close it.' }
+      : escalated ? { c: 'var(--red)', t: '💸 You forfeited your 5% — Sales gets it if they close it.' }
       : contacted ? { c: 'var(--green)', t: '💵 Your 5% is safe — keep working it to close.' }
       : due ? { c: 'var(--amber)', t: '💸 Follow up or you LOSE your 5% — Sales gets it if they close it.' }
       : null;
@@ -83,7 +83,7 @@ export default async function Bids() {
             ? (escalated ? <span className="pill" style={{ fontSize: 9.5, color: 'var(--red)', border: '1px solid var(--red)' }}>→ SALES</span> : contacted ? <span className="pill" style={{ fontSize: 9.5, color: 'var(--green)', border: '1px solid var(--green)' }}>✓ FOLLOWED UP</span> : due ? <span className="pill" style={{ fontSize: 9.5, color: 'var(--amber)', border: '1px solid var(--amber)' }}>🔔 FOLLOW UP NOW</span> : <span className="pill" style={{ fontSize: 9.5, color: 'var(--green)' }}>fresh</span>)
             : <span className="pill" style={{ fontSize: 10, color: r.outcome === 'sold_now' ? 'var(--green)' : 'var(--fg-2)' }}>{r.outcome ? OUTCOME[r.outcome] || r.outcome : 'no outcome'}</span>}
         </div>
-        {sub && <div style={{ fontSize: 10.5, color: escalated ? '#ff9800' : 'var(--fg-3)', marginTop: 4 }}>{sub}</div>}
+        {sub && <div style={{ fontSize: 10.5, color: escalated ? 'var(--red)' : 'var(--fg-3)', marginTop: 4 }}>{sub}</div>}
         {comm && <div style={{ fontSize: 11, fontWeight: 800, color: comm.c, marginTop: 5 }}>{comm.t}</div>}
         {magnet && !contacted && !escalated && <BidActions jobId={r.id} phone={r.phone} />}
       </div>
