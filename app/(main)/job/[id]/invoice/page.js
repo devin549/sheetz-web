@@ -33,7 +33,11 @@ export default async function InvoiceTab({ params }) {
             <div style={{ textAlign: 'right' }}><div style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>{money(v.total)}</div>{(Number(v.balance) || 0) > 0 && <div style={{ fontSize: 11, color: 'var(--red)' }}>{money(v.balance)} owed</div>}</div>
           </div>
         )) : <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>No invoice imported for this job yet. You can still collect payment below, or build the invoice from the estimate.</div>}
-        <div style={{ marginTop: 8 }}><Link href="/invoices" className="pill">All invoices →</Link></div>
+        {(c.customer?.id || c.job?.customer_id) && (
+          <div style={{ marginTop: 8 }}>
+            <Link href={`/invoices?customer=${c.customer?.id || c.job.customer_id}`} className="pill">All of {c.customer?.name || 'this customer'}’s invoices →</Link>
+          </div>
+        )}
       </div>
 
       {canCollect && <CollectPay jobId={params.id} defaultAmount={amount} tel={dial(c.customer.phone)} />}
