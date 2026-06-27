@@ -4,7 +4,7 @@
 // each, pull a LIVE vendor price (SerpAPI: Home Depot/Lowe's), and watch the rolled-up parts cost vs the
 // baked-in material cost. One item can carry MANY barcodes (Everbilt@HD, Oatey@Lowe's — all one part).
 import { useState, useMemo, useTransition } from 'react';
-import { loadServiceParts, recordPartLink, setLinkStatus, refreshVendorPrice, addBarcode, removeBarcode } from './actions';
+import { loadServiceParts, recordPartLink, setLinkStatus, refreshVendorPrice, addBarcode, removeBarcode, priceAllParts, learnPartsFromJobs } from './actions';
 import { priceStats } from '@/lib/barcodePricing';
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -35,8 +35,11 @@ export default function PartsClassify({ items = [] }) {
 
   return (
     <div className="card" style={{ marginBottom: 18 }}>
-      <div style={{ fontWeight: 800 }}>🧩 Parts &amp; live vendor cost</div>
-      <div className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>Pick a service → confirm the parts it uses → pull live Home Depot / Lowe&apos;s prices. One part can have many barcodes.</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ fontWeight: 800 }}>🧩 Parts &amp; live vendor cost</div>
+        <button onClick={() => act('learn', () => learnPartsFromJobs())} disabled={pending} className="pill" style={{ marginLeft: 'auto', cursor: 'pointer', color: 'var(--purple,#9c64f4)', border: '1px solid var(--purple,#9c64f4)' }}>{busy === 'learn' ? 'Learning…' : '🧠 Learn from jobs'}</button>
+      </div>
+      <div className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>Pick a service → confirm the parts it uses → pull live Home Depot / Lowe&apos;s prices. One part can have many barcodes. <strong>Learn from jobs</strong> mines what techs actually used.</div>
 
       {/* Service picker */}
       <div style={{ position: 'relative' }}>
@@ -61,6 +64,11 @@ export default function PartsClassify({ items = [] }) {
           </div>
 
           {/* parts list */}
+          {data.links.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
+              <button onClick={() => act('priceall', () => priceAllParts(svcId))} disabled={pending} className="pill" style={{ cursor: 'pointer', color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>{busy === 'priceall' ? 'Pricing…' : '💲 Price all parts (live)'}</button>
+            </div>
+          )}
           <div style={{ display: 'grid', gap: 7 }}>
             {data.links.length === 0 && <div className="muted" style={{ fontSize: 12.5 }}>No parts learned yet. Add the ones this service uses below — they&apos;ll also build up as techs use them on jobs.</div>}
             {data.links.map((l) => {

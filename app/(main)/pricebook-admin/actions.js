@@ -166,6 +166,63 @@ export async function refreshVendorPrice(id) {
   return { ok: true, msg: best ? `${best.seller || 'Vendor'}: $${r.cheapest ?? best.price}` : 'No price found.', cheapest: r.cheapest, sellers: r.sellers };
 }
 
+// 💲 One SerpAPI sweep — price every (non-rejected) part of a service from live vendors, and re-price any
+// existing barcodes on those parts by matching the seller. Owner-triggered (costs SerpAPI credits).
+export async function priceAllParts(serviceId) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const sid = clean(serviceId, 60); if (!sid) return { ok: false, msg: 'No service.' };
+  let links = [];
+  try { const { data } = await c.sb.from('pricebook_learned_links').select('id, part_name, part_item_id').eq('service_item_id', sid).neq('status', 'rejected'); links = data || []; } catch (e) { return { ok: false, msg: /relation|schema cache|does not exist/i.test(e?.message || '') ? 'Run supabase/119_pricebook_learned_links.sql first.' : e.message }; }
+  let pricedParts = 0, pricedBarcodes = 0;
+  for (const l of links) {
+    const r = await vendorPrices(l.part_name);
+    if (!r.ok || !r.sellers.length) continue;
+    const best = r.sellers[0];
+    await c.sb.from('pricebook_learned_links').update({ vendor_seller: best.seller || null, vendor_price: r.cheapest ?? best.price, vendor_url: best.link || null, vendor_checked_at: new Date().toISOString() }).eq('id', l.id);
+    pricedParts++;
+    if (l.part_item_id) {
+      const { data: bcs } = await c.sb.from('pricebook_barcodes').select('id, vendor_seller').eq('item_id', l.part_item_id);
+      for (const b of (bcs || [])) {
+        const vkey = (b.vendor_seller || '').toLowerCase().split(' ')[0];
+        const match = vkey && r.sellers.find((s) => (s.seller || '').toLowerCase().includes(vkey));
+        if (match) { await c.sb.from('pricebook_barcodes').update({ unit_price: match.price, vendor_url: match.link || null, price_checked_at: new Date().toISOString() }).eq('id', b.id); pricedBarcodes++; }
+      }
+    }
+  }
+  revalidatePath('/pricebook-admin');
+  return { ok: true, msg: pricedParts ? `Priced ${pricedParts} part${pricedParts === 1 ? '' : 's'}${pricedBarcodes ? ` + ${pricedBarcodes} barcodes` : ''} from live vendors.` : 'No prices found.' };
+}
+
+// 🧠 Learner — mine what techs actually used on jobs (shop_issues parts) against the services on those
+// jobs (job_pricebook_usage) and record/strengthen the service↔part links. Owner-triggered; preserves
+// any 'confirmed'/'rejected' classification (only updates the times_seen learning signal).
+export async function learnPartsFromJobs() {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  let usage = [], issues = [];
+  try { const { data } = await c.sb.from('job_pricebook_usage').select('job_id, item_id').limit(8000); usage = data || []; } catch (_) {}
+  try { const { data } = await c.sb.from('shop_issues').select('job_id, item_name, kind').limit(8000); issues = data || []; } catch (_) {}
+  if (!usage.length || !issues.length) return { ok: true, msg: 'Nothing to learn yet — need jobs with both a service sold and parts issued.' };
+  const svcByJob = {}; usage.forEach((u) => { if (u.job_id && u.item_id) (svcByJob[u.job_id] = svcByJob[u.job_id] || new Set()).add(u.item_id); });
+  const partsByJob = {}; issues.forEach((i) => { if (i.job_id && i.item_name && i.kind !== 'rental') (partsByJob[i.job_id] = partsByJob[i.job_id] || []).push(String(i.item_name).trim()); });
+  // Tally co-occurrence: service ↔ part.
+  const tally = {};
+  for (const [jobId, svcs] of Object.entries(svcByJob)) {
+    const parts = partsByJob[jobId]; if (!parts) continue;
+    for (const sid of svcs) for (const pn of parts) { if (!pn) continue; const k = sid + '' + pn.toLowerCase(); (tally[k] = tally[k] || { sid, pn, n: 0 }).n++; }
+  }
+  const entries = Object.values(tally).slice(0, 600); // safety cap per run
+  let added = 0, updated = 0;
+  for (const e of entries) {
+    try {
+      const { data: ex } = await c.sb.from('pricebook_learned_links').select('id').eq('service_item_id', e.sid).ilike('part_name', e.pn).maybeSingle();
+      if (ex) { await c.sb.from('pricebook_learned_links').update({ times_seen: e.n, updated_at: new Date().toISOString() }).eq('id', ex.id); updated++; }
+      else { const { error } = await c.sb.from('pricebook_learned_links').insert({ service_item_id: e.sid, part_name: e.pn, times_seen: e.n, status: 'suggested' }); if (error && /relation|schema cache|does not exist/i.test(error.message || '')) return { ok: false, msg: 'Run supabase/119_pricebook_learned_links.sql first.' }; if (!error) added++; }
+    } catch (_) {}
+  }
+  revalidatePath('/pricebook-admin');
+  return { ok: true, msg: `Learned from jobs — ${added} new part link${added === 1 ? '' : 's'}${updated ? `, ${updated} strengthened` : ''}. Review + confirm below.` };
+}
+
 // Load a service's parts (learned links) + barcodes + the live-cost rollup vs the baked material cost.
 export async function loadServiceParts(serviceId) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err, links: [], barcodes: [] };
