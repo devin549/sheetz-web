@@ -10,8 +10,8 @@ import { usePathname } from 'next/navigation';
 const PRIMARY = [
   { icon: '🌅', label: 'Start', href: '/start' },
   { icon: '📋', label: 'My Day', href: '/my-day' },
-  { icon: '💵', label: 'Pay', href: '/pay' },
-  { icon: '🏁', label: 'Races', href: '/races' },
+  { icon: '🧲', label: 'Bids', href: '/bids' },
+  { icon: '🚚', label: 'Truck', href: '/my-truck' },
 ];
 
 export default function BottomBar({ rail = [] }) {
