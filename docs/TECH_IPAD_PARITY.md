@@ -132,6 +132,10 @@ Web: photo→Storage→`/api/equipment/scan-plate`→vision→upsert `equipment`
 installed → insert `permit_requests`. The SerpAPI/Lens "identify unknown part by photo" = separate queued
 build ([[project_part_identifier]]).
 
-**Still ⬜:** End of Day, Record/Vegas/Leaderboard gamification, Van Maintenance, Dry Calc/Moisture
-(FloodBusterz), the `pane-cal` Google agenda. Cross-cutting: Customer Mode (`data-tech-only` server-side by
-role), gas-gate, video-evidence invoice lock, after-hours on-call-FS routing, idle re-auth.
+**Still ⬜:** End of Day, Van Maintenance, Dry Calc/Moisture (FloodBusterz), the `pane-cal` Google agenda.
+Cross-cutting: Customer Mode (`data-tech-only` server-side by role), gas-gate, video-evidence invoice lock,
+after-hours on-call-FS routing, idle re-auth.
+
+**❌ NOT WANTED (Devin 6/27): the 🎰 Vegas tab / casino-slots gamification — do NOT build it.** (The
+Power Plunger "roll for a bonus" on Start stays; Vegas as a separate achievements/slots tab does not.)
+Record/Leaderboard gamification = de-prioritized unless Devin asks.
