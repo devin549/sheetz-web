@@ -9,6 +9,7 @@ import IdentifyClient from '../identify/IdentifyClient';
 import AddTool from '../tools/AddTool';
 import ToolRemoveBtn from './ToolRemoveBtn';
 import ShopSelfCheckout from './ShopSelfCheckout';
+import StockVan from './StockVan';
 
 export const dynamic = 'force-dynamic';
 
@@ -123,6 +124,8 @@ export default async function MyTruck({ searchParams }) {
   const showCost = canSeeCost(role);
   // Add / remove tools = manager-controlled (Chris W / Ronnie / owner), per the shop-sheet tool design.
   const canManageTools = can(role, 'manageInventory') || can(role, 'manageUsers');
+  // Stocking another tech's van (load-out) = shop/manager; a field tech stocks only their own.
+  const canStockOthers = can(role, 'manageInventory') || can(role, 'seeCrew') || can(role, 'manageUsers');
 
   return (
     <div className="wrap" style={{ maxWidth: 880 }}>
@@ -148,6 +151,9 @@ export default async function MyTruck({ searchParams }) {
         </div>
 
         <div style={{ marginTop: 10 }}><TruckScan /></div>
+
+        {/* 📦 Load-out: scan parts onto the van (how van stock fills — receipts only track $). */}
+        <div style={{ marginTop: 10 }}><StockVan defaultTech={role === 'tech' ? '' : detailTech} canTargetOthers={canStockOthers} /></div>
 
         {lowParts.length > 0 && (
           <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--red)' }}>
