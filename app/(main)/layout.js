@@ -94,7 +94,27 @@ export default async function MainLayout({ children }) {
         game = { rank: haveRank ? lb.you.rank : 2, rankDelta: 0, streak: st.available ? st.streak : 6, powerHour: 47, level: xp.available ? xp.level : 7, levelPct: xp.available ? xp.pct : 84 };
       }
     } catch (_) {}
-    return <TechShell name={name} photoUrl={profile.photoUrl} shells={shells} activeJob={activeJob} wmId={wmId} game={game}>{children}</TechShell>;
+
+    // Unread team-chat count for the sidebar Chat badge/blink — #sheetz messages newer than the tech's
+    // last open (prefs.chat_last_read), excluding their own posts.
+    let chatUnread = 0;
+    try {
+      const sbA = getSupabaseAdmin();
+      const lastRead = profile.prefs?.chat_last_read || null;
+      let r = await sbA.from('cb_comms').select('from_name, channel, created_at').is('deleted_at', null).order('created_at', { ascending: false }).limit(40);
+      if (r.error) r = await sbA.from('cb_comms').select('from_name, channel, created_at').order('created_at', { ascending: false }).limit(40);
+      const meFirst = String(name || '').trim().toLowerCase().split(/\s+/)[0];
+      chatUnread = (r.data || []).filter((m) => {
+        const isTeam = /discord|internal|team|sheetz/i.test(String(m.channel || '')) || !m.channel;
+        if (!isTeam) return false;
+        if (lastRead && new Date(m.created_at) <= new Date(lastRead)) return false;
+        const from = String(m.from_name || '').trim().toLowerCase();
+        if (from && meFirst && from.startsWith(meFirst)) return false; // don't count my own messages
+        return true;
+      }).length;
+    } catch (_) {}
+
+    return <TechShell name={name} photoUrl={profile.photoUrl} shells={shells} activeJob={activeJob} wmId={wmId} game={game} chatUnread={chatUnread}>{children}</TechShell>;
   }
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', minHeight: 'calc(100vh - 58px)' }}>

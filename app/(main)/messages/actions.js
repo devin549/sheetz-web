@@ -17,6 +17,22 @@ const MANAGE = ['owner', 'admin', 'gm', 'om', 'csr', 'dispatcher', 'marketing', 
 // Only senior roles can wipe a line off the shared feed (audit stays — it's a soft delete).
 const DELETE = ['owner', 'admin', 'gm', 'om'];
 
+// Mark the team chat read NOW for the signed-in user — stamps prefs.chat_last_read so the sidebar Chat
+// badge/blink clears. Called when the tech opens the chat. Merges into prefs (no migration).
+export async function markChatRead() {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false };
+  try {
+    const { data: cur } = await sb.from('profiles').select('prefs').eq('user_id', user.id).maybeSingle();
+    const next = { ...((cur && cur.prefs) || {}), chat_last_read: new Date().toISOString() };
+    await sb.from('profiles').update({ prefs: next }).eq('user_id', user.id);
+  } catch (_) {}
+  return { ok: true };
+}
+
 async function gate() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();

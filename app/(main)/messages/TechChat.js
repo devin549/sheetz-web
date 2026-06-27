@@ -4,7 +4,7 @@
 // Comms Desk (delete / proposed-actions / customer threads). Read the team, drop a line, see Hank's chime.
 import { useRef, useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { postChat, ackChat } from './actions';
+import { postChat, ackChat, markChatRead } from './actions';
 
 const fmt = (iso) => { try { return new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
 const initials = (n) => String(n || '?').trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
@@ -14,6 +14,8 @@ export default function TechChat({ messages = [], me = '' }) {
   const formRef = useRef(null);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
+  // Opening the chat marks it read → clears the sidebar Chat badge/blink (refresh so the rail updates).
+  useEffect(() => { markChatRead().then(() => router.refresh()).catch(() => {}); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Auto-sync: re-pull the feed every 20s so new #sheetz chatter shows up without a manual refresh.
   useEffect(() => { const id = setInterval(() => router.refresh(), 20000); return () => clearInterval(id); }, [router]);
   // Blink: messages that weren't on screen at mount/last-render get a one-time highlight.

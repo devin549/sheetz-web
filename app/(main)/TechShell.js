@@ -47,7 +47,7 @@ function switchShell(s) {
 
 const GAME = { rank: 2, rankDelta: 1, streak: 6, powerHour: 47, level: 7, levelPct: 84 };
 
-export default function TechShell({ name, photoUrl = null, shells = ['tech'], activeJob = null, game = GAME, wmId = '', children }) {
+export default function TechShell({ name, photoUrl = null, shells = ['tech'], activeJob = null, game = GAME, wmId = '', chatUnread = 0, children }) {
   const path = usePathname();
   const [cust, setCust] = useState(false);
   const [peek, setPeek] = useState(false);
@@ -214,13 +214,17 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
                 {grp.items.map((it) => {
                   if (cust && it.money) return null;
                   const A = active(it.href);
+                  // Chat gets a LIVE unread badge that blinks; others use their static sample badge.
+                  const isChat = it.href === '/messages';
+                  const badge = isChat ? (chatUnread > 0 ? (chatUnread > 9 ? '9+' : String(chatUnread)) : null) : it.badge;
+                  const blink = isChat && chatUnread > 0;
                   return (
                     <Link key={it.label} href={it.href} title={it.label}
                       style={{ position: 'relative', width: 76, height: 60, borderRadius: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, textDecoration: 'none',
                         color: A ? 'var(--amber)' : 'var(--fg-3)', background: A ? 'var(--surface-2)' : 'transparent', fontSize: 10, fontWeight: A ? 800 : 600 }}>
                       <span style={{ fontSize: 20 }}>{it.icon}</span>
                       <span>{it.label}</span>
-                      {it.badge && <span style={{ position: 'absolute', top: 4, right: 8, background: 'var(--red, #d32f2f)', color: '#fff', borderRadius: 9, padding: '0 5px', fontSize: 9, fontWeight: 800 }}>{it.badge}</span>}
+                      {badge && <span className={blink ? 'pill-blink' : undefined} style={{ position: 'absolute', top: 4, right: 8, background: 'var(--red, #d32f2f)', color: '#fff', borderRadius: 9, padding: '0 5px', fontSize: 9, fontWeight: 800 }}>{badge}</span>}
                     </Link>
                   );
                 })}
