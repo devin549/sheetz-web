@@ -8,13 +8,13 @@ import ItemEditor from './ItemEditor';
 import MaterialCostRollup from './MaterialCostRollup';
 import ProfitIntel from './ProfitIntel';
 import LearnedCustomJobs from './LearnedCustomJobs';
+import BundleBuilder from './BundleBuilder';
 
 const emptyForm = { name: '', customerName: '', categoryId: '', retailPrice: '', materialCost: '', customerDescription: '', customerVisible: true };
 const inp = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 7, padding: '9px 11px', fontSize: 14, width: '100%' };
 
-export default function PricebookAdmin({ items, cats, needsMig, newCount, priceReqs = [], priceGate = {} }) {
+export default function PricebookAdmin({ items, cats, needsMig, newCount, priceReqs = [], priceGate = {}, bundles = [] }) {
   const canMovePrice = priceGate.canMovePrice !== false; // owner/admin only — page computes the gate
-
   const canEditPriceFields = priceGate.canEditPriceFields !== false;
   const canEditContent = priceGate.canEditContent !== false;
   const [list, setList] = useState(items);
@@ -174,6 +174,9 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
           <CategoryTree />
         </div>
       )}
+
+      {/* 🪜 Good/Better/Best Bundle Builder — author the customer-facing tier ladder per job type. */}
+      {!needsMig && <BundleBuilder initialBundles={bundles} />}
 
       {/* 🧩 Parts & live vendor cost (learn → classify → SerpAPI price) */}
       {!needsMig && <PartsClassify items={list} />}

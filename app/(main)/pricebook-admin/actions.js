@@ -6,9 +6,10 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { canAny } from '@/lib/roles';
 import { postToDiscord } from '@/lib/discord';
-import { marginPct, priceForTargetMargin, canMovePrice, canEditPriceFields, canEditPricebookContent, rollupMaterialCost, exceedsMaterialThreshold, materialPctOfTicket, priceForMaterialThreshold, effectiveHourly, groupCustomEntries } from '@/lib/pricebookEngine';
+import { marginPct, priceForTargetMargin, buildTiers, canMovePrice, canEditPriceFields, canEditPricebookContent, rollupMaterialCost, exceedsMaterialThreshold, materialPctOfTicket, priceForMaterialThreshold, effectiveHourly, groupCustomEntries } from '@/lib/pricebookEngine';
 import { onsiteHours } from '@/lib/hours';
 import { vendorPrices } from '@/lib/serpVendor';
+import { searchItems } from '@/lib/pricebookQuery';
 
 // Owner pricebook editor — add/customize items, and let Flush Gordon hype new drops to the team.
 const FLUSH = { username: 'Flush Gordon 🚀' };
@@ -568,4 +569,174 @@ export async function announceDrop(sinceHours = 168) {
   const r = await postToDiscord(msg, FLUSH);
   if (!r.ok) return { ok: false, msg: "Couldn't reach Discord (" + (r.error || '') + ').' };
   return { ok: true, msg: `Flush Gordon hyped ${items.length} item${items.length === 1 ? '' : 's'} to the team. 🚀` };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════════
+// 🪜 GOOD / BETTER / BEST BUNDLE BUILDER — author the customer-facing tier ladder for a job type.
+// The OWNER is the only price-mover: this tool NEVER sets or invents a price. A tier's price is the LIVE sum
+// of the retail prices of the real catalog items the owner picks into it (buildTiers — same math the close
+// uses). All actions share the canEdit() ctx() gate (owner/admin/gm/om/office). No new migration: every
+// field already exists in supabase/104_pricebook.sql.
+// ══════════════════════════════════════════════════════════════════════════════════════════════════════
+
+const TIER_SET = ['good', 'better', 'best'];
+const cleanTiers = (arr) => {
+  const out = (Array.isArray(arr) ? arr : []).map((t) => String(t).toLowerCase()).filter((t) => TIER_SET.includes(t));
+  return out.length ? [...new Set(out)] : ['good', 'better', 'best'];
+};
+const slugify = (s) => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+
+// List every bundle (light) for the builder picker — name, job type, slug, whether it has a full GBB ladder.
+export async function listBundles() {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err, bundles: [] };
+  try {
+    const { data, error } = await c.sb.from('pricebook_bundles')
+      .select('id, slug, name, job_type, active, good_option_name, better_option_name, best_option_name')
+      .order('name');
+    if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/104_pricebook.sql first.' : error.message, bundles: [] };
+    const ids = (data || []).map((b) => b.id);
+    const counts = {};
+    if (ids.length) { try { const { data: bi } = await c.sb.from('pricebook_bundle_items').select('bundle_id').in('bundle_id', ids); (bi || []).forEach((r) => { counts[r.bundle_id] = (counts[r.bundle_id] || 0) + 1; }); } catch (_) {} }
+    const bundles = (data || []).map((b) => ({
+      id: b.id, slug: b.slug, name: b.name, jobType: b.job_type || '', active: b.active !== false,
+      itemCount: counts[b.id] || 0,
+      tierNames: [b.good_option_name, b.better_option_name, b.best_option_name].filter(Boolean).length,
+    }));
+    return { ok: true, bundles };
+  } catch (e) { return { ok: false, msg: String(e?.message || e), bundles: [] }; }
+}
+
+// Load one bundle in full + its items (with the catalog item joined) + the LIVE-computed tier ladder.
+export async function loadBundle(bundleId) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const id = clean(bundleId, 60); if (!id) return { ok: false, msg: 'No bundle.' };
+  try {
+    const { data: bundle, error } = await c.sb.from('pricebook_bundles').select('*').eq('id', id).maybeSingle();
+    if (error || !bundle) return { ok: false, msg: error?.message || 'Bundle not found.' };
+    const { data: rows } = await c.sb.from('pricebook_bundle_items')
+      .select('id, quantity, tiers, sort_order, item:pricebook_items(id, sku, name, customer_name, retail_price, estimated_material_cost, primary_photo_url)')
+      .eq('bundle_id', id).order('sort_order');
+    const items = (rows || []).map((r) => ({
+      id: r.id, itemId: r.item?.id, quantity: Number(r.quantity) || 1, tiers: cleanTiers(r.tiers), sortOrder: r.sort_order || 0,
+      name: r.item?.customer_name || r.item?.name || '(deleted item)', sku: r.item?.sku || '',
+      price: Number(r.item?.retail_price) || 0, cost: Number(r.item?.estimated_material_cost) || 0, photo: r.item?.primary_photo_url || null,
+    }));
+    return { ok: true, bundle: shapeBundle(bundle), items, tiers: computeTiers(bundle, rows || []) };
+  } catch (e) { return { ok: false, msg: String(e?.message || e) }; }
+}
+
+// Customer-facing copy projection of a bundle row (what the builder edits).
+function shapeBundle(b) {
+  return {
+    id: b.id, slug: b.slug, name: b.name, jobType: b.job_type || '', active: b.active !== false,
+    goodName: b.good_option_name || '', betterName: b.better_option_name || '', bestName: b.best_option_name || '',
+    goodBestFor: b.good_best_for || '', betterBestFor: b.better_best_for || '', bestBestFor: b.best_best_for || '',
+    customerDescription: b.customer_description || '', warrantyText: b.warranty_text || '',
+    customerPhotoUrl: b.customer_photo_url || '', approvalButtonText: b.approval_button_text || 'Approve & Schedule',
+  };
+}
+
+// LIVE tier ladder for the builder preview — reuses buildTiers (the SAME math the customer close uses), so
+// the preview numbers match the real estimate exactly. Returns {key,name,bestFor,price,recommended,includes}.
+function computeTiers(bundle, rows) {
+  const bundleItems = (rows || []).map((r) => ({ tiers: cleanTiers(r.tiers), quantity: Number(r.quantity) || 1, item: r.item }));
+  return buildTiers(bundle, bundleItems);
+}
+
+// Create a new (empty) bundle — structure only, no prices. Owner then adds items + copy.
+export async function createBundle(form) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const name = clean(form?.name, 160);
+  if (!name) return { ok: false, msg: 'Bundle name is required.' };
+  const slug = slugify(form?.slug) || slugify(name) || ('bundle-' + Date.now().toString(36));
+  const row = {
+    slug, name, job_type: clean(form?.jobType, 80) || null, active: true,
+    good_option_name: clean(form?.goodName, 120) || null,
+    better_option_name: clean(form?.betterName, 120) || null,
+    best_option_name: clean(form?.bestName, 120) || null,
+    approval_button_text: 'Approve & Schedule',
+  };
+  const { data, error } = await c.sb.from('pricebook_bundles').insert(row).select('id').maybeSingle();
+  if (error) return { ok: false, msg: /duplicate|unique/i.test(error.message || '') ? 'That slug already exists — pick another.' : (/relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/104_pricebook.sql first.' : error.message) };
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'pricebook.bundle_create', entity: 'pricebook_bundle', entity_id: String(data?.id || ''), detail: { name, slug } }); } catch (_) {}
+  revalidatePath('/pricebook-admin');
+  return { ok: true, msg: `Created "${name}".`, bundleId: data?.id };
+}
+
+// Save the bundle's customer-facing copy (tier names, best-for lines, description, warranty, photo, CTA).
+// NEVER touches a price.
+export async function saveBundleCopy(bundleId, form) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const id = clean(bundleId, 60); if (!id) return { ok: false, msg: 'No bundle.' };
+  const name = clean(form?.name, 160); if (!name) return { ok: false, msg: 'Bundle name is required.' };
+  const patch = {
+    name, job_type: clean(form?.jobType, 80) || null,
+    good_option_name: clean(form?.goodName, 120) || null,
+    better_option_name: clean(form?.betterName, 120) || null,
+    best_option_name: clean(form?.bestName, 120) || null,
+    good_best_for: clean(form?.goodBestFor, 200) || null,
+    better_best_for: clean(form?.betterBestFor, 200) || null,
+    best_best_for: clean(form?.bestBestFor, 200) || null,
+    customer_description: clean(form?.customerDescription, 800) || null,
+    warranty_text: clean(form?.warrantyText, 300) || null,
+    customer_photo_url: clean(form?.customerPhotoUrl, 500) || null,
+    approval_button_text: clean(form?.approvalButtonText, 60) || 'Approve & Schedule',
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await c.sb.from('pricebook_bundles').update(patch).eq('id', id);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/pricebook-admin'); revalidatePath('/catalog');
+  return { ok: true, msg: 'Saved.' };
+}
+
+// 🔎 Search the 549-item catalog for items to add — reuses the shared searchItems (the SAME engine the tech
+// iPad + /api/pricebook/search use). Owner-gated, so cost/margin come back too.
+export async function searchCatalog(q) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err, items: [] };
+  const term = clean(q, 80); if (!term) return { ok: true, items: [] };
+  try {
+    const items = await searchItems(c.sb, term, { showCost: true, limit: 25 });
+    return { ok: true, items: items.map((i) => ({ id: i.id, name: i.name, sku: i.sku, price: i.price, cost: i.cost ?? null, marginPct: i.marginPct ?? null, photo: i.photo || null })) };
+  } catch (e) { return { ok: false, msg: String(e?.message || e), items: [] }; }
+}
+
+// Add a catalog item to the bundle (default: in all three tiers). Returns the refreshed bundle.
+export async function addBundleItem(bundleId, itemId, tiers, quantity, sortOrder) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const bid = clean(bundleId, 60), iid = clean(itemId, 60);
+  if (!bid || !iid) return { ok: false, msg: 'Bundle + item required.' };
+  const row = { bundle_id: bid, item_id: iid, tiers: cleanTiers(tiers), quantity: Math.max(1, Number(quantity) || 1), sort_order: Number(sortOrder) || 0 };
+  const { error } = await c.sb.from('pricebook_bundle_items').insert(row);
+  if (error) return { ok: false, msg: /duplicate|unique/i.test(error.message || '') ? 'That item is already in this bundle — edit its tiers instead.' : error.message };
+  revalidatePath('/pricebook-admin'); revalidatePath('/catalog');
+  return loadBundle(bid);
+}
+
+// Update one bundle item's tiers / quantity / sort order (which tiers include it = the ladder shape).
+export async function updateBundleItem(rowId, patch) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const id = clean(rowId, 60); if (!id) return { ok: false, msg: 'No row.' };
+  const { data: existing } = await c.sb.from('pricebook_bundle_items').select('bundle_id, tiers').eq('id', id).maybeSingle();
+  if (!existing) return { ok: false, msg: 'Item not found.' };
+  const up = {};
+  if (patch?.tiers != null) up.tiers = cleanTiers(patch.tiers);
+  if (patch?.quantity != null) up.quantity = Math.max(1, Number(patch.quantity) || 1);
+  if (patch?.sortOrder != null) up.sort_order = Number(patch.sortOrder) || 0;
+  if (!Object.keys(up).length) return { ok: false, msg: 'Nothing to update.' };
+  const { error } = await c.sb.from('pricebook_bundle_items').update(up).eq('id', id);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/pricebook-admin'); revalidatePath('/catalog');
+  return loadBundle(existing.bundle_id);
+}
+
+// Remove an item from the bundle.
+export async function removeBundleItem(rowId) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const id = clean(rowId, 60); if (!id) return { ok: false, msg: 'No row.' };
+  const { data: existing } = await c.sb.from('pricebook_bundle_items').select('bundle_id').eq('id', id).maybeSingle();
+  if (!existing) return { ok: false, msg: 'Item not found.' };
+  const { error } = await c.sb.from('pricebook_bundle_items').delete().eq('id', id);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/pricebook-admin'); revalidatePath('/catalog');
+  return loadBundle(existing.bundle_id);
 }
