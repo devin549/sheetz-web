@@ -32,6 +32,19 @@ export default async function PricebookAdminPage() {
     priceReqs = reqs.map((r) => ({ ...r, itemName: names[r.item_id] || 'Item' }));
   } catch (_) {}
 
+  // GBB bundles for the Bundle Builder (light list; full load happens client-side on open).
+  let bundles = [];
+  if (!needsMig) {
+    try {
+      const bq = await sb.from('pricebook_bundles').select('id, slug, name, job_type, active, good_option_name, better_option_name, best_option_name').order('name');
+      const rows = bq.data || [];
+      const ids = rows.map((b) => b.id);
+      const counts = {};
+      if (ids.length) { const { data: bi } = await sb.from('pricebook_bundle_items').select('bundle_id').in('bundle_id', ids); (bi || []).forEach((r) => { counts[r.bundle_id] = (counts[r.bundle_id] || 0) + 1; }); }
+      bundles = rows.map((b) => ({ id: b.id, slug: b.slug, name: b.name, jobType: b.job_type || '', active: b.active !== false, itemCount: counts[b.id] || 0, tierNames: [b.good_option_name, b.better_option_name, b.best_option_name].filter(Boolean).length }));
+    } catch (_) {}
+  }
+
   const newCount = items.filter((i) => i.isNew).length;
-  return <PricebookAdmin items={items} cats={cats} needsMig={needsMig} newCount={newCount} priceReqs={priceReqs} />;
+  return <PricebookAdmin items={items} cats={cats} needsMig={needsMig} newCount={newCount} priceReqs={priceReqs} bundles={bundles} />;
 }

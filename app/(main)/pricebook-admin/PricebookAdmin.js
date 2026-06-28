@@ -3,11 +3,12 @@
 import { useState, useMemo } from 'react';
 import { addPricebookItem, updateItemPrice, announceDrop, runMarginWatch, approvePriceChange, rejectPriceChange } from './actions';
 import PartsClassify from './PartsClassify';
+import BundleBuilder from './BundleBuilder';
 
 const emptyForm = { name: '', customerName: '', categoryId: '', retailPrice: '', materialCost: '', customerDescription: '', customerVisible: true };
 const inp = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 7, padding: '9px 11px', fontSize: 14, width: '100%' };
 
-export default function PricebookAdmin({ items, cats, needsMig, newCount, priceReqs = [] }) {
+export default function PricebookAdmin({ items, cats, needsMig, newCount, priceReqs = [], bundles = [] }) {
   const [list, setList] = useState(items);
   const [reqs, setReqs] = useState(priceReqs);
   const [scan, setScan] = useState(false);
@@ -129,6 +130,9 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
           </div>
         )}
       </div>
+
+      {/* 🪜 Good/Better/Best Bundle Builder — author the customer-facing tier ladder per job type. */}
+      {!needsMig && <BundleBuilder initialBundles={bundles} />}
 
       {/* 🧩 Parts & live vendor cost (learn → classify → SerpAPI price) */}
       {!needsMig && <PartsClassify items={list} />}
