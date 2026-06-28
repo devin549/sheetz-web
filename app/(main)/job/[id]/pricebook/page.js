@@ -16,7 +16,7 @@ function scoreItem(item, jt) {
   return s;
 }
 
-export default async function JobPricebook({ params }) {
+export default async function JobPricebook({ params, searchParams }) {
   const c = await loadCockpit(params.id);
   if (!c.configured) return <div className="wrap"><div className="h1">📖 Pricebook</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code>.</div></div>;
   const role = c.role;
@@ -47,6 +47,21 @@ export default async function JobPricebook({ params }) {
 
   const job = { id: c.job.id, number: c.job.job_number || '', type: jt, customerId: c.job.customer_id || null, techId: c.job.tech_id || null };
 
+  // 🎫 Deep-link from the catalog: /job/<id>/pricebook?add=<itemId> pre-loads that item into the cart. Resolve
+  // it server-side so the PRICE is authoritative (and it works even for items outside this rail's shaped set,
+  // e.g. not customer_visible or beyond the 200 cap). Best-effort — a bad id just no-ops.
+  let preAdd = null;
+  const addId = String(searchParams?.add || '').trim();
+  if (addId && !needsMigration) {
+    preAdd = shaped.find((it) => String(it.id) === addId) || null;
+    if (!preAdd) {
+      try {
+        const { data: one } = await c.sb.from('pricebook_items').select('*').eq('id', addId).maybeSingle();
+        if (one) preAdd = { ...shapeItem(one, role), categoryId: one.category_id, suggested: false, jobTypes: one.job_types || [] };
+      } catch (_) {}
+    }
+  }
+
   // ⭐ Member plans for the member-pricing toggle (best-effort; empty before migration 118).
   let plans = [];
   try { const { data } = await c.sb.from('membership_plans').select('slug, name, discount_pct').eq('active', true).order('sort_order'); plans = (data || []).map((p) => ({ slug: p.slug, name: p.name, discount_pct: Number(p.discount_pct) || 0 })); } catch (_) {}
@@ -70,7 +85,7 @@ export default async function JobPricebook({ params }) {
         <div className="notice" style={{ marginTop: 10 }}>Run <code>supabase/104_pricebook.sql</code> + <code>105_pricebook_seed.sql</code> to load the Sheetz Pricebook.</div>
       ) : (
         <>
-          <PricebookClient job={job} customer={{ name: c.customer?.name || 'Customer', address: c.customer?.address || '', phone: c.customer?.phone || '' }} items={shaped} categories={categories} tiers={tiers} bundle={bundle ? { slug: bundle.slug, name: bundle.name, customerDescription: bundle.customer_description, warranty: bundle.warranty_text, approveText: bundle.approval_button_text } : null} showMargin={canSeeCost(role)} plans={plans} />
+          <PricebookClient job={job} customer={{ name: c.customer?.name || 'Customer', address: c.customer?.address || '', phone: c.customer?.phone || '' }} items={shaped} categories={categories} tiers={tiers} bundle={bundle ? { slug: bundle.slug, name: bundle.name, customerDescription: bundle.customer_description, warranty: bundle.warranty_text, approveText: bundle.approval_button_text } : null} showMargin={canSeeCost(role)} plans={plans} preAdd={preAdd} />
           <EstimateProofPanel estimates={estimates} />
         </>
       )}

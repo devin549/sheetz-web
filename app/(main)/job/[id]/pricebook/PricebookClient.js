@@ -13,7 +13,7 @@ import BarcodeScan from './BarcodeScan';
 const money = (n) => '$' + (Number(n) || 0).toLocaleString();
 const TIER_STYLE = { good: { c: 'var(--fg-2)' }, better: { c: 'var(--amber)' }, best: { c: 'var(--green)' } };
 
-export default function PricebookClient({ job, customer, items = [], categories = [], tiers = [], bundle, showMargin, plans = [] }) {
+export default function PricebookClient({ job, customer, items = [], categories = [], tiers = [], bundle, showMargin, plans = [], preAdd = null }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [mode, setMode] = useState('tech');     // 'tech' | 'customer'
@@ -49,6 +49,18 @@ export default function PricebookClient({ job, customer, items = [], categories 
   // as a one-off line at the tech's quote, and creates/changes NO catalog price. Recorded separately so the
   // catalog can learn (recordCustomEntry). Unique client id so it isn't deduped against catalog items.
   const addCustom = (entry) => { setLink(null); setCart((c) => [...c, { id: 'custom-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), custom: true, name: entry.name, description: entry.description || '', price: Number(entry.price) || 0, soldPrice: Number(entry.price) || 0, min: null }]); };
+
+  // 🎫 Pre-load the item deep-linked from the catalog (?add=<id>) into the cart, exactly once. Then strip the
+  // param so a refresh doesn't silently re-add (add()'s dedup makes a repeat harmless anyway).
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (!preAdd || seededRef.current) return;
+    seededRef.current = true;
+    add(preAdd);
+    if (typeof window !== 'undefined' && window.location.search.includes('add=')) {
+      try { window.history.replaceState({}, '', `/job/${job.id}/pricebook`); } catch (_) {}
+    }
+  }, [preAdd]);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();

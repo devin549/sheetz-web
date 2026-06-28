@@ -12,7 +12,7 @@ const ICON = [[/water ?heater|tankless/i, '🔥'], [/drain|sewer|cabl|stoppage|r
 const iconFor = (n) => { for (const [re, e] of ICON) if (re.test(n || '')) return e; return '🔧'; };
 
 export default async function Catalog() {
-  const { role } = await requirePerm('changeStatus', 'seeOwnOnly', 'seeCrew', 'seeAllJobs', 'manageInventory', 'seeFinancials');
+  const { role, profile } = await requirePerm('changeStatus', 'seeOwnOnly', 'seeCrew', 'seeAllJobs', 'manageInventory', 'seeFinancials');
   if (!isAdminConfigured) return <div className="wrap"><div className="h1">📖 Pricebook</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code>.</div></div>;
   const sb = getSupabaseAdmin();
   const showCost = canSeeCost(role);
@@ -63,6 +63,26 @@ export default async function Catalog() {
     (ups || []).forEach((u) => { if (u.item_id && u.upgrade_id) (upgrades[u.item_id] = upgrades[u.item_id] || []).push(u.upgrade_id); });
   } catch (_) {}
 
+  // 🎫 The viewer's OPEN jobs — so they can add a catalog item straight onto a ticket. Non-terminal, recent
+  // window, scoped to them (tech_id, else name); office/owner (seeAllJobs) see the recent open board. Best-
+  // effort — never breaks the catalog if the jobs table/columns differ.
+  let myJobs = [];
+  try {
+    const TERMINAL = '(done,complete,completed,closed,cancelled,canceled,void)';
+    const sinceISO = new Date(Date.now() - 21 * 864e5).toISOString();
+    const sel = 'id, job_number, status, scheduled_at, customers(name, address)';
+    const seeAll = canAny(role, ['seeAllJobs']);
+    let q = sb.from('jobs').select(sel).gte('scheduled_at', sinceISO).not('status', 'in', TERMINAL).order('scheduled_at', { ascending: false }).limit(25);
+    if (profile.tech_id) q = q.eq('tech_id', profile.tech_id);
+    else if (profile.name && !seeAll) q = q.ilike('tech_name', '%' + profile.name + '%');
+    else if (!seeAll) q = null; // no identity + not office → no scoped jobs to show
+    const jr = q ? await q : { data: [] };
+    myJobs = (jr.data || []).map((j) => ({
+      id: j.id, number: j.job_number || '', status: j.status || '', when: j.scheduled_at,
+      customer: (j.customers || {}).name || 'Customer', address: (j.customers || {}).address || '',
+    }));
+  } catch (_) {}
+
   const canEdit = canAny(role, ['manageInventory', 'manageUsers', 'seeReports', 'seeFinancials', 'assignJobs']);
-  return <CatalogBrowser roots={roots} related={topRelated} upgrades={upgrades} showCost={showCost} canEdit={canEdit} total={shaped.length} />;
+  return <CatalogBrowser roots={roots} related={topRelated} upgrades={upgrades} showCost={showCost} canEdit={canEdit} total={shaped.length} myJobs={myJobs} />;
 }

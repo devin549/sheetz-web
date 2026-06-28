@@ -3,6 +3,7 @@
 // Immersive drill-down over Devin's REAL category tree (any depth): category tiles → subcategories → items
 // → item detail with the 🧠 "commonly sold with" learner. Tap-friendly for the iPad.
 import { useMemo, useRef, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { findItemPhotos, setItemPhotoUrl, uploadItemPhoto } from './photoActions';
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -21,7 +22,7 @@ function htmlToText(s) {
     .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}, showCost, canEdit, total }) {
+export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}, showCost, canEdit, total, myJobs = [] }) {
   const [stack, setStack] = useState([]);   // array of nodes (the drill path)
   const [sel, setSel] = useState(null);
   const [q, setQ] = useState('');
@@ -101,7 +102,7 @@ export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}
         </>
       )}
 
-      {sel && <ItemSheet it={sel} showCost={showCost} canEdit={canEdit} learnedCross={learnedCross} upgradeItems={upgradeItems} onClose={() => setSel(null)} onPick={setSel} />}
+      {sel && <ItemSheet it={sel} showCost={showCost} canEdit={canEdit} learnedCross={learnedCross} upgradeItems={upgradeItems} myJobs={myJobs} onClose={() => setSel(null)} onPick={setSel} />}
     </div>
   );
 }
@@ -143,12 +144,20 @@ function ItemCard({ it, showCost, onClick }) {
   );
 }
 
-function ItemSheet({ it, showCost, canEdit, learnedCross = [], upgradeItems = [], onClose, onPick }) {
+function ItemSheet({ it, showCost, canEdit, learnedCross = [], upgradeItems = [], myJobs = [], onClose, onPick }) {
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [photo, setPhoto] = useState(it.photo || null);
   const [cands, setCands] = useState(null);   // SerpAPI candidates
   const [msg, setMsg] = useState(null);
+  const [picking, setPicking] = useState(false);   // job picker open (Add to ticket)
   const fileRef = useRef();
+
+  // Add this item to a ticket = pick one of the viewer's open jobs, then land in THAT job's estimate with
+  // the item pre-loaded (the job rail is the one ticket-builder; the catalog just feeds it). Price stays
+  // server-truth — we pass only the item id; the job page resolves the line.
+  const whenLabel = (iso) => { if (!iso) return ''; try { return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' · ' + new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
+  const addToJob = (jobId) => router.push(`/job/${jobId}/pricebook?add=${encodeURIComponent(it.id)}`);
 
   const find = () => start(async () => { setMsg('Searching…'); const r = await findItemPhotos(it.id); setMsg(r.ok ? (r.photos.length ? `Found ${r.photos.length} for “${r.query}”` : 'No photos found — try Upload.') : r.msg); setCands(r.photos || []); });
   const pick = (url) => start(async () => { setMsg('Saving…'); const r = await setItemPhotoUrl(it.id, url); setMsg(r.msg); if (r.ok) { setPhoto(r.url); setCands(null); } });
@@ -165,6 +174,37 @@ function ItemSheet({ it, showCost, canEdit, learnedCross = [], upgradeItems = []
           <div style={{ fontWeight: 800, fontSize: 24, color: 'var(--amber)' }}>{money(it.price)}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--fg-2)', fontSize: 24, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
+
+        {/* 🎫 ADD TO TICKET — the front door from "browsing" to "building". Pick one of your open jobs and you
+            land in its estimate with this item already in the cart. */}
+        {!picking ? (
+          <button onClick={() => setPicking(true)} className="btn" style={{ width: '100%', marginTop: 12, background: 'var(--amber)', borderColor: 'var(--amber)', color: '#1a1a1a', fontWeight: 800, fontSize: 15, padding: '12px' }}>
+            ➕ Add to ticket
+          </button>
+        ) : (
+          <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: 'var(--surface-2)', border: '1px solid var(--amber-dim)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontWeight: 800, fontSize: 13 }}>Add to which job?</span>
+              <button onClick={() => setPicking(false)} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--fg-3)', cursor: 'pointer', fontSize: 16 }}>×</button>
+            </div>
+            {myJobs.length === 0 ? (
+              <div className="muted" style={{ fontSize: 12.5, lineHeight: 1.5 }}>No open jobs on your schedule. Open a job from <strong>My Day</strong> → its 📖 Pricebook to build the estimate there.</div>
+            ) : (
+              <div style={{ display: 'grid', gap: 6, maxHeight: 280, overflowY: 'auto' }}>
+                {myJobs.map((j) => (
+                  <button key={j.id} onClick={() => addToJob(j.id)} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 11px', borderRadius: 9, background: 'var(--surface-1)', border: '1px solid var(--border)', cursor: 'pointer', textAlign: 'left', width: '100%' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.customer}{j.number ? ` · #${j.number}` : ''}</div>
+                      <div className="muted" style={{ fontSize: 11 }}>{[whenLabel(j.when), j.address].filter(Boolean).join(' · ')}</div>
+                    </div>
+                    <span className="pill" style={{ fontSize: 9, flexShrink: 0 }}>{(j.status || '').toUpperCase()}</span>
+                    <span style={{ color: 'var(--amber)', fontWeight: 800, flexShrink: 0 }}>›</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {photo && <img src={photo} alt="" style={{ width: '100%', maxHeight: 220, objectFit: 'contain', borderRadius: 12, margin: '12px 0', background: 'var(--surface-2)' }} />}
 
         {/* Manager photo tools — find a real product photo (SerpAPI) or upload a custom one. */}
