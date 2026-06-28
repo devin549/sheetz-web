@@ -182,6 +182,7 @@ export default function BookingForm({ techs }) {
               <div style={{ position: 'relative' }}><Mail size={14} style={{ position: 'absolute', left: 10, top: 12, color: 'var(--fg-3)' }} /><input name="customerEmail" type="email" placeholder="Email (receipts & reminders)" style={{ ...input, paddingLeft: 31 }} autoComplete="off" /></div>
             </div>
             <input name="newAddress" placeholder="Address" style={input} autoComplete="off" />
+            <input name="stCustomerId" placeholder="ServiceTitan Customer ID (optional — pre-links them so the import won’t duplicate)" style={input} autoComplete="off" />
           </div>
         )}
         {mode === 'existing' && picked && (

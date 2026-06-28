@@ -229,14 +229,20 @@ export async function createBooking(formData) {
   const claimReq = jobClass === 'insurance' || jobClass === 'warranty' || ['OnCourse', 'AWR', 'Pivotal', 'HomeServe'].includes(warrantyProvider);
   if (claimReq && !claimNumber) return { ok: false, msg: `Claim # is required for ${warrantyProvider || jobClass} jobs.` };
 
-  // create the customer if this is a new one
+  // create the customer if this is a new one. If the booker knows this person's ServiceTitan Customer
+  // ID, capture it now — it pre-links them to their ST record so the final import won't dupe them.
   if (!customerId) {
     if (!newName) return { ok: false, msg: 'Pick a customer or enter a new name.' };
-    const { data: created, error: cErr } = await sb.from('customers')
-      .insert({ name: newName, phone: newPhone || null, address: newAddress || null, email: customerEmail || null })
-      .select('id').single();
-    if (cErr) return { ok: false, msg: 'Customer: ' + cErr.message };
-    customerId = created.id;
+    const stCustomerId = clean(formData.get('stCustomerId'), 40) || null;
+    const custIns = { name: newName, phone: newPhone || null, address: newAddress || null, email: customerEmail || null };
+    if (stCustomerId) custIns.st_customer_id = stCustomerId;
+    let ins = await sb.from('customers').insert(custIns).select('id').single();
+    if (ins.error && /st_customer_id|column|schema cache|duplicate|unique/i.test(ins.error.message || '')) {
+      delete custIns.st_customer_id; // column missing or ST id already taken → create without it (reconcile later)
+      ins = await sb.from('customers').insert(custIns).select('id').single();
+    }
+    if (ins.error) return { ok: false, msg: 'Customer: ' + ins.error.message };
+    customerId = ins.data.id;
   }
 
   // capture consent + email on the customer (we never auto-send — this records permission).
