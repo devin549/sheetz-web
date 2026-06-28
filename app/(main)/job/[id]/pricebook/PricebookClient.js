@@ -3,10 +3,10 @@
 // In-job Sheetz Pricebook — the customer-facing sales engine. Two modes: Customer (clean checkout, no
 // cost/margin) and Tech (adds margin health + minimums). Good/Better/Best ladder + job-smart suggestions
 // + estimate cart that records the sale tied to the job.
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { recordSale } from './actions';
-import { createEstimate } from './estimateActions';
+import { createEstimate, sendEstimateText, sendEstimateEmail, markPresented, getEstimateStatus } from './estimateActions';
 import { coachCustomEntry, recordCustomEntry } from './customEntryActions';
 import BarcodeScan from './BarcodeScan';
 
@@ -24,7 +24,10 @@ export default function PricebookClient({ job, customer, items = [], categories 
   const [approval, setApproval] = useState(null);
   const [tierKey, setTierKey] = useState(null);
   const [link, setLink] = useState(null);        // shareable estimate link once sent
+  const [token, setToken] = useState(null);       // the estimate token (drives send picker + live mirror)
   const [copied, setCopied] = useState(false);
+  const [sendMsg, setSendMsg] = useState(null);   // feedback from text/email send
+  const [live, setLive] = useState(null);         // { status, terminal, selectedTierKey, approvalChannel, approvedName }
   const customerMode = mode === 'customer';
 
   // ⭐ Member pricing — turn it on when offering a membership; each plan carries its own savings %.
@@ -34,10 +37,12 @@ export default function PricebookClient({ job, customer, items = [], categories 
   const memberDisc = memberOn && plan ? Math.max(0, Math.min(100, Number(plan.discount_pct) || 0)) / 100 : 0;
   const memberPrice = (p) => Math.round((Number(p) || 0) * (1 - memberDisc) * 100) / 100;
 
-  const add = (it) => { setLink(null); setCart((c) => c.find((x) => x.id === it.id) ? c : [...c, { id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: it.internal?.minimum ?? null }]); };
+  // Editing the cart invalidates any sent estimate's live mirror — clear it so we don't poll a stale token.
+  const resetSent = () => { setLink(null); setToken(null); setLive(null); setSendMsg(null); };
+  const add = (it) => { resetSent(); setCart((c) => c.find((x) => x.id === it.id) ? c : [...c, { id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: it.internal?.minimum ?? null }]); };
   // A barcode-scanned service comes from the API (flat shape: minimum at top level, not it.internal).
-  const addScanned = (it) => { setLink(null); setCart((c) => c.find((x) => x.id === it.id) ? c : [...c, { id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: it.minimum ?? null }]); };
-  const addTier = (tier) => { setLink(null); setTierKey(tier.key); setCart(() => tier.items.map((it) => ({ id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: null }))); };
+  const addScanned = (it) => { resetSent(); setCart((c) => c.find((x) => x.id === it.id) ? c : [...c, { id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: it.minimum ?? null }]); };
+  const addTier = (tier) => { resetSent(); setTierKey(tier.key); setCart(() => tier.items.map((it) => ({ id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: null }))); };
   const remove = (id) => setCart((c) => c.filter((x) => x.id !== id));
   const setPrice = (id, v) => setCart((c) => c.map((x) => x.id === id ? { ...x, soldPrice: v } : x));
   // Add an ad-hoc CUSTOM line — a job not in the catalog. It carries no catalog itemId (custom:true), sells
@@ -85,16 +90,35 @@ export default function PricebookClient({ job, customer, items = [], categories 
   // Build a customer-safe estimate and get a shareable link (text it OR present on this iPad). When a ladder
   // exists we send all three tiers; `tierKey`/cart still seed the active/flat snapshot for backward-compat.
   const present = () => start(async () => {
-    setMsg(null); setLink(null);
+    setMsg(null); setLink(null); setToken(null); setLive(null); setSendMsg(null);
     const r = await createEstimate(job.id, soldLines(), {
       tierKey, bundleSlug: bundle?.slug,
       tiers: tiers.length ? ladderForSend() : undefined,
       headline: (memberDisc && plan ? `${plan.name} member · ` : '') + (bundle ? bundle.name : (tierKey ? tierKey : '')),
     });
-    if (r.ok) setLink(r.url); else setMsg(r.msg);
+    if (r.ok) { setLink(r.url); setToken(r.token); setLive({ status: 'sent', terminal: false }); } else setMsg(r.msg);
   });
   const fullLink = link && typeof window !== 'undefined' ? window.location.origin + link : link;
   const copyLink = () => { try { navigator.clipboard.writeText(fullLink); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) {} };
+
+  // ── Send picker: text (consent-gated server-side) / email / present on this iPad. All point at the SAME token. ──
+  const sendText = () => start(async () => { setSendMsg(null); const r = await sendEstimateText(token); setSendMsg({ ok: r.ok, text: r.msg }); });
+  const sendEmail = () => start(async () => { setSendMsg(null); const r = await sendEstimateEmail(token); setSendMsg({ ok: r.ok, text: r.msg }); });
+  const presentHere = () => start(async () => { setSendMsg(null); const r = await markPresented(token); if (r.ok && typeof window !== 'undefined') window.open(r.url, '_blank'); setSendMsg(r.ok ? { ok: true, text: 'Opened on this device — flip the iPad to the customer.' } : { ok: false, text: r.msg }); });
+
+  // ── iPad LIVE MIRROR: poll the estimate status every 10s so the tech sees what the customer does on ANY
+  // channel (texted phone, emailed laptop, or this iPad). Auto-stops once terminal (approved/declined). ──
+  const liveRef = useRef(null); liveRef.current = live;
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+    const tick = async () => {
+      try { const s = await getEstimateStatus(token); if (alive && s && s.ok) setLive(s); } catch (_) {}
+    };
+    tick();
+    const id = setInterval(() => { if (liveRef.current && liveRef.current.terminal) { clearInterval(id); return; } tick(); }, 10000);
+    return () => { alive = false; clearInterval(id); };
+  }, [token]);
 
   const input = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 14 };
 
@@ -134,7 +158,7 @@ export default function PricebookClient({ job, customer, items = [], categories 
               const st = TIER_STYLE[t.key] || TIER_STYLE.good;
               return (
                 <div key={t.key} className="card" style={{ borderColor: t.recommended ? 'var(--amber)' : 'var(--border)', borderWidth: t.recommended ? 2 : 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-                  {t.recommended && <span style={{ position: 'absolute', top: -10, left: 12, background: 'var(--amber)', color: '#1a1a1a', fontSize: 9.5, fontWeight: 800, padding: '2px 8px', borderRadius: 20 }}>MOST POPULAR</span>}
+                  {t.recommended && <span style={{ position: 'absolute', top: -10, left: 12, background: 'var(--amber)', color: '#1a1a1a', fontSize: 9.5, fontWeight: 800, padding: '2px 8px', borderRadius: 20 }}>RECOMMENDED</span>}
                   <div style={{ fontWeight: 800, fontSize: 15, color: st.c }}>{t.name}</div>
                   {t.bestFor && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{t.bestFor}</div>}
                   <div style={{ display: 'grid', gap: 3, margin: '9px 0' }}>
@@ -241,13 +265,25 @@ export default function PricebookClient({ job, customer, items = [], categories 
 
             {link && (
               <div style={{ marginTop: 10, padding: 10, borderRadius: 10, background: 'var(--surface-1)', border: '1px solid var(--green)' }}>
-                <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6, color: 'var(--green)' }}>✓ Clean customer page ready</div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'var(--amber)', wordBreak: 'break-all', marginBottom: 8 }}>{fullLink}</div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <a href={link} target="_blank" rel="noreferrer" className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>📱 Present here</a>
-                  <button onClick={copyLink} className="pill" style={{ cursor: 'pointer' }}>{copied ? '✓ Copied' : '🔗 Copy link'}</button>
-                  {customer.phone && <a href={`sms:${String(customer.phone).replace(/[^0-9+]/g, '')}${typeof navigator !== 'undefined' && /iPhone|iPad/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent('Here are your options from Clog Busterz: ' + fullLink)}`} className="pill" style={{ color: 'var(--blue)' }}>💬 Text it</a>}
+                <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6, color: 'var(--green)' }}>✓ Customer page ready — send it any way</div>
+
+                {/* SEND PICKER — Text (consent-gated server-side) · Email · Present on this iPad. Same token. */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
+                  <button onClick={sendText} disabled={pending} className="btn" style={{ background: 'var(--green)', borderColor: 'var(--green)', color: '#06210f', fontSize: 12.5, padding: '9px' }}>💬 Text the link</button>
+                  <button onClick={sendEmail} disabled={pending} className="btn" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--fg-1)', fontSize: 12.5, padding: '9px' }}>📧 Email it</button>
                 </div>
+                <button onClick={presentHere} disabled={pending} className="btn" style={{ width: '100%', background: 'var(--amber)', borderColor: 'var(--amber)', color: '#1a1a1a', fontSize: 12.5, padding: '9px', marginBottom: 8 }}>📱 View on this iPad (turn it around)</button>
+
+                {sendMsg && <div style={{ fontSize: 11.5, marginBottom: 8, color: sendMsg.ok ? 'var(--green)' : 'var(--red)' }}>{sendMsg.ok ? '✓ ' : '⚠ '}{sendMsg.text}</div>}
+
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: 'var(--amber)', wordBreak: 'break-all', marginBottom: 6 }}>{fullLink}</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button onClick={copyLink} className="pill" style={{ cursor: 'pointer' }}>{copied ? '✓ Copied' : '🔗 Copy link'}</button>
+                  <a href={link} target="_blank" rel="noreferrer" className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>↗ Open page</a>
+                </div>
+
+                {/* ── iPad LIVE MIRROR — reflects what the customer does on ANY channel, polled every 10s. ── */}
+                {live && <LiveStatus live={live} tiers={tiers} />}
               </div>
             )}
             {msg && <div style={{ fontSize: 11.5, marginTop: 8, color: 'var(--green)' }}>{msg}</div>}
@@ -373,6 +409,44 @@ function CustomEntry({ jobId, onAdd }) {
         </div>
       )}
       {msg && <div style={{ fontSize: 11.5, marginTop: 8, color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.t}</div>}
+    </div>
+  );
+}
+
+// Live status mirror for the tech. Maps the polled estimate status → a glanceable line + the chosen tier.
+function LiveStatus({ live, tiers = [] }) {
+  const s = live.status || 'sent';
+  const tierName = (() => {
+    const k = live.selectedTierKey;
+    if (!k) return null;
+    const t = (tiers || []).find((x) => x.key === k);
+    return t ? t.name : (k.charAt(0).toUpperCase() + k.slice(1));
+  })();
+  const MAP = {
+    sent:              { icon: '📤', label: 'Sent — waiting for them to open', color: 'var(--fg-3)' },
+    viewed:            { icon: '👀', label: 'Viewing now', color: 'var(--amber)' },
+    question:          { icon: '💬', label: 'Asked a question — check the office queue', color: 'var(--amber)' },
+    deposit_requested: { icon: '💳', label: 'Wants to put a deposit down', color: 'var(--amber)' },
+    approved:          { icon: '✓', label: 'Accepted', color: 'var(--green)' },
+    declined:          { icon: '✗', label: 'Declined', color: 'var(--red)' },
+  };
+  const m = MAP[s] || MAP.sent;
+  const channelLabel = { text: 'by text', email: 'by email', ipad: 'on the iPad', in_person: 'in person', link: 'on their phone' }[live.approvalChannel] || '';
+  return (
+    <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
+      <div style={{ fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--fg-3)', marginBottom: 5, display: 'flex', alignItems: 'center', gap: 6 }}>
+        Live status {!live.terminal && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)', display: 'inline-block', animation: 'pulse 1.4s infinite' }} />}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 17, color: m.color }}>{m.icon}</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: m.color }}>{m.label}{s === 'approved' && channelLabel ? ` ${channelLabel}` : ''}</div>
+          {tierName && (s === 'approved' || s === 'viewed' || s === 'deposit_requested') && (
+            <div style={{ fontSize: 11.5, color: 'var(--fg-2)', marginTop: 1 }}>Chose <strong style={{ color: 'var(--amber)' }}>{tierName}</strong>{live.approvedName ? ` · ${live.approvedName}` : ''}</div>
+          )}
+        </div>
+      </div>
+      <style>{`@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}`}</style>
     </div>
   );
 }
