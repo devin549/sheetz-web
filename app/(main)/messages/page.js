@@ -25,8 +25,8 @@ export default async function CommsDesk() {
   if (isField) {
     let feed = [];
     try {
-      let r = await sb.from('cb_comms').select('id, from_name, body, created_at, channel, direction').is('deleted_at', null).order('created_at', { ascending: false }).limit(60);
-      if (r.error) r = await sb.from('cb_comms').select('id, from_name, body, created_at, channel').order('created_at', { ascending: false }).limit(60);
+      let r = await sb.from('cb_comms').select('id, from_name, body, created_at, channel, direction, reply_to, provider_id').is('deleted_at', null).order('created_at', { ascending: false }).limit(80);
+      if (r.error) r = await sb.from('cb_comms').select('id, from_name, body, created_at, channel').order('created_at', { ascending: false }).limit(80);
       // team feed only — the #sheetz/internal posts, not customer SMS/email threads
       feed = (r.data || []).filter((m) => /discord|internal|team|sheetz/i.test(String(m.channel || '')) || !m.channel).reverse();
     } catch (_) {}
@@ -42,7 +42,11 @@ export default async function CommsDesk() {
       const office = !isHank && fromFirst && officeFirsts.has(fromFirst);
       return { ...m, tag: personal ? 'personal' : office ? 'office' : 'general' };
     });
-    return <TechChat messages={feed} me={profile.name || user.email} />;
+    // Per-tech "Resolve" lives in their profile prefs (no migration) — clears a line from THIS person's
+    // chat only, never the shared feed. Pull the set so the client can tuck them into a Resolved tab.
+    let resolvedIds = [];
+    try { const { data: pr } = await sb.from('profiles').select('prefs').eq('user_id', user.id).maybeSingle(); resolvedIds = (pr && pr.prefs && Array.isArray(pr.prefs.chat_resolved)) ? pr.prefs.chat_resolved : []; } catch (_) {}
+    return <TechChat messages={feed} me={profile.name || user.email} resolvedIds={resolvedIds} />;
   }
 
   const canDelete = DELETE.includes(String(role || '').toLowerCase());
