@@ -8,6 +8,7 @@ import ItemEditor from './ItemEditor';
 import MaterialCostRollup from './MaterialCostRollup';
 import ProfitIntel from './ProfitIntel';
 import PhotoBackfill from './PhotoBackfill';
+import RecBackfill from './RecBackfill';
 import ConversionStats from './ConversionStats';
 import LearnedCustomJobs from './LearnedCustomJobs';
 import BundleBuilder from './BundleBuilder';
@@ -119,6 +120,9 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
 
       {/* 📸 Bulk photo backfill — fill every photoless item via image search. Merchandising, so content editors. */}
       {canEditContent && <PhotoBackfill />}
+
+      {/* 🧠 AI cross-sell seeding — fill "commonly added with this" before real job data exists. */}
+      {canEditContent && <RecBackfill />}
 
       {/* 📉 Margin Watch — AI suggests, you approve. Never auto-changes a price. Hidden from price-locked roles. */}
       {canEditPriceFields && (

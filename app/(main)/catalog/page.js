@@ -83,6 +83,24 @@ export default async function Catalog() {
     }));
   } catch (_) {}
 
+  // 🧠 AI-seeded cross-sell (pricebook_recommendations, source='ai'). Blended UNDER learned co-occurrence:
+  // learned-from-real-jobs first, then AI starter picks not already learned, capped at 5. Tagged so the drawer
+  // can mark AI picks. Best-effort — empty/degrades if migration 128 isn't applied.
+  const aiByItem = {};
+  try {
+    const { data } = await sb.from('pricebook_recommendations').select('item_id, rec_item_id, score').eq('source', 'ai').limit(20000);
+    (data || []).forEach((r) => { if (r.item_id && r.rec_item_id) (aiByItem[r.item_id] = aiByItem[r.item_id] || []).push(r); });
+    Object.values(aiByItem).forEach((rows) => rows.sort((a, b) => (b.score || 0) - (a.score || 0)));
+  } catch (_) {}
+  const recommended = {};
+  new Set([...Object.keys(topRelated), ...Object.keys(aiByItem)]).forEach((id) => {
+    const learned = topRelated[id] || [];
+    const seen = new Set(learned);
+    const list = learned.map((rid) => ({ id: rid, ai: false }));
+    for (const r of (aiByItem[id] || [])) { if (list.length >= 5) break; if (!seen.has(r.rec_item_id)) { seen.add(r.rec_item_id); list.push({ id: r.rec_item_id, ai: true }); } }
+    recommended[id] = list;
+  });
+
   const canEdit = canAny(role, ['manageInventory', 'manageUsers', 'seeReports', 'seeFinancials', 'assignJobs']);
-  return <CatalogBrowser roots={roots} related={topRelated} upgrades={upgrades} showCost={showCost} canEdit={canEdit} total={shaped.length} myJobs={myJobs} />;
+  return <CatalogBrowser roots={roots} related={recommended} upgrades={upgrades} showCost={showCost} canEdit={canEdit} total={shaped.length} myJobs={myJobs} />;
 }

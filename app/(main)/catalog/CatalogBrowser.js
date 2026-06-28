@@ -45,11 +45,11 @@ export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}
   const search = q.trim().toLowerCase();
   const results = search ? allItems.filter((it) => (it.name || '').toLowerCase().includes(search) || (it.description || '').toLowerCase().includes(search) || (it.sku || '').toLowerCase().includes(search)).slice(0, 80) : null;
 
-  // "Commonly added" = ONLY what the engine LEARNED from real jobs (co-occurrence per job). No same-category
-  // fallback — siblings aren't "commonly added," and a misleading list is worse than none.
+  // "Commonly added" = learned-from-real-jobs first, then AI starter picks (each tagged ai), already blended +
+  // capped server-side. No same-category fallback — a misleading list is worse than none.
   const learnedCross = useMemo(() => {
     if (!sel) return [];
-    return (related[sel.id] || []).map((id) => byId[id]).filter(Boolean).slice(0, 4);
+    return (related[sel.id] || []).map((r) => { const it = byId[r.id]; return it ? { ...it, ai: r.ai } : null; }).filter(Boolean).slice(0, 5);
   }, [sel, related, byId]);
   // ⬆ Upgrades = owner-curated (set in the Pricebook Editor), shown at the bottom.
   const upgradeItems = useMemo(() => {
@@ -252,7 +252,7 @@ function ItemSheet({ it, showCost, canEdit, learnedCross = [], upgradeItems = []
             <div style={{ display: 'grid', gap: 6 }}>
               {learnedCross.map((r) => <CrossRow key={r.id} r={r} onPick={onPick} />)}
             </div>
-            <div className="muted" style={{ fontSize: 10, marginTop: 6 }}>Learned from real jobs — the more your techs sell these together, the smarter this gets.</div>
+            <div className="muted" style={{ fontSize: 10, marginTop: 6 }}>Learned from real jobs first, topped up with AI starter picks — gets smarter as your techs sell these together.</div>
           </div>
         )}
 
@@ -279,6 +279,7 @@ function CrossRow({ r, onPick, accent }) {
         ? <img src={r.photo} alt="" loading="lazy" style={{ width: 36, height: 36, objectFit: 'contain', borderRadius: 6, background: '#fff', flexShrink: 0 }} />
         : <span aria-hidden style={{ width: 36, height: 36, borderRadius: 6, background: 'var(--surface-1)', display: 'grid', placeItems: 'center', fontSize: 15, opacity: 0.5, flexShrink: 0 }}>🔧</span>}
       <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-1)' }}>{r.name}</span>
+      {r.ai && <span className="pill" style={{ fontSize: 8.5, color: 'var(--amber)', flexShrink: 0, padding: '1px 5px' }}>AI pick</span>}
       <span style={{ fontWeight: 700, color: 'var(--green)', fontSize: 13 }}>{money(r.price)}</span>
     </button>
   );
