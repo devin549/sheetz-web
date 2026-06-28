@@ -10,7 +10,9 @@ import { findProductPhotos, findSimilarPhotos } from '@/lib/serpPhotos';
 
 const BUCKET = 'pricebook-photos';
 const clean = (v, n = 400) => String(v == null ? '' : v).trim().slice(0, n);
-const isMgr = (r) => canAny(r, ['manageInventory', 'manageUsers', 'seeReports', 'seeFinancials', 'assignJobs']);
+// Pricebook media = merchandising; keep it to content/office roles. Dropped 'assignJobs' so a foreman/
+// dispatcher (who can't even reach the pricebook editor) can't add/delete catalog photos.
+const isMgr = (r) => canAny(r, ['manageInventory', 'manageUsers', 'seeReports', 'seeFinancials']);
 
 async function ctx() {
   const supabase = createClient();

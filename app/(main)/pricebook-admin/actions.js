@@ -108,6 +108,9 @@ export async function runMarginWatch() {
 // moves a price from a suggestion.
 export async function approvePriceChange(id) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  // Owner is the ONLY price-mover — approving a queued change writes a LIVE price, so it must be owner/admin,
+  // not anyone who can merely reach the admin (GM/OM/marketing route changes IN; only the owner applies them).
+  if (!canMovePrice(c.profile.role)) return { ok: false, msg: 'Only the owner can approve a price change.' };
   if (!id) return { ok: false, msg: 'No request.' };
   const { data: req } = await c.sb.from('pricebook_price_update_requests').select('id, item_id, recommended_price, old_price, status').eq('id', id).maybeSingle();
   if (!req) return { ok: false, msg: 'Request not found.' };
@@ -122,6 +125,7 @@ export async function approvePriceChange(id) {
 
 export async function rejectPriceChange(id) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  if (!canMovePrice(c.profile.role)) return { ok: false, msg: 'Only the owner can clear the price queue.' };
   if (!id) return { ok: false, msg: 'No request.' };
   const { error } = await c.sb.from('pricebook_price_update_requests').update({ status: 'rejected', approved_by: c.user.id, approved_at: new Date().toISOString() }).eq('id', id).eq('status', 'pending');
   if (error) return { ok: false, msg: error.message };
