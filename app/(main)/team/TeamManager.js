@@ -110,19 +110,26 @@ export default function TeamManager({ roleOptions, users, techs = [], supervisor
 
   return (
     <>
-      {/* ── Add a hire ── */}
+      {/* ── Add an employee (login + roster row in one step) ── */}
       <div className="card card-amber">
-        <div style={{ fontWeight: 800, marginBottom: 10 }}>➕ Add a hire</div>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>➕ Add an employee</div>
         <form onSubmit={onAdd} style={{ display: 'grid', gap: 10 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
             <input name="name" placeholder="Full name" style={inputStyle} autoComplete="off" />
             <input name="email" type="email" placeholder="email@clogbusterzplumbing.com" style={inputStyle} autoComplete="off" required />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
-            <select name="role" defaultValue="" style={inputStyle} required>
-              <option value="" disabled>Pick a position…</option>
+            <select name="role" defaultValue="" style={inputStyle} required title="Login role — what they can SEE">
+              <option value="" disabled>Login role (what they see)…</option>
               {roleOptions.map((r) => <option key={r.id} value={r.id}>{r.label} — {r.short}</option>)}
             </select>
+            <select name="position" defaultValue="tech" style={inputStyle} title="Board position — office / tech / helper / manager etc.">
+              {POSITION_OPTS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
+            <input name="discord_name" placeholder="Discord name (optional)" style={inputStyle} autoComplete="off"
+              title="Their @handle in #sheetz — only if it differs from their real name. Tags their chat messages by role." />
             <div style={{ display: 'flex', gap: 6 }}>
               <input name="password" value={pw} onChange={(e) => setPw(e.target.value)} style={inputStyle} aria-label="Temp password" />
               <button type="button" onClick={() => setPw(suggestPassword())} title="New password"
@@ -130,8 +137,8 @@ export default function TeamManager({ roleOptions, users, techs = [], supervisor
             </div>
           </div>
           <div>
-            <button type="submit" className="btn" disabled={busy}>{busy ? 'Adding…' : 'Add login'}</button>
-            <span className="muted" style={{ fontSize: 11, marginLeft: 10 }}>They sign in with the email + this temp password (they can change it later).</span>
+            <button type="submit" className="btn" disabled={busy}>{busy ? 'Adding…' : 'Add employee'}</button>
+            <span className="muted" style={{ fontSize: 11, marginLeft: 10 }}>Creates their login <em>and</em> roster row (board + chat). They sign in with the email + temp password.</span>
           </div>
         </form>
         {msg && (

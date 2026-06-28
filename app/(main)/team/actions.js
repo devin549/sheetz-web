@@ -35,7 +35,8 @@ async function upsertProfile(sb, userId, fields) {
   } catch { return false; }
 }
 
-// Create a login. Devin types name + email + temp password and picks the role (position).
+// Add an employee in ONE step: create the login AND their roster row (position + Discord handle) and
+// link them — so a new hire fully exists everywhere (board, booking, chat lanes) without any SQL.
 export async function addUser(formData) {
   let sb, callerRole;
   try { ({ sb, callerRole } = await assertManager()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
@@ -44,9 +45,11 @@ export async function addUser(formData) {
   const email = String(formData.get('email') || '').trim().toLowerCase();
   const role = String(formData.get('role') || '').trim();
   const password = String(formData.get('password') || '');
+  const discord_name = String(formData.get('discord_name') || '').trim().slice(0, 80);
+  const position = POSITION_IDS.includes(String(formData.get('position') || '').trim()) ? String(formData.get('position')).trim() : 'tech';
 
   if (!email || email.indexOf('@') < 0) return { ok: false, msg: 'Enter a valid email.' };
-  if (!ROLE_IDS.includes(role)) return { ok: false, msg: 'Pick a position.' };
+  if (!ROLE_IDS.includes(role)) return { ok: false, msg: 'Pick a login role.' };
   if (!canGrant(callerRole, role)) return { ok: false, msg: 'Only an owner can assign owner / GM / accounting roles.' };
   if (password.length < 8) return { ok: false, msg: 'Temp password must be at least 8 characters.' };
 
@@ -55,10 +58,35 @@ export async function addUser(formData) {
     user_metadata: { name, role },
   });
   if (error) return { ok: false, msg: error.message };
-  if (created?.user?.id) await upsertProfile(sb, created.user.id, { name, email, role, active: true });
+  const uid = created?.user?.id;
 
-  revalidatePath('/team');
-  return { ok: true, msg: `✓ Added ${name || email} as ${role}. They sign in with this email + the temp password.` };
+  // Roster row (techs): reuse an existing one with the same name (e.g. imported earlier), else create it,
+  // then link the login to it. Best-effort — if the techs table isn't ready the login still works.
+  let techId = null, rosterNote = '';
+  if (name) {
+    try {
+      const { data: ex } = await sb.from('techs').select('id, position, discord_name').ilike('name', name).limit(1);
+      const row = (ex || [])[0] || null;
+      if (row) {
+        techId = row.id;
+        const patch = {};
+        if (discord_name && !row.discord_name) patch.discord_name = discord_name;
+        if (!row.position || row.position === 'tech') patch.position = position; // don't clobber a real position
+        if (Object.keys(patch).length) await sb.from('techs').update(patch).eq('id', row.id);
+      } else {
+        const ins = { name, position, active: true };
+        if (discord_name) ins.discord_name = discord_name;
+        const { data: nr, error: ie } = await sb.from('techs').insert(ins).select('id').maybeSingle();
+        if (ie) rosterNote = ' (couldn’t add their roster row — set position on the roster below)';
+        else techId = nr && nr.id;
+      }
+    } catch (_) { rosterNote = ' (couldn’t add their roster row — set position on the roster below)'; }
+  }
+
+  if (uid) await upsertProfile(sb, uid, { name, email, role, active: true, ...(techId ? { tech_id: techId } : {}) });
+
+  revalidatePath('/team'); revalidatePath('/messages'); revalidatePath('/booking'); revalidatePath('/board');
+  return { ok: true, msg: `✓ Added ${name || email} — ${role} login, ${position} on the board. They sign in with this email + the temp password.${rosterNote}` };
 }
 
 // Change someone's position. Merge metadata so we never wipe their name.
