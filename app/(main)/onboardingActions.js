@@ -68,6 +68,11 @@ export async function completeOnboarding(payload) {
   const upd = await sb.from('profiles').update({ roast_level: level, roast_locked: true, onboarded_at: new Date().toISOString() }).eq('user_id', user.id);
   if (upd.error) return { ok: false, msg: /column|schema cache|does not exist/i.test(upd.error.message || '') ? 'Run supabase/74 + 75 first.' : upd.error.message };
 
+  // Auto-accept location sharing as part of onboarding (disclosed in the Monitoring step) — so techs never
+  // get a separate "share my location" prompt on My Day; it just runs in the background while the app's open.
+  // Best-effort: merges into prefs so existing keys survive, and never blocks finishing onboarding.
+  try { await sb.from('profiles').update({ prefs: { ...(profile.prefs || {}), share_location: true } }).eq('user_id', user.id); } catch (_) {}
+
   revalidatePath('/', 'layout');
   return { ok: true, msg: 'You’re all set.' };
 }

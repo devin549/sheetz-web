@@ -237,13 +237,15 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,179,0,0.18)', padding: '4px 10px', borderRadius: 14, border: '1px solid #ffc44d' }}>
             ⚡ <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 11, textTransform: 'uppercase' }}>Power Plunger Hour</span><span style={{ color: '#ffeb3b', fontWeight: 800 }}>{game.powerHour}m</span>
           </span>
-          {/* 🎰 PULL — the "pull for a bonus" slot, now in the rail next to Power Plunger Hour (HTML parity) */}
-          <RibbonPull />
-          <span style={{ marginLeft: 'auto', paddingRight: 6, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>👑
-            <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
-              <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Plunger · Lvl {game.level}</span>
-              <span style={{ background: 'rgba(255,255,255,0.22)', width: 80, height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 2 }}><span style={{ display: 'block', width: `${game.levelPct}%`, height: '100%', background: '#ffc44d' }} /></span>
-              <span style={{ color: '#c3cbd5', fontSize: 8 }}>{game.levelPct}% to next</span>
+          {/* 👑 Level + 🎰 PULL jackpot, grouped on the right (Devin: "the pull jackpot needs to be in the LVL") */}
+          <span style={{ marginLeft: 'auto', paddingRight: 6, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <RibbonPull />
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>👑
+              <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+                <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Plunger · Lvl {game.level}</span>
+                <span style={{ background: 'rgba(255,255,255,0.22)', width: 80, height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 2 }}><span style={{ display: 'block', width: `${game.levelPct}%`, height: '100%', background: '#ffc44d' }} /></span>
+                <span style={{ color: '#c3cbd5', fontSize: 8 }}>{game.levelPct}% to next</span>
+              </span>
             </span>
           </span>
         </div>

@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { pingLocation } from './actions';
 import { savePrefs } from '../account/actions';
-import { MapPin } from 'lucide-react';
 
 // Live location for dispatch ("closest tech" routing). A WEBSITE can't track in the background — browser
 // GPS only runs while this page is open and after the tech grants permission. So the model is "accept once":
@@ -69,33 +68,8 @@ export default function ShareLocation({ accepted = false, required = false }) {
     return () => { if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current); };
   }, [armed, required, start]);
 
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', margin: '0 0 12px' }}>
-      {live ? (
-        <>
-          <span className="btn btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--green)', borderColor: 'var(--green)', cursor: 'default' }}>
-            <MapPin size={15} /> Sharing live ●
-          </span>
-          {!required && <button type="button" onClick={pause} className="btn btn-ghost" style={{ fontSize: 12 }}>Stop</button>}
-          <span className="muted" style={{ fontSize: 11 }}>{required ? 'required for your role · auto-updates while open' : 'auto-updates while My Day is open'}</span>
-        </>
-      ) : required ? (
-        // Field crew, not live = OS permission off / GPS off. They can't toggle it in-app; surface the warning.
-        <>
-          <button type="button" onClick={start} className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, background: 'var(--amber)', color: '#1a1206' }}>
-            <MapPin size={15} /> Turn on location
-          </button>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)' }}>⚠️ Location required — {msg?.msg || 'turn it on (Settings → Safari → Location) so dispatch can see you.'}</span>
-        </>
-      ) : (
-        <>
-          <button type="button" onClick={accepted ? start : acceptAndStart} className="btn btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-            <MapPin size={15} /> {accepted ? 'Resume sharing' : 'Share my location'}
-          </button>
-          {msg && <span style={{ fontSize: 12.5, fontWeight: 700, color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.msg}</span>}
-          <span className="muted" style={{ fontSize: 11 }}>{accepted ? 'paused — tap to resume' : 'accept once → dispatch can route you the closest job/part'}</span>
-        </>
-      )}
-    </div>
-  );
+  // No visible widget. Location consent is auto-accepted at onboarding (Monitoring Disclosure), so this just
+  // runs the background GPS watch silently while My Day is open (when armed). Techs never see a "share my
+  // location" prompt; if a tech is dark, the office sees it on the dark-detection view, not here.
+  return null;
 }
