@@ -6,7 +6,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { canAny } from '@/lib/roles';
 import { postToDiscord } from '@/lib/discord';
-import { marginPct, priceForTargetMargin, canMovePrice, canEditPriceFields, rollupMaterialCost, exceedsMaterialThreshold, materialPctOfTicket, priceForMaterialThreshold, effectiveHourly } from '@/lib/pricebookEngine';
+import { marginPct, priceForTargetMargin, canMovePrice, canEditPriceFields, canEditPricebookContent, rollupMaterialCost, exceedsMaterialThreshold, materialPctOfTicket, priceForMaterialThreshold, effectiveHourly, groupCustomEntries } from '@/lib/pricebookEngine';
 import { onsiteHours } from '@/lib/hours';
 import { vendorPrices } from '@/lib/serpVendor';
 
@@ -468,6 +468,92 @@ export async function loadProfitIntel({ limit = 40 } = {}) {
   const losers = rows.filter((r) => r.lowProfit).length;
   const anyActual = rows.some((r) => r.usedActual);
   return { ok: true, rows: capped, total: rows.length, losers, anyActual, lowHourly: LOW_HOURLY, lowMargin: LOW_MARGIN, msg: losers ? `${losers} low-profit item${losers === 1 ? '' : 's'} flagged.` : 'No money-losers in the data. 👍' };
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// PHASE 2b-ii — THE ALWAYS-LEARNING LOOP (admin side).  Techs record ad-hoc "custom" lines for jobs not
+// in the catalog (see job/[id]/pricebook/customEntryActions.js). Here the owner/office REVIEWS them grouped
+// by frequency and PROMOTES a recurring one into a real Master Task — a price-0, hidden shell the OWNER
+// then prices. Nothing here writes a non-zero catalog price; the recorded custom price was a per-job quote.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+// Load the 'new' custom entries within a rolling window, grouped by normalized name with a frequency count.
+// Capped pull. Gated to canEditPricebookContent (owner/gm/om/marketing) — the review queue is merchandising.
+export async function loadCustomEntries({ days = 90, minCount = 1 } = {}) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err, groups: [] };
+  if (!canEditPricebookContent(c.profile.role)) return { ok: false, msg: 'Owner / office only.', groups: [] };
+  const since = new Date(Date.now() - Math.max(1, Math.min(365, Number(days) || 90)) * 86400000).toISOString();
+  let entries = [];
+  try {
+    const { data, error } = await c.sb.from('pricebook_custom_entries')
+      .select('id, raw_name, raw_description, cleaned_name, cleaned_description, suggested_category, materials, price, tech_name, created_at')
+      .eq('status', 'new').gte('created_at', since).order('created_at', { ascending: false }).limit(2000);
+    if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/126_pricebook_custom_entries.sql first.' : error.message, groups: [] };
+    entries = data || [];
+  } catch (e) { return { ok: false, msg: String((e && e.message) || e), groups: [] }; }
+
+  const groups = groupCustomEntries(entries, { minCount }).slice(0, 100);
+  const total = entries.length;
+  const recurring = groups.filter((g) => g.count >= 2).length;
+  return {
+    ok: true, groups, total, recurring, windowDays: Math.max(1, Math.min(365, Number(days) || 90)),
+    msg: total ? `${total} custom job${total === 1 ? '' : 's'} logged · ${recurring} recurring pattern${recurring === 1 ? '' : 's'} to consider.` : 'No custom jobs logged yet — they appear here as techs use the “custom item” button on jobs.',
+  };
+}
+
+// PROMOTE a recurring custom-job group to a real Master Task. Creates a pricebook_items shell at PRICE 0
+// and customer_visible FALSE — the OWNER prices it later in the editor (owner stays the only price-mover).
+// Marks every entry in the group 'promoted'. Gate: canEditPricebookContent (creating the shell is
+// merchandising; PRICING the shell is the owner's separate step). entryIds = the group's recorded ids.
+export async function promoteCustomEntry({ entryIds = [], name, description, category } = {}) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  if (!canEditPricebookContent(c.profile.role)) return { ok: false, msg: 'Owner / office only.' };
+  const ids = (Array.isArray(entryIds) ? entryIds : []).filter(Boolean);
+  const cn = clean(name, 160);
+  if (!cn) return { ok: false, msg: 'A name is required to promote.' };
+  if (!ids.length) return { ok: false, msg: 'Nothing to promote.' };
+
+  // Resolve a category id from a free-text suggestion (best-effort, never blocks).
+  let categoryId = null;
+  const catText = clean(category, 80);
+  if (catText) {
+    try { const { data: cat } = await c.sb.from('pricebook_categories').select('id').ilike('name', catText).eq('active', true).maybeSingle(); if (cat) categoryId = cat.id; } catch (_) {}
+  }
+
+  // HARD RULE: shell created at price 0, hidden, until the owner prices + reveals it. No catalog price written.
+  const sku = 'CBLRN' + Date.now().toString(36).toUpperCase();
+  const row = {
+    sku, name: cn,
+    customer_name: cn,
+    customer_description: clean(description, 600) || null,
+    category_id: categoryId,
+    retail_price: 0,                 // owner prices it later — never set from a tech's per-job quote
+    estimated_material_cost: 0,
+    customer_visible: false,         // hidden shell until the owner finishes + reveals it
+    active: true,
+  };
+  const { data: item, error } = await c.sb.from('pricebook_items').insert(row).select('id, name').maybeSingle();
+  if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/104_pricebook.sql first.' : error.message };
+
+  // Mark the group's entries promoted (best-effort; record the new shell id for traceability).
+  try { await c.sb.from('pricebook_custom_entries').update({ status: 'promoted', promoted_item_id: item?.id || null }).in('id', ids).eq('status', 'new'); } catch (_) {}
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'pricebook.promote_custom', entity: 'pricebook_item', entity_id: String(item?.id || ''), detail: { name: cn, fromEntries: ids.length } }); } catch (_) {}
+  revalidatePath('/pricebook-admin'); revalidatePath('/catalog');
+  return { ok: true, itemId: item?.id || null, msg: `Promoted “${cn}” to a Master Task — it's a hidden $0 shell. Open it in the editor to set the price, then show it to customers.` };
+}
+
+// DISMISS a custom-job group — mark its entries 'dismissed' so they leave the queue (not a real catalog item).
+export async function dismissCustomEntry({ entryIds = [] } = {}) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  if (!canEditPricebookContent(c.profile.role)) return { ok: false, msg: 'Owner / office only.' };
+  const ids = (Array.isArray(entryIds) ? entryIds : []).filter(Boolean);
+  if (!ids.length) return { ok: false, msg: 'Nothing to dismiss.' };
+  try {
+    const { error } = await c.sb.from('pricebook_custom_entries').update({ status: 'dismissed' }).in('id', ids).eq('status', 'new');
+    if (error) return { ok: false, msg: /relation|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/126_pricebook_custom_entries.sql first.' : error.message };
+  } catch (e) { return { ok: false, msg: String((e && e.message) || e) }; }
+  revalidatePath('/pricebook-admin');
+  return { ok: true, msg: 'Dismissed.' };
 }
 
 // 🚀 Flush Gordon hypes the items added in the last `sinceHours` to the team Discord.

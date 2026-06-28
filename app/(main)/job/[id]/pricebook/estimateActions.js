@@ -19,7 +19,8 @@ async function ctx() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { err: 'Sign in required.' };
   const profile = await loadProfile(user);
-  if (!(can(profile.role, 'changeStatus') || can(profile.role, 'seeOwnOnly') || can(profile.role, 'collectPayment') || can(profile.role, 'seeAllJobs')))
+  // Actionable perm only — never a read-only Viewer (seeAllJobs alone). Techs keep access via changeStatus.
+  if (!(can(profile.role, 'changeStatus') || can(profile.role, 'collectPayment') || can(profile.role, 'createJobs')))
     return { err: 'Not allowed.' };
   return { user, profile, sb: getSupabaseAdmin() };
 }
@@ -40,6 +41,8 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
   if (!job) return { ok: false, msg: 'Job not found.' };
 
   // Gather every itemId referenced by the flat cart AND every tier so we fetch customer-safe data ONCE.
+  // Custom lines (l.custom) carry no catalog itemId — they're ad-hoc, priced per-job by the tech, and pass
+  // straight through to the snapshot (never a catalog lookup, never job_pricebook_usage, never a catalog price).
   const tierInput = Array.isArray(opts.tiers) ? opts.tiers : [];
   const allLineRefs = [...lines, ...tierInput.flatMap((t) => Array.isArray(t.lines) ? t.lines : [])];
   const itemIds = [...new Set(allLineRefs.map((l) => l.itemId).filter(Boolean))];
@@ -56,6 +59,12 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
 
   // Resolve a list of {itemId, soldPrice, quantity} into customer-safe snapshot lines (no cost/margin/min).
   const snapOf = (ls) => (ls || []).map((l) => {
+    // Ad-hoc custom line — the tech's per-job quote, no catalog item. Customer-safe by construction (only the
+    // name/description/price the tech typed; no cost/margin/min exists for it). itemId stays null.
+    if (l.custom) {
+      const name = clean(l.name, 160); if (!name) return null;
+      return { itemId: null, quantity: num(l.quantity) || 1, name, description: clean(l.description, 600), price: num(l.soldPrice), photo: null, gallery: [], warranty: '', pdf: null, custom: true };
+    }
     const it = byId[l.itemId]; if (!it) return null;
     const gallery = (mediaByItem[l.itemId] || []).filter((m) => m.media_type === 'photo').map((m) => m.url);
     const pdf = it.pdf_url || (mediaByItem[l.itemId] || []).find((m) => m.media_type === 'pdf' || m.media_type === 'manufacturer_link')?.url || null;

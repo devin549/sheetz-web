@@ -7,6 +7,7 @@ import CategoryTree from './CategoryTree';
 import ItemEditor from './ItemEditor';
 import MaterialCostRollup from './MaterialCostRollup';
 import ProfitIntel from './ProfitIntel';
+import LearnedCustomJobs from './LearnedCustomJobs';
 
 const emptyForm = { name: '', customerName: '', categoryId: '', retailPrice: '', materialCost: '', customerDescription: '', customerVisible: true };
 const inp = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 7, padding: '9px 11px', fontSize: 14, width: '100%' };
@@ -15,6 +16,7 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
   const canMovePrice = priceGate.canMovePrice !== false; // owner/admin only — page computes the gate
 
   const canEditPriceFields = priceGate.canEditPriceFields !== false;
+  const canEditContent = priceGate.canEditContent !== false;
   const [list, setList] = useState(items);
   const [reqs, setReqs] = useState(priceReqs);
   const [scan, setScan] = useState(false);
@@ -159,6 +161,10 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
           no live price moves. Both owner/gm/om (same gate as Margin Watch). */}
       {canEditPriceFields && <MaterialCostRollup />}
       {canEditPriceFields && <ProfitIntel />}
+
+      {/* 🧠 Learned custom jobs (Phase 2b-ii) — review the ad-hoc lines techs typed, promote recurring ones
+          to a hidden $0 Master Task the owner then prices. Merchandising gate (owner/gm/om/marketing). */}
+      {canEditContent && !needsMig && <LearnedCustomJobs />}
 
       {/* Category tree management (1b) */}
       {!needsMig && (

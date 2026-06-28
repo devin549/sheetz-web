@@ -1,6 +1,6 @@
 import { requirePerm } from '@/lib/guard';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { canMovePrice, canEditPriceFields } from '@/lib/pricebookEngine';
+import { canMovePrice, canEditPriceFields, canEditPricebookContent } from '@/lib/pricebookEngine';
 import PricebookAdmin from './PricebookAdmin';
 
 export const dynamic = 'force-dynamic';
@@ -36,6 +36,6 @@ export default async function PricebookAdminPage() {
   const newCount = items.filter((i) => i.isNew).length;
   // Price gates: only owner/admin moves a live price (inline editor + Margin-Watch approve). Marketing has
   // no price fields at all; GM/OM edit price via the editor's Pricing tab (which routes to owner approval).
-  const priceGate = { canMovePrice: canMovePrice(role), canEditPriceFields: canEditPriceFields(role), role };
+  const priceGate = { canMovePrice: canMovePrice(role), canEditPriceFields: canEditPriceFields(role), canEditContent: canEditPricebookContent(role), role };
   return <PricebookAdmin items={items} cats={cats} needsMig={needsMig} newCount={newCount} priceReqs={priceReqs} priceGate={priceGate} />;
 }

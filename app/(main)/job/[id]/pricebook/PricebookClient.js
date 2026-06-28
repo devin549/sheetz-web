@@ -7,6 +7,7 @@ import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { recordSale } from './actions';
 import { createEstimate } from './estimateActions';
+import { coachCustomEntry, recordCustomEntry } from './customEntryActions';
 import BarcodeScan from './BarcodeScan';
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString();
@@ -39,6 +40,10 @@ export default function PricebookClient({ job, customer, items = [], categories 
   const addTier = (tier) => { setLink(null); setTierKey(tier.key); setCart(() => tier.items.map((it) => ({ id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: null }))); };
   const remove = (id) => setCart((c) => c.filter((x) => x.id !== id));
   const setPrice = (id, v) => setCart((c) => c.map((x) => x.id === id ? { ...x, soldPrice: v } : x));
+  // Add an ad-hoc CUSTOM line — a job not in the catalog. It carries no catalog itemId (custom:true), sells
+  // as a one-off line at the tech's quote, and creates/changes NO catalog price. Recorded separately so the
+  // catalog can learn (recordCustomEntry). Unique client id so it isn't deduped against catalog items.
+  const addCustom = (entry) => { setLink(null); setCart((c) => [...c, { id: 'custom-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), custom: true, name: entry.name, description: entry.description || '', price: Number(entry.price) || 0, soldPrice: Number(entry.price) || 0, min: null }]); };
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -55,8 +60,12 @@ export default function PricebookClient({ job, customer, items = [], categories 
   const memberSavings = Math.round((listSubtotal - subtotal) * 100) / 100;
   const cardFee = Math.round(subtotal * 0.04 * 100) / 100;
   const anyBelowMin = cart.some((l) => l.min != null && memberPrice(Number(l.soldPrice)) < l.min);
-  // What actually gets sold/quoted — member price applied per line when member pricing is on.
-  const soldLines = () => cart.map((l) => ({ itemId: l.id, quantity: 1, soldPrice: memberPrice(Number(l.soldPrice) || 0) }));
+  // What actually gets sold/quoted — member price applied per line when member pricing is on. Custom lines
+  // carry no catalog itemId (custom:true) + their own name/description so they survive into the estimate
+  // snapshot as an ad-hoc line — they never touch job_pricebook_usage or any catalog price.
+  const soldLines = () => cart.map((l) => l.custom
+    ? { custom: true, name: l.name, description: l.description || '', quantity: 1, soldPrice: memberPrice(Number(l.soldPrice) || 0) }
+    : { itemId: l.id, quantity: 1, soldPrice: memberPrice(Number(l.soldPrice) || 0) });
 
   const sell = () => start(async () => {
     setMsg(null); setApproval(null);
@@ -144,6 +153,9 @@ export default function PricebookClient({ job, customer, items = [], categories 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
         {/* Suggestions / search / categories */}
         <div>
+          {/* ➕ Custom item / not in the book — the front door for odd jobs. Adds an ad-hoc line + records it
+              for the catalog to learn from. Tech-only (the customer view stays a clean checkout). */}
+          {!customerMode && <CustomEntry jobId={job.id} onAdd={addCustom} />}
           <BarcodeScan onAdd={addScanned} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search price, part, symptom, SKU — try seesnake, wax ring, water heater" style={{ ...input, width: '100%', marginBottom: 10 }} />
           {/* Categories as ONE dropdown (was ~45 pills of noise). ⭐ Suggested = job-smart picks. */}
@@ -254,6 +266,113 @@ export default function PricebookClient({ job, customer, items = [], categories 
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ➕ Custom item / not in the book — the tech types a name, what they did, a one-off PRICE for THIS job, and
+// optional materials. "✨ Improve description" runs the AI coach (suggest-only): if vague it asks clarifying
+// questions + offers a polished rewrite the tech can accept. On Add we record the entry for the catalog to
+// learn from AND drop a custom line into the cart. The price is the tech's per-job quote — NOT a catalog
+// price; this creates/changes no catalog item.
+function CustomEntry({ jobId, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [coaching, setCoaching] = useState(null);   // { needsDetail, questions[], cleanedName, cleanedDescription, suggestedCategory }
+  const [accepted, setAccepted] = useState(null);   // the cleaned name/desc the tech accepted (carried to record)
+  const [msg, setMsg] = useState(null);
+  const [f, setF] = useState({ name: '', description: '', price: '', materials: '' });
+  const upd = (k, v) => { setF((x) => ({ ...x, [k]: v })); if (k === 'name' || k === 'description') { setCoaching(null); setAccepted(null); } };
+
+  const inp = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 14, width: '100%' };
+
+  const coach = async () => {
+    setBusy(true); setMsg(null); setCoaching(null);
+    const r = await coachCustomEntry(f.name, f.description);
+    setBusy(false);
+    if (!r.ok) { setMsg({ ok: false, t: r.msg }); return; }
+    setCoaching(r.coaching);
+  };
+  const acceptRewrite = () => {
+    if (!coaching) return;
+    setF((x) => ({ ...x, name: coaching.cleanedName || x.name, description: coaching.cleanedDescription || x.description }));
+    setAccepted({ cleanedName: coaching.cleanedName || '', cleanedDescription: coaching.cleanedDescription || '', suggestedCategory: coaching.suggestedCategory || '' });
+    setCoaching(null);
+    setMsg({ ok: true, t: 'Rewrite accepted — review and add.' });
+  };
+
+  const submit = async () => {
+    const name = f.name.trim();
+    if (!name) { setMsg({ ok: false, t: 'Give it a name first.' }); return; }
+    setBusy(true); setMsg(null);
+    // Record for learning (server, suggest-only path). Soft-degrades if migration 126 isn't applied.
+    const r = await recordCustomEntry({
+      jobId, name, description: f.description, price: f.price, materials: f.materials,
+      cleanedName: accepted?.cleanedName, cleanedDescription: accepted?.cleanedDescription, suggestedCategory: accepted?.suggestedCategory,
+    });
+    setBusy(false);
+    if (!r.ok) { setMsg({ ok: false, t: r.msg }); return; }
+    // Drop the ad-hoc line into the cart regardless (the record may have soft-degraded with recorded:false).
+    onAdd({ name, description: f.description, price: f.price });
+    setF({ name: '', description: '', price: '', materials: '' });
+    setCoaching(null); setAccepted(null); setOpen(false); setMsg(null);
+  };
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="card" style={{ width: '100%', textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, padding: '11px 13px', marginBottom: 10, borderColor: 'var(--amber-dim)', background: 'var(--surface-1)' }}>
+        <span style={{ fontSize: 18 }}>➕</span>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--amber)' }}>Custom item / not in the book</div>
+          <div className="muted" style={{ fontSize: 11.5 }}>Odd job? Type it, price it for this job, add it. The book learns from it.</div>
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 10, borderColor: 'var(--amber-dim)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontWeight: 800, fontSize: 14 }}>➕ Custom line</span>
+        <button onClick={() => { setOpen(false); setMsg(null); setCoaching(null); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--fg-3)', cursor: 'pointer', fontSize: 16 }}>×</button>
+      </div>
+      <input value={f.name} onChange={(e) => upd('name', e.target.value)} placeholder="What is it? e.g. Rebuild toilet" style={{ ...inp, marginBottom: 8 }} />
+      <textarea value={f.description} onChange={(e) => upd('description', e.target.value)} placeholder="What did you do? (the more detail, the better the catalog learns)" rows={2} style={{ ...inp, marginBottom: 8, resize: 'vertical' }} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+        <label style={{ fontSize: 11, color: 'var(--fg-3)' }}>Your price for this job ($)
+          <input value={f.price} onChange={(e) => upd('price', e.target.value)} inputMode="decimal" placeholder="0" style={{ ...inp, marginTop: 3 }} /></label>
+        <label style={{ fontSize: 11, color: 'var(--fg-3)' }}>Materials used (optional)
+          <input value={f.materials} onChange={(e) => upd('materials', e.target.value)} placeholder="e.g. flapper, fill valve" style={{ ...inp, marginTop: 3 }} /></label>
+      </div>
+      <div className="muted" style={{ fontSize: 10.5, marginBottom: 8 }}>This is your one-off quote for this job — it doesn't set a catalog price.</div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button onClick={coach} disabled={busy || (!f.name.trim() && !f.description.trim())} className="pill" style={{ cursor: 'pointer', color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>{busy ? '…' : '✨ Improve description'}</button>
+        <button onClick={submit} disabled={busy || !f.name.trim()} className="btn" style={{ marginLeft: 'auto', background: 'var(--amber)', borderColor: 'var(--amber)', color: '#1a1a1a' }}>{busy ? 'Adding…' : '＋ Add to estimate'}</button>
+      </div>
+
+      {/* AI coach output — clarifying questions + a polished rewrite. Suggest-only; the tech accepts it. */}
+      {coaching && (
+        <div style={{ marginTop: 10, padding: 10, borderRadius: 10, background: 'var(--surface-1)', border: '1px solid var(--amber-dim)' }}>
+          {coaching.needsDetail && coaching.questions.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', marginBottom: 4 }}>A few things that'd sharpen this:</div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {coaching.questions.map((q, i) => <li key={i} style={{ fontSize: 12, marginBottom: 2 }}>{q}</li>)}
+              </ul>
+            </div>
+          )}
+          {(coaching.cleanedName || coaching.cleanedDescription) && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', marginBottom: 4 }}>Polished version:</div>
+              {coaching.cleanedName && <div style={{ fontSize: 13, fontWeight: 700 }}>{coaching.cleanedName}</div>}
+              {coaching.cleanedDescription && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{coaching.cleanedDescription}</div>}
+              <button onClick={acceptRewrite} className="pill" style={{ cursor: 'pointer', marginTop: 8, color: 'var(--green)', border: '1px solid var(--green)' }}>✓ Use this wording</button>
+            </div>
+          )}
+        </div>
+      )}
+      {msg && <div style={{ fontSize: 11.5, marginTop: 8, color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.t}</div>}
     </div>
   );
 }
