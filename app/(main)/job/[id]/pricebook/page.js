@@ -1,7 +1,7 @@
-import Link from 'next/link';
 import { loadCockpit } from '../cockpit';
 import JobHeader from '../JobHeader';
-import { canSeeCost, buildTiers, shapeItem } from '@/lib/pricebookEngine';
+import { canSeeCost, buildTiers, marginPct, marginHealth } from '@/lib/pricebookEngine';
+import { buildCatalogRoots } from '@/lib/catalogTree';
 import PricebookClient from './PricebookClient';
 import EstimateProofPanel from './EstimateProofPanel';
 
@@ -16,20 +16,34 @@ function scoreItem(item, jt) {
   return s;
 }
 
+// Flat shape the CatalogBrowser reads — customer fields always; cost/margin/min only when allowed (managers).
+function shapeFlat(raw, score, showCost) {
+  const base = {
+    id: raw.id, sku: raw.sku, name: raw.customer_name || raw.name, categoryId: raw.category_id,
+    description: raw.customer_description || raw.short_description || '', price: Number(raw.retail_price) || 0,
+    warranty: raw.warranty_text || '', photo: raw.primary_photo_url || null, tags: raw.tags || [],
+    suggested: score > 0, jobTypes: raw.job_types || [],
+  };
+  if (showCost) Object.assign(base, { cost: Number(raw.estimated_material_cost) || 0, minimum: raw.minimum_price == null ? null : Number(raw.minimum_price), marginPct: marginPct(raw), marginHealth: marginHealth(raw), laborHours: Number(raw.estimated_labor_hours) || 0 });
+  return base;
+}
+
 export default async function JobPricebook({ params, searchParams }) {
   const c = await loadCockpit(params.id);
   if (!c.configured) return <div className="wrap"><div className="h1">📖 Pricebook</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code>.</div></div>;
   const role = c.role;
+  const showCost = canSeeCost(role);
   const jt = c.job.job_type || '';
 
-  let needsMigration = false, items = [], categories = [], tiers = [], bundle = null;
+  let needsMigration = false, items = [], cats = [], tiers = [], bundle = null;
   try {
-    const ir = await c.sb.from('pricebook_items').select('*').eq('active', true).eq('customer_visible', true).limit(200);
+    // The entire sellable book (customer-visible) — the tech drills the full catalog right here.
+    const ir = await c.sb.from('pricebook_items').select('*').eq('active', true).eq('customer_visible', true).limit(2000);
     if (ir.error) { if (/relation|does not exist|schema cache/i.test(ir.error.message)) needsMigration = true; }
     else items = ir.data || [];
     if (!needsMigration) {
-      const cr = await c.sb.from('pricebook_categories').select('id, name, slug, sort_order').eq('active', true).order('sort_order');
-      categories = cr.data || [];
+      const cr = await c.sb.from('pricebook_categories').select('id, name, parent_id, sort_order').order('sort_order');
+      cats = cr.data || [];
       // The Good/Better/Best bundle for this job type (first matching).
       const br = await c.sb.from('pricebook_bundles').select('*').eq('active', true);
       const bundles = br.data || [];
@@ -41,15 +55,41 @@ export default async function JobPricebook({ params, searchParams }) {
     }
   } catch (_) { needsMigration = true; }
 
-  // Rank + shape items for this role (customer fields always; internal margin only if allowed).
-  const ranked = items.map((i) => ({ raw: i, score: scoreItem(i, jt) })).sort((a, b) => b.score - a.score);
-  const shaped = ranked.map(({ raw, score }) => ({ ...shapeItem(raw, role), categoryId: raw.category_id, suggested: score > 0, jobTypes: raw.job_types || [] }));
+  // Rank + shape (flat), then build the drill-down tree the CatalogBrowser renders.
+  const shaped = items.map((raw) => shapeFlat(raw, scoreItem(raw, jt), showCost));
+  const roots = buildCatalogRoots(cats, shaped);
+
+  // 🧠 Commonly added — learned co-occurrence (real jobs) first, then AI starter picks topped up + tagged.
+  const related = {};
+  try {
+    const { data: usage } = await c.sb.from('job_pricebook_usage').select('job_id, item_id').limit(5000);
+    const byJob = {}; (usage || []).forEach((u) => { if (u.job_id && u.item_id) (byJob[u.job_id] = byJob[u.job_id] || []).push(u.item_id); });
+    Object.values(byJob).forEach((ids) => ids.forEach((a) => ids.forEach((b) => { if (a !== b) { related[a] = related[a] || {}; related[a][b] = (related[a][b] || 0) + 1; } })));
+  } catch (_) {}
+  const topRelated = {}; Object.entries(related).forEach(([id, m]) => { topRelated[id] = Object.entries(m).sort((x, y) => y[1] - x[1]).slice(0, 4).map(([rid]) => rid); });
+  const aiByItem = {};
+  try {
+    const { data } = await c.sb.from('pricebook_recommendations').select('item_id, rec_item_id, score').eq('source', 'ai').limit(20000);
+    (data || []).forEach((r) => { if (r.item_id && r.rec_item_id) (aiByItem[r.item_id] = aiByItem[r.item_id] || []).push(r); });
+    Object.values(aiByItem).forEach((rows) => rows.sort((a, b) => (b.score || 0) - (a.score || 0)));
+  } catch (_) {}
+  const recommended = {};
+  new Set([...Object.keys(topRelated), ...Object.keys(aiByItem)]).forEach((id) => {
+    const learned = topRelated[id] || []; const seen = new Set(learned);
+    const list = learned.map((rid) => ({ id: rid, ai: false }));
+    for (const r of (aiByItem[id] || [])) { if (list.length >= 5) break; if (!seen.has(r.rec_item_id)) { seen.add(r.rec_item_id); list.push({ id: r.rec_item_id, ai: true }); } }
+    recommended[id] = list;
+  });
+  const upgrades = {};
+  try {
+    const { data: ups } = await c.sb.from('pricebook_item_upgrades').select('item_id, upgrade_id, sort_order').order('sort_order');
+    (ups || []).forEach((u) => { if (u.item_id && u.upgrade_id) (upgrades[u.item_id] = upgrades[u.item_id] || []).push(u.upgrade_id); });
+  } catch (_) {}
 
   const job = { id: c.job.id, number: c.job.job_number || '', type: jt, customerId: c.job.customer_id || null, techId: c.job.tech_id || null };
 
-  // 🎫 Deep-link from the catalog: /job/<id>/pricebook?add=<itemId> pre-loads that item into the cart. Resolve
-  // it server-side so the PRICE is authoritative (and it works even for items outside this rail's shaped set,
-  // e.g. not customer_visible or beyond the 200 cap). Best-effort — a bad id just no-ops.
+  // 🎫 Deep-link from the standalone catalog: ?add=<itemId> pre-loads that item into the cart. Resolve server-
+  // side so the PRICE is authoritative (and it works even for items outside the loaded set). Best-effort.
   let preAdd = null;
   const addId = String(searchParams?.add || '').trim();
   if (addId && !needsMigration) {
@@ -57,7 +97,7 @@ export default async function JobPricebook({ params, searchParams }) {
     if (!preAdd) {
       try {
         const { data: one } = await c.sb.from('pricebook_items').select('*').eq('id', addId).maybeSingle();
-        if (one) preAdd = { ...shapeItem(one, role), categoryId: one.category_id, suggested: false, jobTypes: one.job_types || [] };
+        if (one) preAdd = shapeFlat(one, 0, showCost);
       } catch (_) {}
     }
   }
@@ -80,12 +120,18 @@ export default async function JobPricebook({ params, searchParams }) {
   return (
     <div className="wrap" style={{ maxWidth: 980 }}>
       <JobHeader job={c.job} customer={c.customer} tab="Pricebook" />
-      <Link href="/catalog" className="pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, margin: '8px 0 2px', color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>📖 Browse the full catalog (drill-down) →</Link>
       {needsMigration ? (
         <div className="notice" style={{ marginTop: 10 }}>Run <code>supabase/104_pricebook.sql</code> + <code>105_pricebook_seed.sql</code> to load the Sheetz Pricebook.</div>
       ) : (
         <>
-          <PricebookClient job={job} customer={{ name: c.customer?.name || 'Customer', address: c.customer?.address || '', phone: c.customer?.phone || '' }} items={shaped} categories={categories} tiers={tiers} bundle={bundle ? { slug: bundle.slug, name: bundle.name, customerDescription: bundle.customer_description, warranty: bundle.warranty_text, approveText: bundle.approval_button_text } : null} showMargin={canSeeCost(role)} plans={plans} preAdd={preAdd} />
+          <PricebookClient
+            job={job}
+            customer={{ name: c.customer?.name || 'Customer', address: c.customer?.address || '', phone: c.customer?.phone || '' }}
+            roots={roots} related={recommended} upgrades={upgrades} total={shaped.length}
+            tiers={tiers}
+            bundle={bundle ? { slug: bundle.slug, name: bundle.name, customerDescription: bundle.customer_description, warranty: bundle.warranty_text, approveText: bundle.approval_button_text } : null}
+            showMargin={showCost} plans={plans} preAdd={preAdd}
+          />
           <EstimateProofPanel estimates={estimates} />
         </>
       )}

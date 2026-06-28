@@ -9,17 +9,18 @@ import { recordSale } from './actions';
 import { createEstimate, sendEstimateText, sendEstimateEmail, markPresented, getEstimateStatus } from './estimateActions';
 import { coachCustomEntry, recordCustomEntry } from './customEntryActions';
 import BarcodeScan from './BarcodeScan';
+import CatalogBrowser from '@/app/(main)/catalog/CatalogBrowser';
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString();
 const TIER_STYLE = { good: { c: 'var(--fg-2)' }, better: { c: 'var(--amber)' }, best: { c: 'var(--green)' } };
 
-export default function PricebookClient({ job, customer, items = [], categories = [], tiers = [], bundle, showMargin, plans = [], preAdd = null }) {
+// The in-job pricebook = the full drill-down catalog (browse → add to THIS estimate) + the Good/Better/Best
+// ladder + a sticky estimate cart + Present/Send. One view (no tech/customer toggle); cost shows to managers
+// only via the browse. Scan-a-part and Custom-item live at the top of the browse.
+export default function PricebookClient({ job, customer, roots = [], related = {}, upgrades = {}, total = 0, tiers = [], bundle, showMargin, plans = [], preAdd = null }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [mode, setMode] = useState('tech');     // 'tech' | 'customer'
-  const [q, setQ] = useState('');
-  const [cat, setCat] = useState('suggested');
-  const [cart, setCart] = useState([]);          // { id, name, price, soldPrice }
+  const [cart, setCart] = useState([]);          // { id, name, price, soldPrice, min }
   const [msg, setMsg] = useState(null);
   const [approval, setApproval] = useState(null);
   const [tierKey, setTierKey] = useState(null);
@@ -28,7 +29,6 @@ export default function PricebookClient({ job, customer, items = [], categories 
   const [copied, setCopied] = useState(false);
   const [sendMsg, setSendMsg] = useState(null);   // feedback from text/email send
   const [live, setLive] = useState(null);         // { status, terminal, selectedTierKey, approvalChannel, approvedName }
-  const customerMode = mode === 'customer';
 
   // ⭐ Member pricing — turn it on when offering a membership; each plan carries its own savings %.
   const [memberOn, setMemberOn] = useState(false);
@@ -39,7 +39,7 @@ export default function PricebookClient({ job, customer, items = [], categories 
 
   // Editing the cart invalidates any sent estimate's live mirror — clear it so we don't poll a stale token.
   const resetSent = () => { setLink(null); setToken(null); setLive(null); setSendMsg(null); };
-  const add = (it) => { resetSent(); setCart((c) => c.find((x) => x.id === it.id) ? c : [...c, { id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: it.internal?.minimum ?? null }]); };
+  const add = (it) => { resetSent(); setCart((c) => c.find((x) => x.id === it.id) ? c : [...c, { id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: it.minimum ?? null }]); };
   // A barcode-scanned service comes from the API (flat shape: minimum at top level, not it.internal).
   const addScanned = (it) => { resetSent(); setCart((c) => c.find((x) => x.id === it.id) ? c : [...c, { id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: it.minimum ?? null }]); };
   const addTier = (tier) => { resetSent(); setTierKey(tier.key); setCart(() => tier.items.map((it) => ({ id: it.id, name: it.name, price: it.price, soldPrice: it.price, min: null }))); };
@@ -62,15 +62,7 @@ export default function PricebookClient({ job, customer, items = [], categories 
     }
   }, [preAdd]);
 
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    return items.filter((it) => {
-      if (cat === 'suggested' && !it.suggested && !s) return true; // suggested view shows all but pins suggested
-      if (cat !== 'suggested' && it.categoryId !== cat) return false;
-      if (!s) return true;
-      return (it.name || '').toLowerCase().includes(s) || (it.description || '').toLowerCase().includes(s) || (it.internal?.sku || '').toLowerCase().includes(s) || (it.internal?.tags || []).some((t) => String(t).toLowerCase().includes(s));
-    }).sort((a, b) => (b.suggested ? 1 : 0) - (a.suggested ? 1 : 0));
-  }, [items, q, cat]);
+  const cartIds = useMemo(() => new Set(cart.map((l) => l.id)), [cart]);
 
   const listSubtotal = cart.reduce((s, l) => s + (Number(l.soldPrice) || 0), 0);
   const subtotal = memberDisc ? Math.round(listSubtotal * (1 - memberDisc) * 100) / 100 : listSubtotal;
@@ -136,16 +128,9 @@ export default function PricebookClient({ job, customer, items = [], categories 
 
   return (
     <div style={{ marginTop: 10 }}>
-      {/* Mode toggle — flip the iPad to the customer with one tap. */}
+      {/* ⭐ Member pricing toggle — turn on when offering a plan; pick the plan for its savings. (No tech/
+          customer toggle — one clean view; flip to the customer with "Hand to Customer" or Present.) */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <div style={{ display: 'inline-flex', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 999, padding: 3 }}>
-          {[['tech', '🔧 Tech view'], ['customer', '👤 Customer view']].map(([m, label]) => (
-            <button key={m} onClick={() => setMode(m)} style={{ border: 'none', cursor: 'pointer', borderRadius: 999, padding: '6px 14px', fontSize: 12.5, fontWeight: 700, background: mode === m ? 'var(--amber)' : 'transparent', color: mode === m ? '#1a1a1a' : 'var(--fg-2)' }}>{label}</button>
-          ))}
-        </div>
-        {customerMode && <span className="muted" style={{ fontSize: 11.5 }}>Safe to show the customer — no cost or margin on screen.</span>}
-
-        {/* ⭐ Member pricing toggle — turn on when offering a plan; pick the plan for its savings. */}
         {plans.length > 0 && (
           <div style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <button onClick={() => setMemberOn((v) => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', borderRadius: 999, padding: '6px 12px', fontSize: 12.5, fontWeight: 800, border: '1px solid ' + (memberOn ? 'var(--green)' : 'var(--border)'), background: memberOn ? 'var(--green)' : 'var(--surface-2)', color: memberOn ? '#06210f' : 'var(--fg-2)' }}>
@@ -187,46 +172,17 @@ export default function PricebookClient({ job, customer, items = [], categories 
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
-        {/* Suggestions / search / categories */}
-        <div>
-          {/* ➕ Custom item / not in the book — the front door for odd jobs. Adds an ad-hoc line + records it
-              for the catalog to learn from. Tech-only (the customer view stays a clean checkout). */}
-          {!customerMode && <CustomEntry jobId={job.id} onAdd={addCustom} />}
-          <BarcodeScan onAdd={addScanned} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search price, part, symptom, SKU — try seesnake, wax ring, water heater" style={{ ...input, width: '100%', marginBottom: 10 }} />
-          {/* Categories as ONE dropdown (was ~45 pills of noise). ⭐ Suggested = job-smart picks. */}
-          <select value={cat} onChange={(e) => setCat(e.target.value)} style={{ ...input, width: '100%', marginBottom: 12, cursor: 'pointer' }}>
-            <option value="suggested">⭐ Suggested for this job</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <div style={{ display: 'grid', gap: 8 }}>
-            {filtered.slice(0, 40).map((it) => (
-              <div key={it.id} className="card" style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '11px 13px', borderColor: it.suggested ? 'var(--amber-dim)' : 'var(--border)' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 700, fontSize: 14 }}>{it.name}</span>
-                    {it.suggested && <span className="pill" style={{ fontSize: 9, color: 'var(--amber)' }}>job-smart</span>}
-                  </div>
-                  <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{it.description}</div>
-                  {!customerMode && showMargin && it.internal && (
-                    <div style={{ display: 'flex', gap: 8, marginTop: 5, flexWrap: 'wrap', fontSize: 10.5 }}>
-                      <span className="pill" style={{ color: it.internal.marginHealth === 'healthy' ? 'var(--green)' : 'var(--red)' }}>{it.internal.marginPct != null ? `${it.internal.marginPct}% margin` : 'no price'}</span>
-                      <span className="pill" style={{ color: 'var(--fg-3)' }}>target {it.internal.targetMargin}%</span>
-                      {it.internal.minimum != null && <span className="pill" style={{ color: 'var(--fg-3)' }}>min {money(it.internal.minimum)}</span>}
-                      {it.internal.laborHours ? <span className="pill" style={{ color: 'var(--fg-3)' }}>{it.internal.laborHours}h</span> : null}
-                    </div>
-                  )}
-                  {!customerMode && showMargin && it.internal?.internalNotes && <div className="muted" style={{ fontSize: 10.5, marginTop: 4, fontStyle: 'italic' }}>🔒 {it.internal.internalNotes}</div>}
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontWeight: 800, color: 'var(--green)' }}>{money(it.price)}</div>
-                  <button onClick={() => add(it)} className="pill" style={{ cursor: 'pointer', marginTop: 6, color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>＋ Add</button>
-                </div>
-              </div>
-            ))}
-            {filtered.length === 0 && <div className="muted" style={{ fontSize: 12.5 }}>No items match. Try a different word or category.</div>}
-          </div>
-        </div>
+        {/* The full pricebook, drill-down. Tap an item → "Add to estimate" drops it in the cart. Scan-a-part
+            and Custom-item ride on top of the browse. Cost/margin shows to managers only. */}
+        <CatalogBrowser
+          embedded roots={roots} related={related} upgrades={upgrades} total={total}
+          showCost={showMargin} canEdit={false}
+          onAddItem={add} cartIds={cartIds}
+          topSlot={<div style={{ marginBottom: 10 }}>
+            <CustomEntry jobId={job.id} onAdd={addCustom} />
+            <BarcodeScan onAdd={addScanned} />
+          </div>}
+        />
 
         {/* Estimate cart */}
         <div style={{ position: 'sticky', top: 8 }}>
@@ -243,9 +199,9 @@ export default function PricebookClient({ job, customer, items = [], categories 
                 <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid var(--border)' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</div>
-                    {!customerMode && l.min != null && Number(l.soldPrice) < l.min && <div style={{ fontSize: 10, color: 'var(--red)' }}>below min {money(l.min)}</div>}
+                    {showMargin && l.min != null && Number(l.soldPrice) < l.min && <div style={{ fontSize: 10, color: 'var(--red)' }}>below min {money(l.min)}</div>}
                   </div>
-                  {!customerMode && showMargin
+                  {showMargin
                     ? <input value={l.soldPrice} onChange={(e) => setPrice(l.id, e.target.value)} inputMode="decimal" style={{ ...input, width: 78, padding: '5px 7px', textAlign: 'right', fontSize: 12.5 }} />
                     : <span style={{ fontWeight: 700 }}>{money(l.soldPrice)}</span>}
                   <button onClick={() => remove(l.id)} style={{ background: 'none', border: 'none', color: 'var(--fg-3)', cursor: 'pointer', fontSize: 15 }}>×</button>
@@ -268,7 +224,7 @@ export default function PricebookClient({ job, customer, items = [], categories 
             )}
 
             {approval && <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(239,83,80,.1)', border: '1px solid var(--red)', fontSize: 11.5, color: 'var(--red)' }}>🚦 {approval}</div>}
-            {!customerMode && anyBelowMin && !approval && <div className="muted" style={{ fontSize: 10.5, marginTop: 6, color: 'var(--amber)' }}>A line is below minimum — a manager must approve the discount.</div>}
+            {showMargin && anyBelowMin && !approval && <div className="muted" style={{ fontSize: 10.5, marginTop: 6, color: 'var(--amber)' }}>A line is below minimum — a manager must approve the discount.</div>}
 
             <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
               <button onClick={present} disabled={pending || cart.length === 0} className="btn" style={{ background: 'var(--amber)', borderColor: 'var(--amber)', color: '#1a1a1a' }}>{pending ? 'Building…' : '📲 Present / send to customer'}</button>

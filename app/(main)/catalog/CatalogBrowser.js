@@ -22,7 +22,11 @@ function htmlToText(s) {
     .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}, showCost, canEdit, total, myJobs = [] }) {
+// Reused two ways:
+//  • standalone /catalog (browse + "Add to ticket" → job picker) — pass myJobs, no onAddItem.
+//  • embedded in the work-order pricebook (browse + "Add to estimate" → the job's cart) — pass embedded,
+//    onAddItem(item), cartIds (Set of ids in the cart), and topSlot (scan + custom-item, rendered on top).
+export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}, showCost, canEdit, total, myJobs = [], embedded = false, onAddItem = null, cartIds = null, topSlot = null }) {
   const [stack, setStack] = useState([]);   // array of nodes (the drill path)
   const [sel, setSel] = useState(null);
   const [q, setQ] = useState('');
@@ -59,11 +63,12 @@ export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}
 
 
   return (
-    <div className="wrap" style={{ maxWidth: 1040 }}>
+    <div className={embedded ? '' : 'wrap'} style={embedded ? {} : { maxWidth: 1040 }}>
+      {topSlot}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <div className="h1" style={{ margin: 0 }}>📖 Pricebook</div>
-        <span className="muted" style={{ fontSize: 12 }}>{total} items</span>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search — water heater, seesnake, toilet…" style={{ marginLeft: 'auto', flex: '1 1 240px', maxWidth: 360, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 10, padding: '10px 13px', fontSize: 14 }} />
+        {!embedded && <div className="h1" style={{ margin: 0 }}>📖 Pricebook</div>}
+        {!embedded && <span className="muted" style={{ fontSize: 12 }}>{total} items</span>}
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search — water heater, seesnake, toilet…" style={{ marginLeft: embedded ? 0 : 'auto', flex: embedded ? '1 1 100%' : '1 1 240px', maxWidth: embedded ? 'none' : 360, width: embedded ? '100%' : undefined, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 10, padding: '10px 13px', fontSize: 14 }} />
       </div>
 
       {/* Breadcrumb */}
@@ -102,7 +107,7 @@ export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}
         </>
       )}
 
-      {sel && <ItemSheet it={sel} showCost={showCost} canEdit={canEdit} learnedCross={learnedCross} upgradeItems={upgradeItems} myJobs={myJobs} onClose={() => setSel(null)} onPick={setSel} />}
+      {sel && <ItemSheet it={sel} showCost={showCost} canEdit={canEdit} learnedCross={learnedCross} upgradeItems={upgradeItems} myJobs={myJobs} onAddItem={onAddItem} inCart={!!(cartIds && cartIds.has && cartIds.has(sel.id))} onClose={() => setSel(null)} onPick={setSel} />}
     </div>
   );
 }
@@ -144,7 +149,7 @@ function ItemCard({ it, showCost, onClick }) {
   );
 }
 
-function ItemSheet({ it, showCost, canEdit, learnedCross = [], upgradeItems = [], myJobs = [], onClose, onPick }) {
+function ItemSheet({ it, showCost, canEdit, learnedCross = [], upgradeItems = [], myJobs = [], onAddItem = null, inCart = false, onClose, onPick }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [photo, setPhoto] = useState(it.photo || null);
@@ -178,9 +183,12 @@ function ItemSheet({ it, showCost, canEdit, learnedCross = [], upgradeItems = []
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--fg-2)', fontSize: 24, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
 
-        {/* 🎫 ADD TO TICKET — the front door from "browsing" to "building". Pick one of your open jobs and you
-            land in its estimate with this item already in the cart. */}
-        {!picking ? (
+        {/* In-job (cart mode): add straight to THIS estimate. Standalone /catalog: "Add to ticket" → job picker. */}
+        {onAddItem ? (
+          <button onClick={() => onAddItem(it)} className="btn" style={{ width: '100%', marginTop: 12, background: inCart ? 'var(--green)' : 'var(--amber)', borderColor: inCart ? 'var(--green)' : 'var(--amber)', color: inCart ? '#06210f' : '#1a1a1a', fontWeight: 800, fontSize: 15, padding: '12px' }}>
+            {inCart ? '✓ In the estimate' : '➕ Add to estimate'}
+          </button>
+        ) : !picking ? (
           <button onClick={() => setPicking(true)} className="btn" style={{ width: '100%', marginTop: 12, background: 'var(--amber)', borderColor: 'var(--amber)', color: '#1a1a1a', fontWeight: 800, fontSize: 15, padding: '12px' }}>
             ➕ Add to ticket
           </button>
