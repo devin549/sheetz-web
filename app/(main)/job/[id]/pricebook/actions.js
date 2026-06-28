@@ -62,11 +62,21 @@ export async function recordSale(jobId, lines = [], opts = {}) {
     };
   }).filter((r) => r.item_id);
 
+  // Custom (not-in-book) lines have no catalog item_id, so they can't become usage rows here. They're only
+  // captured properly via Present/Send (the estimate snapshot). NEVER silently drop them into a "$0 sold"
+  // success — if the cart is custom-only, block with a clear message; if mixed, record the catalog lines and
+  // tell the tech the custom ones still need to be sent.
+  const customCount = lines.filter((l) => !l.itemId).length;
+  if (rows.length === 0) {
+    return { ok: false, msg: customCount > 0 ? 'Custom / not-in-the-book lines can’t be recorded directly — tap “Present / send to customer” so they’re captured on the estimate.' : 'Nothing to record.' };
+  }
+
   const { error } = await c.sb.from('job_pricebook_usage').insert(rows);
   if (error) return { ok: false, msg: missing(error) ? 'Run supabase/104_pricebook.sql first.' : error.message };
 
   const total = rows.reduce((s, r) => s + r.sold_price * r.quantity, 0);
-  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'pricebook.sold', entity: 'job', entity_id: String(jobId), detail: { lines: rows.length, total, belowMinApproved: belowMin.length } }); } catch (_) {}
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'pricebook.sold', entity: 'job', entity_id: String(jobId), detail: { lines: rows.length, total, belowMinApproved: belowMin.length, customSkipped: customCount } }); } catch (_) {}
   revalidatePath(`/job/${jobId}/pricebook`);
-  return { ok: true, msg: `Sold ${rows.length} item${rows.length > 1 ? 's' : ''} · ${'$' + total.toLocaleString()} on job ${job.job_number || ''}.`, total };
+  const customNote = customCount > 0 ? ` (${customCount} custom line${customCount > 1 ? 's' : ''} not recorded — send those as an estimate)` : '';
+  return { ok: true, msg: `Sold ${rows.length} item${rows.length > 1 ? 's' : ''} · ${'$' + total.toLocaleString()} on job ${job.job_number || ''}.${customNote}`, total };
 }

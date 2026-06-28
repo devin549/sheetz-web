@@ -1,8 +1,8 @@
 'use client';
 
-// In-job Sheetz Pricebook — the customer-facing sales engine. Two modes: Customer (clean checkout, no
-// cost/margin) and Tech (adds margin health + minimums). Good/Better/Best ladder + job-smart suggestions
-// + estimate cart that records the sale tied to the job.
+// In-job Sheetz Pricebook — the customer-facing sales engine. ONE view (the full drill-down catalog);
+// cost/margin show to managers only. Good/Better/Best ladder + estimate cart that records the sale tied to
+// the job (see PricebookClient below for the layout).
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { recordSale } from './actions';
