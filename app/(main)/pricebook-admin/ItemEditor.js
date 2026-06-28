@@ -6,6 +6,7 @@
 // no save. Price/cost/margin live ONLY in the price section (gated) — never leaks to the customer preview.
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { loadItemEditor, updateItem, updateItemPricing, addItemUpgrade, removeItemUpgrade, searchPricebookItems } from './editorActions';
+import { suggestCustomerCopy, applyCustomerCopy, buildMarketReference } from './marketReferenceActions';
 import MediaManager from './MediaManager';
 import MobilePreview from './MobilePreview';
 
@@ -124,6 +125,7 @@ export default function ItemEditor({ itemId, cats = [], onClose, onSaved }) {
 
             {tab === 'copy' && (
               <div style={{ display: 'grid', gap: 12 }}>
+                <SuggestCopy itemId={itemId} form={form} f={f} />
                 <Field label="Customer-facing name (what they see)"><input value={form.customerName} onChange={(e) => f('customerName', e.target.value)} style={inp} /></Field>
                 <Field label="Item description (customer)"><textarea rows={4} value={form.customerDescription} onChange={(e) => f('customerDescription', e.target.value)} style={{ ...inp, fontFamily: 'inherit' }} placeholder="The outcome the customer gets — sell the feeling, not the spec." /></Field>
                 <Field label="Short description"><input value={form.shortDescription} onChange={(e) => f('shortDescription', e.target.value)} style={inp} /></Field>
@@ -147,6 +149,7 @@ export default function ItemEditor({ itemId, cats = [], onClose, onSaved }) {
                   <Field label="Material cost ($)"><input type="number" inputMode="decimal" value={pricing.materialCost} onChange={(e) => p('materialCost', e.target.value)} style={inp} /></Field>
                   <Field label="Labor hours"><input type="number" inputMode="decimal" value={form.laborHours} onChange={(e) => f('laborHours', e.target.value)} style={inp} /></Field>
                 </div>
+                <MarketReference itemId={itemId} ownerPrice={pricing.retailPrice} />
                 <button className="btn btn-primary" disabled={pending} onClick={savePricing} style={{ justifySelf: 'start' }}>{pending ? 'Saving…' : (perms.canMovePrice ? 'Save pricing' : 'Save & request price approval')}</button>
               </div>
             )}
@@ -240,6 +243,102 @@ function UpsellTab({ itemId, upgrades, setUpgrades, form, f, start }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ✨ Suggested wording — Claude reads the item's INTERNAL text and drafts customer-benefit copy. It's a
+// SUGGESTION the user reviews + applies/edits — it NEVER auto-overwrites and NEVER touches any price field.
+function SuggestCopy({ itemId, form, f }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [sug, setSug] = useState(null); // { customerName, customerDescription }
+
+  const run = async () => {
+    setBusy(true); setMsg(null); setSug(null);
+    const r = await suggestCustomerCopy(itemId);
+    setBusy(false);
+    if (!r.ok) { setMsg(r.msg); return; }
+    setSug(r.suggestion);
+  };
+  // Apply pushes the draft into the live form fields (still requires the normal Save) — never auto-saves DB.
+  const applyToForm = () => {
+    if (!sug) return;
+    if (sug.customerName) f('customerName', sug.customerName);
+    if (sug.customerDescription) f('customerDescription', sug.customerDescription);
+    setMsg('Applied to the fields below — review, edit, then Save changes.'); setSug(null);
+  };
+
+  return (
+    <div style={{ border: '1px dashed var(--amber-dim, var(--border))', borderRadius: 10, padding: 12, background: 'var(--surface-2)', display: 'grid', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <button onClick={run} disabled={busy} style={{ border: 'none', cursor: busy ? 'default' : 'pointer', borderRadius: 7, padding: '7px 12px', fontSize: 12.5, fontWeight: 800, background: 'var(--amber)', color: '#1a1206' }}>{busy ? 'Drafting…' : '✨ Suggest customer copy'}</button>
+        <span className="muted" style={{ fontSize: 11 }}>Claude drafts from your internal notes — a draft you review, edit, and apply. Never auto-saved.</span>
+      </div>
+      {msg && <div style={{ fontSize: 12, color: 'var(--fg-2)' }}>{msg}</div>}
+      {sug && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface-1)', padding: 11, display: 'grid', gap: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '.04em', color: 'var(--amber)' }}>AI DRAFT — REVIEW BEFORE APPLYING</div>
+          {sug.customerName && <div><div style={{ ...lbl }}>Suggested name</div><div style={{ fontSize: 14, fontWeight: 700, color: 'var(--fg-1)' }}>{sug.customerName}</div></div>}
+          {sug.customerDescription && <div><div style={{ ...lbl }}>Suggested description</div><div style={{ fontSize: 13, color: 'var(--fg-1)', lineHeight: 1.45 }}>{sug.customerDescription}</div></div>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={applyToForm} style={{ border: 'none', cursor: 'pointer', borderRadius: 7, padding: '6px 12px', fontSize: 12.5, fontWeight: 800, background: 'var(--green)', color: '#06210f' }}>Apply to fields</button>
+            <button onClick={() => setSug(null)} style={{ border: '1px solid var(--border)', cursor: 'pointer', borderRadius: 7, padding: '6px 12px', fontSize: 12.5, fontWeight: 700, background: 'var(--surface-2)', color: 'var(--fg-2)' }}>Dismiss</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 📊 Market reference — a SOURCED estimate shown BESIDE the owner-set price (decision support only). It
+// NEVER writes or auto-suggests a retail price; the owner still sets the real number. Gated to canEditPriceFields.
+function MarketReference({ itemId, ownerPrice }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [ref, setRef] = useState(null);
+
+  const run = async () => {
+    setBusy(true); setMsg(null);
+    const r = await buildMarketReference(itemId);
+    setBusy(false);
+    if (!r.ok) { setMsg(r.msg); setRef(null); return; }
+    setRef(r);
+  };
+  const own = Number(ownerPrice) || 0;
+  const srcColor = { live: 'var(--green)', BLS: 'var(--fg-2)', 'AI est.': 'var(--amber)' };
+  const chip = (p) => {
+    const c = srcColor[p.source?.startsWith('live') ? 'live' : p.source?.startsWith('BLS') ? 'BLS' : p.source] || 'var(--fg-2)';
+    return <span key={p.kind} style={{ fontSize: 12.5, color: 'var(--fg-1)' }}>{p.text} <span style={{ color: c, fontWeight: 700 }}>({p.source})</span></span>;
+  };
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--surface-2)', display: 'grid', gap: 9 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--fg-1)' }}>📊 Market reference</span>
+        <span className="muted" style={{ fontSize: 11, flex: 1 }}>Sourced estimate beside your price. Decision support only — it never sets the price.</span>
+        <button onClick={run} disabled={busy} style={{ border: 'none', cursor: busy ? 'default' : 'pointer', borderRadius: 7, padding: '6px 11px', fontSize: 12, fontWeight: 800, background: 'var(--surface-1)', color: 'var(--amber)', borderLeft: '2px solid var(--amber)' }}>{busy ? 'Checking…' : (ref ? 'Refresh' : 'Get reference')}</button>
+      </div>
+      {msg && <div style={{ fontSize: 12, color: 'var(--fg-2)' }}>{msg}</div>}
+      {ref && (
+        <div style={{ display: 'grid', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', padding: '8px 11px', borderRadius: 8, background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+            <div><div style={lbl}>Your price</div><div style={{ fontSize: 18, fontWeight: 800, color: 'var(--green)' }}>${own.toLocaleString('en-US')}</div></div>
+            <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)' }} />
+            <div style={{ display: 'grid', gap: 3, flex: 1 }}>
+              <div style={lbl}>Reference (sourced)</div>
+              {ref.parts?.length ? <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>{ref.parts.map(chip)}</div> : <div className="muted" style={{ fontSize: 12 }}>No sources available — add SERPAPI_KEY / BLS_API_KEY / ANTHROPIC_KEY_OWNER.</div>}
+            </div>
+          </div>
+          {/* Source notes (honest about what's missing — never faked). */}
+          <div style={{ display: 'grid', gap: 2 }}>
+            {ref.sources?.material?.note && <div className="muted" style={{ fontSize: 11 }}>• Material: {ref.sources.material.note}</div>}
+            {ref.sources?.labor?.note && <div className="muted" style={{ fontSize: 11 }}>• Labor: {ref.sources.labor.note}</div>}
+            {ref.sources?.range?.note && <div className="muted" style={{ fontSize: 11 }}>• Range: {ref.sources.range.note}</div>}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--amber)' }}>⚠ The typical range is an AI estimate — verify, not authoritative. {ref.disclaimer}</div>
+        </div>
+      )}
     </div>
   );
 }
