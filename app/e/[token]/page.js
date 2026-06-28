@@ -21,12 +21,27 @@ export default async function PublicEstimate({ params }) {
   }
 
   // Customer-safe projection — strip the hidden itemId etc.
-  const lines = (Array.isArray(est.lines) ? est.lines : []).map((l) => ({ name: l.name, description: l.description, price: Number(l.price) || 0, photo: l.photo || null, gallery: Array.isArray(l.gallery) ? l.gallery : [], warranty: l.warranty || '', pdf: l.pdf || null }));
+  const safeLine = (l) => ({ name: l.name, description: l.description, price: Number(l.price) || 0, photo: l.photo || null, gallery: Array.isArray(l.gallery) ? l.gallery : [], warranty: l.warranty || '', pdf: l.pdf || null });
+  const lines = (Array.isArray(est.lines) ? est.lines : []).map(safeLine);
+
+  // The Good/Better/Best ladder, customer-safe (no itemId/cost/margin). Empty on old single-tier links →
+  // CustomerEstimate falls back to the flat view. Order Good→Better→Best so the hero (recommended) lands mid.
+  const ORDER = { good: 0, better: 1, best: 2 };
+  const tiers = (Array.isArray(est.tiers) ? est.tiers : [])
+    .map((t) => ({
+      key: t.key, name: t.name || '', icon: t.icon || '🔧', pitch: t.pitch || '', bestFor: t.bestFor || '',
+      warranty: t.warranty || '', recommended: !!t.recommended,
+      includes: Array.isArray(t.includes) ? t.includes : [],
+      lines: (Array.isArray(t.lines) ? t.lines : []).map(safeLine),
+      subtotal: Number(t.subtotal) || (Array.isArray(t.lines) ? t.lines.reduce((s, l) => s + (Number(l.price) || 0), 0) : 0),
+    }))
+    .filter((t) => t.lines.length)
+    .sort((a, b) => (ORDER[a.key] ?? 9) - (ORDER[b.key] ?? 9));
 
   const safe = {
     token: est.token, customerName: est.customer_name || '', techName: est.tech_name || '',
     headline: est.headline || '', customerDescription: est.customer_description || '', warranty: est.warranty_text || '',
-    approveText: est.approve_text || 'Approve & Schedule', lines,
+    approveText: est.approve_text || 'Approve & Schedule', lines, tiers, selectedTierKey: est.selected_tier_key || '',
     subtotal: Number(est.subtotal) || 0, cardFee: Number(est.card_fee) || 0,
     status: est.status, declineReason: est.decline_reason || '',
     approvedName: est.approved_name || '', approvalMethod: est.approval_method || '',

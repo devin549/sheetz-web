@@ -65,10 +65,23 @@ export default function PricebookClient({ job, customer, items = [], categories 
     else if (r.needsApproval) setApproval(r.msg);
     else setMsg(r.msg);
   });
-  // Build a customer-safe estimate and get a shareable link (text it OR present on this iPad).
+  // The full Good/Better/Best ladder, customer-safe, so the BUYER sees the choice (not just the tech's pick).
+  // Member discount is applied per line so each tier's customer price matches the cart. Prices are owner-set;
+  // we only present them. Empty when no bundle/ladder exists for this job type → flat single-tier estimate.
+  const ladderForSend = () => tiers.map((t) => ({
+    key: t.key, name: t.name, bestFor: t.bestFor, pitch: t.bestFor, warranty: bundle?.warranty || '', recommended: !!t.recommended,
+    lines: (t.items || []).map((it) => ({ itemId: it.id, quantity: it.qty || 1, soldPrice: memberPrice(Number(it.price) || 0) })),
+  }));
+
+  // Build a customer-safe estimate and get a shareable link (text it OR present on this iPad). When a ladder
+  // exists we send all three tiers; `tierKey`/cart still seed the active/flat snapshot for backward-compat.
   const present = () => start(async () => {
     setMsg(null); setLink(null);
-    const r = await createEstimate(job.id, soldLines(), { tierKey, bundleSlug: bundle?.slug, headline: (memberDisc && plan ? `${plan.name} member · ` : '') + (tierKey && bundle ? bundle.name : '') });
+    const r = await createEstimate(job.id, soldLines(), {
+      tierKey, bundleSlug: bundle?.slug,
+      tiers: tiers.length ? ladderForSend() : undefined,
+      headline: (memberDisc && plan ? `${plan.name} member · ` : '') + (bundle ? bundle.name : (tierKey ? tierKey : '')),
+    });
     if (r.ok) setLink(r.url); else setMsg(r.msg);
   });
   const fullLink = link && typeof window !== 'undefined' ? window.location.origin + link : link;

@@ -26,7 +26,12 @@ async function ctx() {
 
 // Build a customer-safe snapshot of the cart and create a shareable estimate (token link). The snapshot
 // holds ONLY customer-facing fields + customer-visible photos — no cost/margin/min ever reaches it.
-// lines: [{ itemId, soldPrice, quantity }]. opts: { headline, tierKey, bundleSlug }.
+// lines: [{ itemId, soldPrice, quantity }].
+// opts: { headline, tierKey, bundleSlug, tiers }.
+//   tiers (OPTIONAL) = the full Good/Better/Best ladder so the CUSTOMER sees the choice, not just the tech's
+//   pre-pick. Each: { key, name, icon, pitch, bestFor, warranty, recommended, lines:[{itemId,soldPrice,quantity}] }.
+//   When present, `lines`/`subtotal` (below) still hold the active/recommended tier for backward-compat + the
+//   approval→usage path; the customer can switch tiers at the close, which re-points lines/subtotal server-side.
 export async function createEstimate(jobId, lines = [], opts = {}) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
   if (!Array.isArray(lines) || lines.length === 0) return { ok: false, msg: 'Add at least one item first.' };
@@ -34,7 +39,10 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
   const { data: job } = await c.sb.from('jobs').select('id, job_number, customer_id, tech_id, customers(name)').eq('id', jobId).maybeSingle();
   if (!job) return { ok: false, msg: 'Job not found.' };
 
-  const itemIds = [...new Set(lines.map((l) => l.itemId).filter(Boolean))];
+  // Gather every itemId referenced by the flat cart AND every tier so we fetch customer-safe data ONCE.
+  const tierInput = Array.isArray(opts.tiers) ? opts.tiers : [];
+  const allLineRefs = [...lines, ...tierInput.flatMap((t) => Array.isArray(t.lines) ? t.lines : [])];
+  const itemIds = [...new Set(allLineRefs.map((l) => l.itemId).filter(Boolean))];
   const { data: items, error: ie } = await c.sb.from('pricebook_items').select('id, name, customer_name, customer_description, short_description, retail_price, warranty_text, primary_photo_url, pdf_url').in('id', itemIds);
   if (ie) return { ok: false, msg: missing(ie) ? 'Run supabase/104_pricebook.sql first.' : ie.message };
   const byId = {}; (items || []).forEach((i) => { byId[i.id] = i; });
@@ -46,7 +54,8 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
     (media || []).forEach((m) => { (mediaByItem[m.item_id] = mediaByItem[m.item_id] || []).push(m); });
   } catch (_) {}
 
-  const snapLines = lines.map((l) => {
+  // Resolve a list of {itemId, soldPrice, quantity} into customer-safe snapshot lines (no cost/margin/min).
+  const snapOf = (ls) => (ls || []).map((l) => {
     const it = byId[l.itemId]; if (!it) return null;
     const gallery = (mediaByItem[l.itemId] || []).filter((m) => m.media_type === 'photo').map((m) => m.url);
     const pdf = it.pdf_url || (mediaByItem[l.itemId] || []).find((m) => m.media_type === 'pdf' || m.media_type === 'manufacturer_link')?.url || null;
@@ -62,7 +71,35 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
       pdf,
     };
   }).filter(Boolean);
+
+  let snapLines = snapOf(lines);
   if (!snapLines.length) return { ok: false, msg: 'No sellable items in the cart.' };
+
+  // Build the customer-safe ladder. Only customer fields survive — icon/pitch/bestFor/warranty/recommended
+  // are presentation copy (no prices moved here). Drop any tier that resolves to nothing.
+  const TIER_ICON = { good: '🥉', better: '🥈', best: '🥇' };
+  const tierSnaps = tierInput.map((t) => {
+    const tLines = snapOf(t.lines);
+    if (!tLines.length) return null;
+    return {
+      key: clean(t.key, 16) || 'tier',
+      name: clean(t.name, 60) || (t.key ? String(t.key) : 'Option'),
+      icon: t.icon || TIER_ICON[t.key] || '🔧',
+      pitch: clean(t.pitch, 240),
+      bestFor: clean(t.bestFor, 160),
+      warranty: clean(t.warranty, 160),
+      includes: tLines.map((l) => l.name),
+      lines: tLines,
+      subtotal: tLines.reduce((s, l) => s + l.price, 0),
+      recommended: !!t.recommended,
+    };
+  }).filter(Boolean);
+  // Guarantee exactly one recommended (the middle if the tech didn't flag one).
+  if (tierSnaps.length && !tierSnaps.some((t) => t.recommended)) tierSnaps[Math.min(1, tierSnaps.length - 1)].recommended = true;
+  // When a ladder exists, the flat snapshot (the approval source + the fallback view) defaults to the
+  // RECOMMENDED tier — so it's coherent no matter what the cart held when Send was tapped. The customer can
+  // still switch tiers at the close, which re-points lines/subtotal.
+  if (tierSnaps.length) { const rec = tierSnaps.find((t) => t.recommended) || tierSnaps[0]; snapLines = rec.lines; }
 
   const subtotal = snapLines.reduce((s, l) => s + l.price, 0);
   const cardFee = Math.round(subtotal * 0.04 * 100) / 100;
@@ -79,9 +116,15 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
     customer_name: (job.customers && job.customers.name) || null, tech_id: job.tech_id || null, tech_name: c.profile.name || c.user.email,
     bundle_slug: opts.bundleSlug || null, tier_key: opts.tierKey || null, headline,
     customer_description: customerDescription, warranty_text: warrantyText, approve_text: approveText,
-    lines: snapLines, subtotal, card_fee: cardFee, status: 'sent', created_by: c.user.id,
+    lines: snapLines, tiers: tierSnaps, subtotal, card_fee: cardFee, status: 'sent', created_by: c.user.id,
   };
-  const { error } = await c.sb.from('pricebook_estimates').insert(row);
+  let { error } = await c.sb.from('pricebook_estimates').insert(row);
+  // Backward-compat: if the `tiers` column isn't migrated yet, fall back to the flat single-tier insert so
+  // sending an estimate never hard-fails on an un-run migration.
+  if (error && /tiers/.test(error.message || '') && missing(error)) {
+    const { tiers: _drop, ...flat } = row;
+    ({ error } = await c.sb.from('pricebook_estimates').insert(flat));
+  }
   if (error) return { ok: false, msg: missing(error) ? 'Run supabase/106_pricebook_estimates.sql first.' : error.message };
 
   try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: row.tech_name, role: c.profile.role, action: 'estimate.create', entity: 'pricebook_estimate', entity_id: token, detail: { lines: snapLines.length, subtotal } }); } catch (_) {}

@@ -39,8 +39,32 @@ async function logEvent(sb, est, type, extra = {}) {
   } catch (_) {}
 }
 
+// 🪜 Choose a tier at the close — the customer picked Good/Better/Best from the ladder. Re-point the active
+// snapshot (`lines`/`subtotal`/`card_fee`) to that tier so the existing approve → usage conversion sells
+// exactly what they chose, and record `selected_tier_key`. No price moves — we only switch WHICH tier's
+// (owner-set) prices are active. Returns the chosen tier's subtotal so the UI can confirm.
+export async function chooseTier(token, tierKey) {
+  const { sb, est } = await loadByToken(token);
+  if (!est) return { ok: false, msg: 'Estimate not found.' };
+  if (est.status === 'approved') return { ok: false, msg: 'This estimate is already approved.' };
+  const key = clean(tierKey, 16);
+  const tiers = Array.isArray(est.tiers) ? est.tiers : [];
+  const tier = tiers.find((t) => t && t.key === key);
+  if (!tier) return { ok: false, msg: 'That option is no longer available.' };
+  const lines = Array.isArray(tier.lines) ? tier.lines : [];
+  if (!lines.length) return { ok: false, msg: 'That option has no items.' };
+  const subtotal = Number(tier.subtotal) || lines.reduce((s, l) => s + (Number(l.price) || 0), 0);
+  const cardFee = Math.round(subtotal * 0.04 * 100) / 100;
+  try {
+    await sb.from('pricebook_estimates').update({ lines, subtotal, card_fee: cardFee, selected_tier_key: key, tier_key: key }).eq('id', est.id);
+  } catch (e) { return { ok: false, msg: 'Could not select that option — try again.' }; }
+  await logEvent(sb, est, 'tier_selected', { method: 'link', actor: est.customer_name || 'Customer', note: tier.name || key, amount: subtotal });
+  revalidatePath(`/e/${est.token}`);
+  return { ok: true, subtotal, name: tier.name || key };
+}
+
 // ✅ Approve — captures the proof (typed name + consent + device/IP + timeline) and converts the snapshot
-// to job_pricebook_usage rows tied to the job/customer/tech. opts: { name, consent }.
+// to job_pricebook_usage rows tied to the job/customer/tech. opts: { name, consent, tierKey }.
 export async function approveEstimate(token, opts = {}) {
   const { sb, est } = await loadByToken(token);
   if (!est) return { ok: false, msg: 'Estimate not found.' };
@@ -51,10 +75,17 @@ export async function approveEstimate(token, opts = {}) {
   if (!name) return { ok: false, msg: 'Please type your name to approve.' };
   if (opts.consent !== true) return { ok: false, msg: 'Please check the box to authorize the work.' };
   const { ip, ua } = clientMeta();
-  const total = Number(est.subtotal || 0);
+
+  // Lock in the chosen tier (if a ladder was sent). Approving from a specific tier card carries its key, so
+  // we sell exactly what the customer tapped even if `chooseTier` didn't run first. No prices move — we only
+  // pick WHICH owner-set tier is active.
+  const tierKey = clean(opts.tierKey, 16);
+  const allTiers = Array.isArray(est.tiers) ? est.tiers : [];
+  const chosen = tierKey ? allTiers.find((t) => t && t.key === tierKey) : null;
+  const lines = chosen && Array.isArray(chosen.lines) && chosen.lines.length ? chosen.lines : (Array.isArray(est.lines) ? est.lines : []);
+  const total = chosen ? (Number(chosen.subtotal) || lines.reduce((s, l) => s + (Number(l.price) || 0), 0)) : Number(est.subtotal || 0);
   const consentText = `I, ${name}, approve this estimate of $${total.toLocaleString()} from Clog Busterz Plumbing and authorize the work described.`;
 
-  const lines = Array.isArray(est.lines) ? est.lines : [];
   const itemIds = lines.map((l) => l.itemId).filter(Boolean);
   const costById = {};
   if (itemIds.length) {
@@ -68,8 +99,10 @@ export async function approveEstimate(token, opts = {}) {
     return { job_id: est.job_id, job_number: est.job_number, customer_id: est.customer_id, tech_id: est.tech_id, item_id: l.itemId, quantity: Number(l.quantity) || 1, sold_price: price, actual_cost: cost, estimated_labor_hours: Number(it.estimated_labor_hours) || 0, margin_pct: marginPct({ retail_price: price, estimated_material_cost: cost }), source: 'customer_approval', sold_at: nowISO };
   });
   if (usage.length) { try { await sb.from('job_pricebook_usage').insert(usage); } catch (_) {} }
+  // Persist the locked-in tier so the approved record reflects exactly what was sold.
+  const tierWrite = chosen ? { lines, subtotal: total, card_fee: Math.round(total * 0.04 * 100) / 100, selected_tier_key: chosen.key, tier_key: chosen.key } : {};
   try {
-    await sb.from('pricebook_estimates').update({ status: 'approved', responded_at: nowISO, approved_name: name, approval_method: 'link', approver_ip: ip, approver_user_agent: ua, consent_text: consentText }).eq('id', est.id);
+    await sb.from('pricebook_estimates').update({ status: 'approved', responded_at: nowISO, approved_name: name, approval_method: 'link', approver_ip: ip, approver_user_agent: ua, consent_text: consentText, ...tierWrite }).eq('id', est.id);
   } catch (_) { await sb.from('pricebook_estimates').update({ status: 'approved', responded_at: nowISO }).eq('id', est.id); }
   // If the original job is already closed (a later/remote approval), drop an UNASSIGNED · UNSCHEDULED work
   // request into the OFFICE's queue — the office schedules + assigns it (a tech never schedules). If the
