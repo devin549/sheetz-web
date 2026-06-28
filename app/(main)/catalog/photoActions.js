@@ -7,6 +7,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { canAny } from '@/lib/roles';
 import { findProductPhotos, findSimilarPhotos } from '@/lib/serpPhotos';
+import sharp from 'sharp';
 
 const BUCKET = 'pricebook-photos';
 const clean = (v, n = 400) => String(v == null ? '' : v).trim().slice(0, n);
@@ -24,6 +25,24 @@ async function ctx() {
 }
 
 async function ensureBucket(sb) { try { await sb.storage.createBucket(BUCKET, { public: true }); } catch (_) {} }
+
+// Optimize a customer-facing image for the field: resize by asset type, convert to WebP, and keep it under
+// ~100KB so it loads instantly on a truck's spotty LTE. Returns the optimized buffer (webp). On ANY failure
+// (odd format, sharp error) it returns the ORIGINAL bytes + null ext/type so the caller keeps the original —
+// an upload must never hard-fail just because optimization couldn't run.
+const IMG_DIMS = { item: [500, 500], gallery: [500, 500], category: [600, 400] };
+const MAX_IMG_BYTES = 100 * 1024;
+async function processImage(buf, kind = 'item') {
+  try {
+    const [w, h] = IMG_DIMS[kind] || IMG_DIMS.item;
+    const base = sharp(buf, { failOn: 'none' }).rotate().resize(w, h, { fit: 'cover', position: 'attention' });
+    for (const q of [80, 70, 60, 50, 40]) {
+      const out = await base.clone().webp({ quality: q }).toBuffer();
+      if (out.length <= MAX_IMG_BYTES || q === 40) return { buf: out, ext: 'webp', contentType: 'image/webp' };
+    }
+  } catch (_) { /* fall through — keep the original */ }
+  return { buf, ext: null, contentType: null };
+}
 async function storeFromUrl(sb, url, itemId) {
   const r = await fetch(url, { cache: 'no-store' });
   if (!r.ok) throw new Error('Could not fetch image.');
@@ -31,10 +50,11 @@ async function storeFromUrl(sb, url, itemId) {
   if (!/^image\//.test(type)) throw new Error('Not an image.');
   const bytes = Buffer.from(await r.arrayBuffer());
   if (bytes.length > 12 * 1024 * 1024) throw new Error('Image too large.');
-  const ext = (type.split('/')[1] || 'jpg').split(';')[0].replace('jpeg', 'jpg');
+  const opt = await processImage(bytes, 'item');
+  const ext = opt.ext || (type.split('/')[1] || 'jpg').split(';')[0].replace('jpeg', 'jpg');
   const key = `items/${itemId}/${randomUUID()}.${ext}`;
   await ensureBucket(sb);
-  const up = await sb.storage.from(BUCKET).upload(key, bytes, { contentType: type, upsert: true });
+  const up = await sb.storage.from(BUCKET).upload(key, opt.buf, { contentType: opt.contentType || type, upsert: true });
   if (up.error) throw new Error(up.error.message);
   return sb.storage.from(BUCKET).getPublicUrl(key).data.publicUrl;
 }
@@ -78,10 +98,11 @@ export async function uploadItemPhoto(formData) {
   if (!file || typeof file.arrayBuffer !== 'function' || !/^image\//.test(file.type || '')) return { ok: false, msg: 'Choose an image.' };
   if (file.size > 12 * 1024 * 1024) return { ok: false, msg: 'Image over 12 MB.' };
   await ensureBucket(c.sb);
-  const ext = (file.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
-  const key = `items/${itemId}/${randomUUID()}.${ext}`;
   const bytes = Buffer.from(await file.arrayBuffer());
-  const up = await c.sb.storage.from(BUCKET).upload(key, bytes, { contentType: file.type, upsert: true });
+  const opt = await processImage(bytes, 'item');
+  const ext = opt.ext || (file.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  const key = `items/${itemId}/${randomUUID()}.${ext}`;
+  const up = await c.sb.storage.from(BUCKET).upload(key, opt.buf, { contentType: opt.contentType || file.type, upsert: true });
   if (up.error) return { ok: false, msg: up.error.message };
   const url = c.sb.storage.from(BUCKET).getPublicUrl(key).data.publicUrl;
   const { error } = await c.sb.from('pricebook_items').update({ primary_photo_url: url }).eq('id', itemId);
@@ -139,10 +160,12 @@ export async function uploadItemMedia(formData) {
   const okType = type === 'photo' ? /^image\//.test(file.type || '') : /pdf/.test(file.type || '');
   if (!okType) return { ok: false, msg: type === 'photo' ? 'Choose an image.' : 'Choose a PDF.' };
   await ensureBucket(c.sb);
-  const ext = type === 'pdf' ? 'pdf' : ((file.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg'));
-  const key = `items/${id}/media/${randomUUID()}.${ext}`;
   const bytes = Buffer.from(await file.arrayBuffer());
-  const up = await c.sb.storage.from(BUCKET).upload(key, bytes, { contentType: file.type, upsert: true });
+  // Optimize gallery PHOTOS (not PDFs) through the same WebP/<100KB pipeline.
+  const opt = type === 'photo' ? await processImage(bytes, 'gallery') : { buf: bytes, ext: null, contentType: null };
+  const ext = opt.ext || (type === 'pdf' ? 'pdf' : ((file.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')));
+  const key = `items/${id}/media/${randomUUID()}.${ext}`;
+  const up = await c.sb.storage.from(BUCKET).upload(key, opt.buf, { contentType: opt.contentType || file.type, upsert: true });
   if (up.error) return { ok: false, msg: up.error.message };
   const url = c.sb.storage.from(BUCKET).getPublicUrl(key).data.publicUrl;
   let nextSort = 0;
