@@ -140,6 +140,10 @@ export async function approveEstimate(token, opts = {}) {
   if (!lock.won) { revalidatePath(`/e/${est.token}`); return { ok: true, msg: 'Already approved — thank you!' }; }
   // We won the race — NOW write the usage rows (so a losing channel never double-converts the sale).
   if (usage.length) { try { await sb.from('job_pricebook_usage').insert(usage); } catch (_) {} }
+  // 🔁 Reflect the result back on the WORK ORDER so the cockpit shows it WITHOUT the tech sitting on the
+  // pricebook tab — and an estimate job's closeout gate unblocks (the customer's YES IS the outcome).
+  // Best-effort; never blocks the customer's approval.
+  try { await sb.from('jobs').update({ estimate_outcome: 'sold_now' }).eq('id', est.job_id); } catch (_) {}
   // If the original job is already closed (a later/remote approval), drop an UNASSIGNED · UNSCHEDULED work
   // request into the OFFICE's queue — the office schedules + assigns it (a tech never schedules). If the
   // job's still open, the tech does the work on this visit; nothing new is created.
@@ -216,6 +220,9 @@ export async function declineEstimate(token, reason) {
   // the approval wins and we surface that instead of overwriting it with a decline.
   const lock = await lockTo(sb, est, 'declined', { decline_reason: r || null, follow_up_at: followUp, responded_at: new Date().toISOString() });
   if (!lock.won) { revalidatePath(`/e/${est.token}`); return { ok: true, msg: est.status === 'approved' ? 'This estimate was already approved — thank you!' : 'Thanks for letting us know.' }; }
+  // 🔁 Reflect the NO back on the work order (cockpit shows it; an estimate job's gate unblocks — declined is
+  // still a recorded outcome). Best-effort.
+  try { await sb.from('jobs').update({ estimate_outcome: 'not_sold' }).eq('id', est.job_id); } catch (_) {}
   await logEvent(sb, est, 'declined', { method: 'link', actor: est.customer_name || 'Customer', note: r || null });
   await notify(`🙅 **Estimate declined** — ${est.customer_name || 'Customer'}${est.job_number ? ` · job ${est.job_number}` : ''}${r ? `: "${r.slice(0, 200)}"` : ''}. Follow up by ${followUp}.`);
   revalidatePath(`/e/${est.token}`);

@@ -67,7 +67,7 @@ export default async function JobPhotosScreen({ params }) {
   return (
     <div className="wrap" style={{ maxWidth: 1040 }}>
       <Link href={readOnly ? `/invoices?customer=${job.customer_id}` : `/job/${id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--amber)', textDecoration: 'none' }}><ArrowLeft size={14} /> {readOnly ? `Back to ${customer.name || 'customer'} invoices` : 'Job Cockpit'}</Link>
-      <div className="h1" style={{ marginTop: 6, marginBottom: 2 }}>🧾 Proof · {customer.name || 'Customer'}</div>
+      <div className="h1" style={{ marginTop: 6, marginBottom: 2 }}>📸 Photos · {customer.name || 'Customer'}</div>
       <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>{jobTitle(job)}{job.job_number ? ` · #${job.job_number}` : ''} — {readOnly ? 'prior visit · read-only.' : 'tap a tile, the camera opens. Proof attaches to this job only.'}</div>
       {readOnly && <div className="card" style={{ borderLeft: '3px solid var(--amber)', marginBottom: 10, fontSize: 12.5 }}>👀 Read-only — you’re viewing a previous visit’s photos for {customer.name || 'this customer'}. You can’t add or change proof on another visit.</div>}
 

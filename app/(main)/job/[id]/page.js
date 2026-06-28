@@ -148,6 +148,16 @@ export default async function JobDetail({ params }) {
   }
   const needWarranty = ['warranty', 'insurance'].includes(String(job.job_class || '').toLowerCase()) || !!job.warranty_provider;
 
+  // Latest sent estimate for this job → show its outcome on the cockpit overview, so an accept/deny lands on
+  // the work order itself (not only the Pricebook tab's live mirror). Best-effort; empty pre-migration.
+  let latestEstimate = null;
+  try {
+    const { data } = await sb.from('pricebook_estimates')
+      .select('token, headline, subtotal, status, approved_name, decline_reason, responded_at, created_at')
+      .eq('job_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+    latestEstimate = data || null;
+  } catch (_) {}
+
   // Crew & segments rollup (P8) — fail-soft if migration 87 isn't applied yet.
   let segments = [], jobReceipts = [];
   try { const { data } = await sb.from('job_segments').select('*').eq('parent_job_id', id).order('created_at', { ascending: true }); segments = data || []; } catch (_) {}
@@ -224,6 +234,32 @@ export default async function JobDetail({ params }) {
       <JobActionCards jobId={id} jobNumber={job.job_number} customerName={customer.name} jobType={job.job_type} status={job.status} canAct={canAct} />
 
       <JobFlow jobId={id} status={st} reached={reached} gateReady={gateReady} gateMissing={gateMissing} nextHint={gateMissing[0] || ''} canAct={canAct} />
+
+      {/* 🧾 Sent-estimate outcome — lands the customer's accept/deny on the work order itself (not just the
+          Pricebook tab). Reads the latest estimate for this job. */}
+      {latestEstimate && (() => {
+        const s = String(latestEstimate.status || 'sent').toLowerCase();
+        const MAP = {
+          sent: { icon: '📤', label: 'Sent — waiting for the customer', color: 'var(--fg-3)' },
+          viewed: { icon: '👀', label: 'Customer is viewing it', color: 'var(--amber)' },
+          question: { icon: '💬', label: 'Customer asked a question', color: 'var(--amber)' },
+          deposit_requested: { icon: '💳', label: 'Customer wants to put a deposit down', color: 'var(--amber)' },
+          approved: { icon: '✅', label: `Approved${latestEstimate.approved_name ? ` by ${latestEstimate.approved_name}` : ''}`, color: 'var(--green)' },
+          declined: { icon: '🙅', label: `Declined${latestEstimate.decline_reason ? ` — "${String(latestEstimate.decline_reason).slice(0, 80)}"` : ''}`, color: 'var(--red)' },
+        };
+        const m = MAP[s] || MAP.sent;
+        const terminal = s === 'approved' || s === 'declined';
+        return (
+          <Link href={`/job/${id}/pricebook`} className="card" style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit', borderLeft: `3px solid ${m.color}` }}>
+            <span style={{ fontSize: 18 }}>{m.icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: m.color }}>Estimate {m.label}</div>
+              <div className="muted" style={{ fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{latestEstimate.headline || 'Quote'}{latestEstimate.subtotal ? ` · ${money(latestEstimate.subtotal)}` : ''}{!terminal ? ' · live' : ''}</div>
+            </div>
+            <span style={{ color: 'var(--amber)', fontWeight: 800, flexShrink: 0 }}>›</span>
+          </Link>
+        );
+      })()}
 
       {/* Crew & segments (split / second tech / helper / parts run / return visit / unit) — rolls up here. */}
       <JobSegments parentJobId={id} rollup={rollup} segments={segments} canDispatch={canDispatchSeg} />
