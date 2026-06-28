@@ -2,7 +2,7 @@
 
 // Immersive drill-down over Devin's REAL category tree (any depth): category tiles → subcategories → items
 // → item detail with the 🧠 "commonly sold with" learner. Tap-friendly for the iPad.
-import { useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { findItemPhotos, setItemPhotoUrl, uploadItemPhoto } from './photoActions';
 
@@ -153,6 +153,9 @@ function ItemSheet({ it, showCost, canEdit, learnedCross = [], upgradeItems = []
   const [picking, setPicking] = useState(false);   // job picker open (Add to ticket)
   const fileRef = useRef();
 
+  // Lock the background while the drawer is open — otherwise the page scrolls behind the modal.
+  useEffect(() => { const prev = document.body.style.overflow; document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = prev; }; }, []);
+
   // Add this item to a ticket = pick one of the viewer's open jobs, then land in THAT job's estimate with
   // the item pre-loaded (the job rail is the one ticket-builder; the catalog just feeds it). Price stays
   // server-truth — we pass only the item id; the job page resolves the line.
@@ -205,7 +208,12 @@ function ItemSheet({ it, showCost, canEdit, learnedCross = [], upgradeItems = []
             )}
           </div>
         )}
-        {photo && <img src={photo} alt="" style={{ width: '100%', maxHeight: 220, objectFit: 'contain', borderRadius: 12, margin: '12px 0', background: 'var(--surface-2)' }} />}
+        {photo
+          ? <img src={photo} alt="" style={{ width: '100%', maxHeight: 220, objectFit: 'contain', borderRadius: 12, margin: '12px 0', background: 'var(--surface-2)' }} />
+          : <div aria-hidden style={{ width: '100%', height: 150, borderRadius: 12, margin: '12px 0', background: 'var(--surface-2)', border: '1px dashed var(--border)', display: 'grid', placeItems: 'center', textAlign: 'center', gap: 4 }}>
+              <div style={{ fontSize: 34, opacity: 0.4 }}>🔧</div>
+              <div className="muted" style={{ fontSize: 11.5 }}>No photo yet{canEdit ? ' — use 🔎 Find / ⬆ Upload below' : ''}</div>
+            </div>}
 
         {/* Manager photo tools — find a real product photo (SerpAPI) or upload a custom one. */}
         {canEdit && (
