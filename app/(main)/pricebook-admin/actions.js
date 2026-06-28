@@ -631,6 +631,7 @@ function shapeBundle(b) {
     id: b.id, slug: b.slug, name: b.name, jobType: b.job_type || '', active: b.active !== false,
     goodName: b.good_option_name || '', betterName: b.better_option_name || '', bestName: b.best_option_name || '',
     goodBestFor: b.good_best_for || '', betterBestFor: b.better_best_for || '', bestBestFor: b.best_best_for || '',
+    goodCaveat: b.good_caveat || '', betterCaveat: b.better_caveat || '', bestCaveat: b.best_caveat || '', // the red-❌ "does NOT cover" line (mig 127)
     customerDescription: b.customer_description || '', warrantyText: b.warranty_text || '',
     customerPhotoUrl: b.customer_photo_url || '', approvalButtonText: b.approval_button_text || 'Approve & Schedule',
   };
@@ -681,9 +682,17 @@ export async function saveBundleCopy(bundleId, form) {
     warranty_text: clean(form?.warrantyText, 300) || null,
     customer_photo_url: clean(form?.customerPhotoUrl, 500) || null,
     approval_button_text: clean(form?.approvalButtonText, 60) || 'Approve & Schedule',
+    good_caveat: clean(form?.goodCaveat, 240) || null,     // red-❌ loss-contrast ("does NOT cover…") — honest only
+    better_caveat: clean(form?.betterCaveat, 240) || null,
+    best_caveat: clean(form?.bestCaveat, 240) || null,
     updated_at: new Date().toISOString(),
   };
-  const { error } = await c.sb.from('pricebook_bundles').update(patch).eq('id', id);
+  let { error } = await c.sb.from('pricebook_bundles').update(patch).eq('id', id);
+  if (error && /caveat|column|schema cache|does not exist/i.test(error.message || '')) {
+    // migration 127 not applied yet → save everything else, skip the caveat columns (degrade, don't fail).
+    const { good_caveat: _g, better_caveat: _b, best_caveat: _bs, ...noCaveat } = patch;
+    ({ error } = await c.sb.from('pricebook_bundles').update(noCaveat).eq('id', id));
+  }
   if (error) return { ok: false, msg: error.message };
   revalidatePath('/pricebook-admin'); revalidatePath('/catalog');
   return { ok: true, msg: 'Saved.' };

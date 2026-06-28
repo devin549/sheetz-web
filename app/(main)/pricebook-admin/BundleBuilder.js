@@ -283,6 +283,7 @@ function CopyEditor({ bundle, onSaved }) {
     name: bundle.name, jobType: bundle.jobType,
     goodName: bundle.goodName, betterName: bundle.betterName, bestName: bundle.bestName,
     goodBestFor: bundle.goodBestFor, betterBestFor: bundle.betterBestFor, bestBestFor: bundle.bestBestFor,
+    goodCaveat: bundle.goodCaveat || '', betterCaveat: bundle.betterCaveat || '', bestCaveat: bundle.bestCaveat || '',
     customerDescription: bundle.customerDescription, warrantyText: bundle.warrantyText,
     customerPhotoUrl: bundle.customerPhotoUrl, approvalButtonText: bundle.approvalButtonText,
   });
@@ -300,7 +301,7 @@ function CopyEditor({ bundle, onSaved }) {
 
   return (
     <details style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-      <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>✏️ Customer-facing copy (names, best-for, warranty, photo)</summary>
+      <summary style={{ cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>✏️ Customer-facing copy (names, best-for, caveats, warranty, photo)</summary>
       <div style={{ marginTop: 12 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8, marginBottom: 8 }}>
           <div><label style={lbl}>Bundle name *</label><input style={inp} value={f.name} onChange={(e) => up('name', e.target.value)} /></div>
@@ -315,6 +316,12 @@ function CopyEditor({ bundle, onSaved }) {
           <div><label style={lbl}>Good — best for…</label><input style={inp} value={f.goodBestFor} onChange={(e) => up('goodBestFor', e.target.value)} placeholder="Tight budget, quick fix" /></div>
           <div><label style={lbl}>Better — best for… ⭐</label><input style={inp} value={f.betterBestFor} onChange={(e) => up('betterBestFor', e.target.value)} placeholder="Most homes — fixes the cause" /></div>
           <div><label style={lbl}>Best — best for…</label><input style={inp} value={f.bestBestFor} onChange={(e) => up('bestBestFor', e.target.value)} placeholder="Total peace of mind" /></div>
+        </div>
+        <div style={{ marginBottom: 3 }}><label style={lbl}>❌ "Does NOT cover" — the red loss-contrast on the close (usually on Good only). Must be TRUE, never fear-mongering.</label></div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+          <div><input style={inp} value={f.goodCaveat} onChange={(e) => up('goodCaveat', e.target.value)} placeholder="A basic snake leaves grease — can re-clog in months" /></div>
+          <div><input style={inp} value={f.betterCaveat} onChange={(e) => up('betterCaveat', e.target.value)} placeholder="(usually blank)" /></div>
+          <div><input style={inp} value={f.bestCaveat} onChange={(e) => up('bestCaveat', e.target.value)} placeholder="(usually blank)" /></div>
         </div>
         <div style={{ marginBottom: 8 }}><label style={lbl}>Customer description (headline blurb)</label><textarea rows={2} style={{ ...inp, fontFamily: 'inherit' }} value={f.customerDescription} onChange={(e) => up('customerDescription', e.target.value)} /></div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
