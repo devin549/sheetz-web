@@ -1,12 +1,13 @@
 import { requirePerm } from '@/lib/guard';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
+import { canMovePrice, canEditPriceFields } from '@/lib/pricebookEngine';
 import PricebookAdmin from './PricebookAdmin';
 
 export const dynamic = 'force-dynamic';
 
 // 🛠 Owner pricebook editor — add/customize items + let Flush Gordon hype new drops to the team.
 export default async function PricebookAdminPage() {
-  await requirePerm('manageInventory', 'manageUsers', 'seeReports', 'seeFinancials');
+  const { role } = await requirePerm('manageInventory', 'manageUsers', 'seeReports', 'seeFinancials');
   if (!isAdminConfigured) return <div className="wrap"><div className="h1">🛠 Pricebook Editor</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel.</div></div>;
   const sb = getSupabaseAdmin();
 
@@ -33,5 +34,8 @@ export default async function PricebookAdminPage() {
   } catch (_) {}
 
   const newCount = items.filter((i) => i.isNew).length;
-  return <PricebookAdmin items={items} cats={cats} needsMig={needsMig} newCount={newCount} priceReqs={priceReqs} />;
+  // Price gates: only owner/admin moves a live price (inline editor + Margin-Watch approve). Marketing has
+  // no price fields at all; GM/OM edit price via the editor's Pricing tab (which routes to owner approval).
+  const priceGate = { canMovePrice: canMovePrice(role), canEditPriceFields: canEditPriceFields(role), role };
+  return <PricebookAdmin items={items} cats={cats} needsMig={needsMig} newCount={newCount} priceReqs={priceReqs} priceGate={priceGate} />;
 }

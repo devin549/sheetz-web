@@ -6,7 +6,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { canAny } from '@/lib/roles';
 import { postToDiscord } from '@/lib/discord';
-import { marginPct, priceForTargetMargin } from '@/lib/pricebookEngine';
+import { marginPct, priceForTargetMargin, canMovePrice, canEditPriceFields } from '@/lib/pricebookEngine';
 import { vendorPrices } from '@/lib/serpVendor';
 
 // Owner pricebook editor — add/customize items, and let Flush Gordon hype new drops to the team.
@@ -29,13 +29,16 @@ export async function addPricebookItem(form) {
   const name = clean(form?.name, 160);
   if (!name) return { ok: false, msg: 'Name is required.' };
   const sku = clean(form?.sku, 40) || ('CB' + Date.now().toString(36).toUpperCase());
+  // Price-locked roles (marketing) can create the item's merchandising shell but NOT set price/cost — those
+  // come in at $0 for the owner to price.
+  const mayPrice = canEditPriceFields(c.profile.role);
   const row = {
     sku, name,
     customer_name: clean(form?.customerName, 160) || name,
     customer_description: clean(form?.customerDescription, 600) || null,
     category_id: form?.categoryId || null,
-    retail_price: num(form?.retailPrice),
-    estimated_material_cost: num(form?.materialCost),
+    retail_price: mayPrice ? num(form?.retailPrice) : 0,
+    estimated_material_cost: mayPrice ? num(form?.materialCost) : 0,
     customer_visible: form?.customerVisible !== false,
     active: true,
   };
@@ -49,6 +52,9 @@ export async function addPricebookItem(form) {
 export async function updateItemPrice(id, retailPrice, materialCost) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
   if (!id) return { ok: false, msg: 'No item.' };
+  // HARD RULE: only the owner/admin writes a live price inline. Everyone else routes through the editor's
+  // Pricing tab → owner-approve queue (updateItemPricing). This server gate backstops the hidden UI.
+  if (!canMovePrice(c.profile.role)) return { ok: false, msg: 'Only the owner can move a live price. Use the item editor’s Pricing tab to request a change.' };
   const patch = { retail_price: num(retailPrice) };
   if (materialCost != null && materialCost !== '') patch.estimated_material_cost = num(materialCost);
   const { error } = await c.sb.from('pricebook_items').update(patch).eq('id', id);

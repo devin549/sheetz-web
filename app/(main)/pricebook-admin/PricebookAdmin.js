@@ -3,11 +3,16 @@
 import { useState, useMemo } from 'react';
 import { addPricebookItem, updateItemPrice, announceDrop, runMarginWatch, approvePriceChange, rejectPriceChange } from './actions';
 import PartsClassify from './PartsClassify';
+import CategoryTree from './CategoryTree';
+import ItemEditor from './ItemEditor';
 
 const emptyForm = { name: '', customerName: '', categoryId: '', retailPrice: '', materialCost: '', customerDescription: '', customerVisible: true };
 const inp = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 7, padding: '9px 11px', fontSize: 14, width: '100%' };
 
-export default function PricebookAdmin({ items, cats, needsMig, newCount, priceReqs = [] }) {
+export default function PricebookAdmin({ items, cats, needsMig, newCount, priceReqs = [], priceGate = {} }) {
+  const canMovePrice = priceGate.canMovePrice !== false; // owner/admin only — page computes the gate
+
+  const canEditPriceFields = priceGate.canEditPriceFields !== false;
   const [list, setList] = useState(items);
   const [reqs, setReqs] = useState(priceReqs);
   const [scan, setScan] = useState(false);
@@ -16,6 +21,7 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [q, setQ] = useState('');
+  const [editId, setEditId] = useState(null);
   const upd = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const add = async () => {
@@ -79,12 +85,16 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
         </div>
         <input placeholder="Customer-facing name (what they see)" value={form.customerName} onChange={(e) => upd('customerName', e.target.value)} style={{ ...inp, marginBottom: 10 }} />
         <input placeholder="Customer description (optional)" value={form.customerDescription} onChange={(e) => upd('customerDescription', e.target.value)} style={{ ...inp, marginBottom: 10 }} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-          <label style={{ fontSize: 11, color: 'var(--fg-3)' }}>Retail price ($)
-            <input type="number" inputMode="decimal" value={form.retailPrice} onChange={(e) => upd('retailPrice', e.target.value)} placeholder="0" style={{ ...inp, marginTop: 3 }} /></label>
-          <label style={{ fontSize: 11, color: 'var(--fg-3)' }}>Material cost ($)
-            <input type="number" inputMode="decimal" value={form.materialCost} onChange={(e) => upd('materialCost', e.target.value)} placeholder="0" style={{ ...inp, marginTop: 3 }} /></label>
-        </div>
+        {canEditPriceFields ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <label style={{ fontSize: 11, color: 'var(--fg-3)' }}>Retail price ($)
+              <input type="number" inputMode="decimal" value={form.retailPrice} onChange={(e) => upd('retailPrice', e.target.value)} placeholder="0" style={{ ...inp, marginTop: 3 }} /></label>
+            <label style={{ fontSize: 11, color: 'var(--fg-3)' }}>Material cost ($)
+              <input type="number" inputMode="decimal" value={form.materialCost} onChange={(e) => upd('materialCost', e.target.value)} placeholder="0" style={{ ...inp, marginTop: 3 }} /></label>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: 'var(--mute)', marginBottom: 10 }}>Pricing is owner-set — add the item, then the owner prices it. You manage names, copy, photos &amp; categories.</div>
+        )}
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 10 }}>
           <input type="checkbox" checked={form.customerVisible} onChange={(e) => upd('customerVisible', e.target.checked)} /> Show on customer-facing estimates
         </label>
@@ -93,7 +103,8 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
         {msg && <span style={{ marginLeft: 12, color: msg.ok ? 'var(--green)' : 'var(--red)', fontSize: 13 }}>{msg.t}</span>}
       </div>
 
-      {/* 📉 Margin Watch — AI suggests, you approve. Never auto-changes a price. */}
+      {/* 📉 Margin Watch — AI suggests, you approve. Never auto-changes a price. Hidden from price-locked roles. */}
+      {canEditPriceFields && (
       <div className="card" style={{ marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <div>
@@ -129,21 +140,33 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
           </div>
         )}
       </div>
+      )}
+
+      {/* Category tree management (1b) */}
+      {!needsMig && (
+        <div className="card" style={{ marginBottom: 18 }}>
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>🗂 Categories</div>
+          <div style={{ color: 'var(--mute)', fontSize: 12.5, marginBottom: 10 }}>Organize the book — add main/sub, rename, reorder, move, archive. Safe-delete blocks anything with items or subcategories.</div>
+          <CategoryTree />
+        </div>
+      )}
 
       {/* 🧩 Parts & live vendor cost (learn → classify → SerpAPI price) */}
       {!needsMig && <PartsClassify items={list} />}
 
-      {/* List + inline price edit */}
+      {/* List + inline price edit + full editor */}
       <input placeholder={`Search ${list.length} items…`} value={q} onChange={(e) => setQ(e.target.value)} style={{ ...inp, marginBottom: 10 }} />
       <div style={{ display: 'grid', gap: 7 }}>
-        {filtered.slice(0, 200).map((i) => <ItemRow key={i.id} i={i} />)}
+        {filtered.slice(0, 200).map((i) => <ItemRow key={i.id} i={i} canMovePrice={canMovePrice} onEdit={() => setEditId(i.id)} />)}
         {!filtered.length && !needsMig && <div style={{ color: 'var(--mute)', fontSize: 14 }}>No items match.</div>}
       </div>
+
+      {editId && <ItemEditor itemId={editId} cats={cats} onClose={() => setEditId(null)} onSaved={() => { /* row refresh handled by revalidatePath on next load */ }} />}
     </div>
   );
 }
 
-function ItemRow({ i }) {
+function ItemRow({ i, onEdit, canMovePrice = true }) {
   const [price, setPrice] = useState(i.retail_price != null ? String(i.retail_price) : '');
   const [saved, setSaved] = useState(i.retail_price);
   const [busy, setBusy] = useState(false);
@@ -154,9 +177,17 @@ function ItemRow({ i }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 700, fontSize: 13 }}>{i.customer_name || i.name}{i.isNew && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: 'var(--red)', border: '1px solid var(--red)', borderRadius: 6, padding: '1px 5px' }}>🆕 NEW</span>}{i.customer_visible === false && <span style={{ marginLeft: 6, fontSize: 9, color: 'var(--fg-3)' }}>· internal</span>}</div>
       </div>
-      <span style={{ color: 'var(--fg-3)', fontSize: 13 }}>$</span>
-      <input type="number" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} style={{ ...inp, width: 92, padding: '6px 8px' }} />
-      <button className="btn" disabled={busy || !dirty} onClick={save} style={{ fontSize: 12, opacity: busy || !dirty ? 0.5 : 1 }}>{busy ? '…' : 'Save'}</button>
+      {/* Inline live-price edit is owner/admin only. Price-locked roles use the editor's Pricing tab (queues for approval). */}
+      {canMovePrice ? (
+        <>
+          <span style={{ color: 'var(--fg-3)', fontSize: 13 }}>$</span>
+          <input type="number" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} style={{ ...inp, width: 92, padding: '6px 8px' }} />
+          <button className="btn" disabled={busy || !dirty} onClick={save} style={{ fontSize: 12, opacity: busy || !dirty ? 0.5 : 1 }}>{busy ? '…' : 'Save'}</button>
+        </>
+      ) : (
+        i.retail_price != null && <span style={{ color: 'var(--fg-3)', fontSize: 12 }}>${i.retail_price}</span>
+      )}
+      <button className="btn" onClick={onEdit} style={{ fontSize: 12 }}>✎ Edit</button>
     </div>
   );
 }
