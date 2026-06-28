@@ -26,6 +26,22 @@ async function ctx() {
 
 async function ensureBucket(sb) { try { await sb.storage.createBucket(BUCKET, { public: true }); } catch (_) {} }
 
+// Block obvious SSRF targets before fetching a remote image: non-http(s), loopback, private/link-local IPs,
+// and the cloud-metadata endpoint. (Literal-IP + known-bad host check; doesn't cover DNS-rebind, a deeper fix.)
+function unsafeRemoteUrl(raw) {
+  let u; try { u = new URL(raw); } catch { return true; }
+  if (!/^https?:$/.test(u.protocol)) return true;
+  const h = u.hostname.toLowerCase();
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal') || h === '169.254.169.254') return true;
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const a = Number(m[1]), b = Number(m[2]);
+    if (a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)) return true;
+  }
+  if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')) return true; // IPv6 loopback/ULA/link-local
+  return false;
+}
+
 // Optimize a customer-facing image for the field: resize by asset type, convert to WebP, and keep it under
 // ~100KB so it loads instantly on a truck's spotty LTE. Returns the optimized buffer (webp). On ANY failure
 // (odd format, sharp error) it returns the ORIGINAL bytes + null ext/type so the caller keeps the original —
@@ -35,7 +51,10 @@ const MAX_IMG_BYTES = 100 * 1024;
 async function processImage(buf, kind = 'item') {
   try {
     const [w, h] = IMG_DIMS[kind] || IMG_DIMS.item;
-    const base = sharp(buf, { failOn: 'none' }).rotate().resize(w, h, { fit: 'cover', position: 'attention' });
+    // failOn:'error' bails on a genuinely-broken decode (→ caught below → keep the original bytes, never store
+    // a mangled partial WebP) while tolerating benign warnings in real photos. limitInputPixels caps the
+    // decoded raster so a small file that expands to a giant image (pixel bomb) can't OOM the serverless fn.
+    const base = sharp(buf, { failOn: 'error', limitInputPixels: 50_000_000 }).rotate().resize(w, h, { fit: 'cover', position: 'attention' });
     for (const q of [80, 70, 60, 50, 40]) {
       const out = await base.clone().webp({ quality: q }).toBuffer();
       if (out.length <= MAX_IMG_BYTES || q === 40) return { buf: out, ext: 'webp', contentType: 'image/webp' };
@@ -44,6 +63,7 @@ async function processImage(buf, kind = 'item') {
   return { buf, ext: null, contentType: null };
 }
 async function storeFromUrl(sb, url, itemId) {
+  if (unsafeRemoteUrl(url)) throw new Error('That image host isn’t allowed.');
   const r = await fetch(url, { cache: 'no-store' });
   if (!r.ok) throw new Error('Could not fetch image.');
   const type = r.headers.get('content-type') || 'image/jpeg';
