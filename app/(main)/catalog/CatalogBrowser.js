@@ -8,7 +8,20 @@ import { findItemPhotos, setItemPhotoUrl, uploadItemPhoto } from './photoActions
 const money = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 const HEALTH = { healthy: ['Healthy', 'var(--green)'], thin: ['Thin', 'var(--amber)'], danger: ['Danger', 'var(--red)'], missing_price: ['No price', 'var(--fg-3)'] };
 
-export default function CatalogBrowser({ roots = [], related = {}, showCost, canEdit, total }) {
+// Some warranty/description copy came in from ServiceTitan as raw HTML (<strong><ul><li>). Render it as
+// clean, readable text: list items → bullets, block tags → line breaks, strip the rest, decode entities.
+function htmlToText(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/<\s*li[^>]*>/gi, '\n• ')
+    .replace(/<\s*\/\s*li\s*>/gi, '')
+    .replace(/<\s*\/?\s*(ul|ol|p|div|br|h[1-6])\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#0?39;|&apos;/gi, "'")
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}, showCost, canEdit, total }) {
   const [stack, setStack] = useState([]);   // array of nodes (the drill path)
   const [sel, setSel] = useState(null);
   const [q, setQ] = useState('');
@@ -31,13 +44,17 @@ export default function CatalogBrowser({ roots = [], related = {}, showCost, can
   const search = q.trim().toLowerCase();
   const results = search ? allItems.filter((it) => (it.name || '').toLowerCase().includes(search) || (it.description || '').toLowerCase().includes(search) || (it.sku || '').toLowerCase().includes(search)).slice(0, 80) : null;
 
-  const crossSell = useMemo(() => {
-    if (!sel) return { learned: false, items: [] };
-    const rel = (related[sel.id] || []).map((id) => byId[id]).filter(Boolean);
-    if (rel.length) return { learned: true, items: rel.slice(0, 4) };
-    const sib = allItems.filter((it) => catOf[it.id] === catOf[sel.id] && it.id !== sel.id).slice(0, 4);
-    return { learned: false, items: sib };
-  }, [sel, related, byId, allItems, catOf]);
+  // "Commonly added" = ONLY what the engine LEARNED from real jobs (co-occurrence per job). No same-category
+  // fallback — siblings aren't "commonly added," and a misleading list is worse than none.
+  const learnedCross = useMemo(() => {
+    if (!sel) return [];
+    return (related[sel.id] || []).map((id) => byId[id]).filter(Boolean).slice(0, 4);
+  }, [sel, related, byId]);
+  // ⬆ Upgrades = owner-curated (set in the Pricebook Editor), shown at the bottom.
+  const upgradeItems = useMemo(() => {
+    if (!sel) return [];
+    return (upgrades[sel.id] || []).map((id) => byId[id]).filter(Boolean).slice(0, 6);
+  }, [sel, upgrades, byId]);
 
 
   return (
@@ -84,7 +101,7 @@ export default function CatalogBrowser({ roots = [], related = {}, showCost, can
         </>
       )}
 
-      {sel && <ItemSheet it={sel} showCost={showCost} canEdit={canEdit} crossSell={crossSell} onClose={() => setSel(null)} onPick={setSel} />}
+      {sel && <ItemSheet it={sel} showCost={showCost} canEdit={canEdit} learnedCross={learnedCross} upgradeItems={upgradeItems} onClose={() => setSel(null)} onPick={setSel} />}
     </div>
   );
 }
@@ -113,6 +130,9 @@ function CatTile({ n, onClick }) {
 function ItemCard({ it, showCost, onClick }) {
   return (
     <div onClick={onClick} className="card" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 4, padding: 13 }}>
+      {it.photo
+        ? <img src={it.photo} alt="" loading="lazy" style={{ width: '100%', height: 130, objectFit: 'contain', borderRadius: 8, background: '#fff', marginBottom: 4 }} />
+        : <div aria-hidden style={{ width: '100%', height: 130, borderRadius: 8, background: 'var(--surface-2)', display: 'grid', placeItems: 'center', fontSize: 30, opacity: 0.4, marginBottom: 4 }}>🔧</div>}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
         <span style={{ fontWeight: 700, fontSize: 14, flex: 1 }}>{it.name}</span>
         <span style={{ fontWeight: 800, color: 'var(--green)' }}>{money(it.price)}</span>
@@ -123,7 +143,7 @@ function ItemCard({ it, showCost, onClick }) {
   );
 }
 
-function ItemSheet({ it, showCost, canEdit, crossSell, onClose, onPick }) {
+function ItemSheet({ it, showCost, canEdit, learnedCross = [], upgradeItems = [], onClose, onPick }) {
   const [pending, start] = useTransition();
   const [photo, setPhoto] = useState(it.photo || null);
   const [cands, setCands] = useState(null);   // SerpAPI candidates
@@ -136,7 +156,7 @@ function ItemSheet({ it, showCost, canEdit, crossSell, onClose, onPick }) {
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 60, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--surface-1)', borderTop: '2px solid var(--amber)', borderRadius: '18px 18px 0 0', width: '100%', maxWidth: 560, maxHeight: '88vh', overflowY: 'auto', padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--surface-1)', borderTop: '2px solid var(--amber)', borderRadius: '18px 18px 0 0', width: '100%', maxWidth: 560, maxHeight: '88vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '20px 20px 96px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 800, fontSize: 19 }}>{it.name}</div>
@@ -162,8 +182,13 @@ function ItemSheet({ it, showCost, canEdit, crossSell, onClose, onPick }) {
           </div>
         )}
 
-        {it.description && <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--fg-2)' }}>{it.description}</p>}
-        {it.warranty && <div style={{ fontSize: 12.5, color: 'var(--fg-3)', marginTop: 6 }}>🛡 {it.warranty}</div>}
+        {it.description && <p style={{ fontSize: 14, lineHeight: 1.55, color: 'var(--fg-2)', whiteSpace: 'pre-wrap' }}>{htmlToText(it.description)}</p>}
+        {it.warranty && (
+          <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--fg-2)', marginBottom: 4 }}>🛡 Warranty</div>
+            <div style={{ fontSize: 12.5, color: 'var(--fg-3)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{htmlToText(it.warranty)}</div>
+          </div>
+        )}
         {showCost && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
             {it.marginHealth && <span className="pill" style={{ fontSize: 11, color: (HEALTH[it.marginHealth] || [])[1] }}>{(HEALTH[it.marginHealth] || [])[0]}{it.marginPct != null ? ` · ${it.marginPct}% margin` : ''}</span>}
@@ -172,21 +197,41 @@ function ItemSheet({ it, showCost, canEdit, crossSell, onClose, onPick }) {
             {it.laborHours ? <span className="pill" style={{ fontSize: 11, color: 'var(--fg-3)' }}>{it.laborHours}h</span> : null}
           </div>
         )}
-        {crossSell.items.length > 0 && (
+        {/* 🧠 Commonly added — ONLY what the engine learned from real jobs for this item's code. */}
+        {learnedCross.length > 0 && (
           <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>{crossSell.learned ? '🧠 Techs commonly sell these together' : '➕ Commonly added with this'}</div>
+            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>🧠 Commonly added with this</div>
             <div style={{ display: 'grid', gap: 6 }}>
-              {crossSell.items.map((r) => (
-                <button key={r.id} onClick={() => onPick(r)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--border)', cursor: 'pointer', textAlign: 'left' }}>
-                  <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-1)' }}>{r.name}</span>
-                  <span style={{ fontWeight: 700, color: 'var(--green)', fontSize: 13 }}>{money(r.price)}</span>
-                </button>
-              ))}
+              {learnedCross.map((r) => <CrossRow key={r.id} r={r} onPick={onPick} />)}
             </div>
-            {crossSell.learned && <div className="muted" style={{ fontSize: 10, marginTop: 6 }}>Learned from real jobs — the more you sell, the smarter this gets.</div>}
+            <div className="muted" style={{ fontSize: 10, marginTop: 6 }}>Learned from real jobs — the more your techs sell these together, the smarter this gets.</div>
+          </div>
+        )}
+
+        {/* ⬆ Upgrades — owner-curated (set in the Pricebook Editor), at the bottom. */}
+        {(upgradeItems.length > 0 || canEdit) && (
+          <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8, color: 'var(--amber)' }}>⬆ Upgrades</div>
+            {upgradeItems.length > 0
+              ? <div style={{ display: 'grid', gap: 6 }}>{upgradeItems.map((r) => <CrossRow key={r.id} r={r} onPick={onPick} accent />)}</div>
+              : <div className="muted" style={{ fontSize: 11.5, fontStyle: 'italic' }}>No upgrades set for this item yet.</div>}
+            {canEdit && <div className="muted" style={{ fontSize: 10, marginTop: 6 }}>Curate these in the Pricebook Editor (item → Recommended upgrades).</div>}
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+// A tappable cross-sell / upgrade row with a small product thumbnail.
+function CrossRow({ r, onPick, accent }) {
+  return (
+    <button onClick={() => onPick(r)} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', borderRadius: 9, background: 'var(--surface-2)', border: `1px solid ${accent ? 'var(--amber)' : 'var(--border)'}`, cursor: 'pointer', textAlign: 'left', width: '100%' }}>
+      {r.photo
+        ? <img src={r.photo} alt="" loading="lazy" style={{ width: 36, height: 36, objectFit: 'contain', borderRadius: 6, background: '#fff', flexShrink: 0 }} />
+        : <span aria-hidden style={{ width: 36, height: 36, borderRadius: 6, background: 'var(--surface-1)', display: 'grid', placeItems: 'center', fontSize: 15, opacity: 0.5, flexShrink: 0 }}>🔧</span>}
+      <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-1)' }}>{r.name}</span>
+      <span style={{ fontWeight: 700, color: 'var(--green)', fontSize: 13 }}>{money(r.price)}</span>
+    </button>
   );
 }

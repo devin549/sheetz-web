@@ -56,6 +56,13 @@ export default async function Catalog() {
   } catch (_) {}
   const topRelated = {}; Object.entries(related).forEach(([id, m]) => { topRelated[id] = Object.entries(m).sort((x, y) => y[1] - x[1]).slice(0, 4).map(([rid]) => rid); });
 
+  // ⬆ Owner-curated upgrades per item (pricebook_item_upgrades, from migration 124). Defensive — empty if unmigrated.
+  const upgrades = {};
+  try {
+    const { data: ups } = await sb.from('pricebook_item_upgrades').select('item_id, upgrade_id, sort_order').order('sort_order');
+    (ups || []).forEach((u) => { if (u.item_id && u.upgrade_id) (upgrades[u.item_id] = upgrades[u.item_id] || []).push(u.upgrade_id); });
+  } catch (_) {}
+
   const canEdit = canAny(role, ['manageInventory', 'manageUsers', 'seeReports', 'seeFinancials', 'assignJobs']);
-  return <CatalogBrowser roots={roots} related={topRelated} showCost={showCost} canEdit={canEdit} total={shaped.length} />;
+  return <CatalogBrowser roots={roots} related={topRelated} upgrades={upgrades} showCost={showCost} canEdit={canEdit} total={shaped.length} />;
 }
