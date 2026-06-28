@@ -6,7 +6,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { canAny } from '@/lib/roles';
 import { postToDiscord } from '@/lib/discord';
-import { marginPct, priceForTargetMargin, buildTiers, canMovePrice, canEditPriceFields, canEditPricebookContent, rollupMaterialCost, exceedsMaterialThreshold, materialPctOfTicket, priceForMaterialThreshold, effectiveHourly, groupCustomEntries } from '@/lib/pricebookEngine';
+import { marginPct, priceForTargetMargin, buildTiers, canMovePrice, canEditPriceFields, canEditPricebookContent, rollupMaterialCost, exceedsMaterialThreshold, materialPctOfTicket, priceForMaterialThreshold, effectiveHourly, groupCustomEntries, aggregateConversion } from '@/lib/pricebookEngine';
 import { onsiteHours } from '@/lib/hours';
 import { vendorPrices } from '@/lib/serpVendor';
 import { searchItems } from '@/lib/pricebookQuery';
@@ -569,6 +569,42 @@ export async function announceDrop(sinceHours = 168) {
   const r = await postToDiscord(msg, FLUSH);
   if (!r.ok) return { ok: false, msg: "Couldn't reach Discord (" + (r.error || '') + ').' };
   return { ok: true, msg: `Flush Gordon hyped ${items.length} item${items.length === 1 ? '' : 's'} to the team. 🚀` };
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// PHASE 4 — CONVERSION ANALYTICS.  "What's converting" — turns the estimate event log into the feedback
+// loop: which tier / bundle / price actually gets the YES, so the owner can tune the ladders. READ-ONLY:
+// this NEVER writes a price, a status, or anything — pure analytics. Gated canEditPriceFields (owner/gm/om),
+// like the rest of Phase 2a. Cheap bounded aggregate (date window + .limit). Degrades to an honest empty
+// state when the table/columns are missing (pre-launch) — never crashes the page.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+export async function loadConversionStats({ days = 90 } = {}) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  if (!canEditPriceFields(c.profile.role)) return { ok: false, msg: 'Owner / office only.' };
+  const windowDays = Math.max(1, Math.min(365, Number(days) || 90));
+  const since = new Date(Date.now() - windowDays * 86400000).toISOString();
+
+  let estimates = [];
+  try {
+    // Bounded: date window + hard cap. Pull only the customer-safe analytics fields (no cost/margin exist
+    // on this table anyway). selected_tier_key (mig 123) may be absent on old rows → fall back to tier_key.
+    const { data, error } = await c.sb.from('pricebook_estimates')
+      .select('status, selected_tier_key, tier_key, subtotal, bundle_slug, decline_reason, created_at')
+      .gte('created_at', since).order('created_at', { ascending: false }).limit(5000);
+    if (error) {
+      // Missing table/column (pre-launch, or migration not run) → honest empty state, never a crash.
+      if (/relation|column|schema cache|does not exist/i.test(error.message || '')) {
+        return { ok: true, windowDays, stats: aggregateConversion([]), note: 'pre-launch' };
+      }
+      return { ok: false, msg: error.message };
+    }
+    estimates = data || [];
+  } catch (e) {
+    return { ok: true, windowDays, stats: aggregateConversion([]), note: 'pre-launch' };
+  }
+
+  const stats = aggregateConversion(estimates);
+  return { ok: true, windowDays, stats };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════════════

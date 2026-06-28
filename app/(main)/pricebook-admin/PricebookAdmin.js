@@ -7,6 +7,7 @@ import CategoryTree from './CategoryTree';
 import ItemEditor from './ItemEditor';
 import MaterialCostRollup from './MaterialCostRollup';
 import ProfitIntel from './ProfitIntel';
+import ConversionStats from './ConversionStats';
 import LearnedCustomJobs from './LearnedCustomJobs';
 import BundleBuilder from './BundleBuilder';
 
@@ -161,6 +162,11 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
           no live price moves. Both owner/gm/om (same gate as Margin Watch). */}
       {canEditPriceFields && <MaterialCostRollup />}
       {canEditPriceFields && <ProfitIntel />}
+
+      {/* 📈 Conversion analytics (Phase 4) — READ-ONLY "what's converting" feedback loop: funnel, tier mix,
+          avg ticket, by-bundle close rates, decline reasons. Owner/gm/om gate (same as the margin tools);
+          server action re-checks canEditPriceFields. Never writes a price or status. */}
+      {canEditPriceFields && <ConversionStats />}
 
       {/* 🧠 Learned custom jobs (Phase 2b-ii) — review the ad-hoc lines techs typed, promote recurring ones
           to a hidden $0 Master Task the owner then prices. Merchandising gate (owner/gm/om/marketing). */}
