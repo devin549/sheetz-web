@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { addPricebookItem, updateItemPrice, announceDrop, runMarginWatch, approvePriceChange, rejectPriceChange } from './actions';
+import { addPricebookItem, updateItemPrice, announceDrop, runMarginWatch, runMaterialGuardrail, approvePriceChange, rejectPriceChange } from './actions';
 import PartsClassify from './PartsClassify';
 import CategoryTree from './CategoryTree';
 import ItemEditor from './ItemEditor';
+import MaterialCostRollup from './MaterialCostRollup';
+import ProfitIntel from './ProfitIntel';
 
 const emptyForm = { name: '', customerName: '', categoryId: '', retailPrice: '', materialCost: '', customerDescription: '', customerVisible: true };
 const inp = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 7, padding: '9px 11px', fontSize: 14, width: '100%' };
@@ -42,6 +44,14 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
     setScan(true); setScanMsg(null);
     const r = await runMarginWatch();
     setScanMsg({ ok: r.ok, t: r.msg });
+    setScan(false);
+  };
+  // Phase 2a #2 — material-over-threshold guardrail. Files into the SAME owner-approve queue as margin
+  // watch; freshly-flagged rows show after a refresh (the queue is loaded server-side, like margin watch).
+  const guardrail = async () => {
+    setScan(true); setScanMsg(null);
+    const r = await runMaterialGuardrail();
+    setScanMsg({ ok: r.ok, t: r.msg + (r.ok && /Flagged/.test(r.msg) ? ' Refresh to review them below.' : '') });
     setScan(false);
   };
   const decide = async (id, approve) => {
@@ -109,9 +119,12 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <div>
             <div style={{ fontWeight: 800 }}>📉 Margin Watch {reqs.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: 'var(--red)', border: '1px solid var(--red)', borderRadius: 6, padding: '1px 6px' }}>{reqs.length} to review</span>}</div>
-            <div style={{ color: 'var(--mute)', fontSize: 12.5, marginTop: 2 }}>The AI flags items priced under target margin. <strong>It never changes a price</strong> — you approve or reject each one.</div>
+            <div style={{ color: 'var(--mute)', fontSize: 12.5, marginTop: 2 }}>The AI flags items priced under target margin — or where material is too big a slice of the ticket. <strong>It never changes a price</strong> — you approve or reject each one.</div>
           </div>
-          <button className="btn" disabled={scan} onClick={watch}>{scan ? 'Scanning…' : '🔍 Run margin scan'}</button>
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+            <button className="btn" disabled={scan} onClick={watch}>{scan ? 'Scanning…' : '🔍 Margin scan'}</button>
+            <button className="btn" disabled={scan} onClick={guardrail} title="Flag items where material is over the guardrail % of the ticket">{scan ? '…' : '🧱 Material scan'}</button>
+          </div>
         </div>
         {scanMsg && <div style={{ marginTop: 8, color: scanMsg.ok ? 'var(--green)' : 'var(--red)', fontSize: 13 }}>{scanMsg.t}</div>}
         {reqs.length > 0 && (
@@ -125,7 +138,7 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
                       <span style={{ color: 'var(--fg-3)', textDecoration: 'line-through' }}>${r.old_price}</span>
                       <span style={{ margin: '0 7px', color: 'var(--fg-3)' }}>→</span>
                       <span style={{ fontWeight: 800, color: 'var(--green)' }}>${r.recommended_price}</span>
-                      {r.source && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--fg-3)' }}>· {r.source === 'margin-watch' ? 'AI' : r.source}</span>}
+                      {r.source && <span style={{ marginLeft: 8, fontSize: 10, color: 'var(--fg-3)' }}>· {r.source === 'margin-watch' ? 'margin' : r.source === 'material-guardrail' ? 'material %' : r.source}</span>}
                     </div>
                     <div style={{ color: 'var(--mute)', fontSize: 12, marginTop: 3 }}>{r.reason}</div>
                     {r.err && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 3 }}>{r.err}</div>}
@@ -141,6 +154,11 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
         )}
       </div>
       )}
+
+      {/* 💲 Parts → material-cost rollup (Phase 2a #1) + 📊 Profit intelligence (#3). Cost/insight only —
+          no live price moves. Both owner/gm/om (same gate as Margin Watch). */}
+      {canEditPriceFields && <MaterialCostRollup />}
+      {canEditPriceFields && <ProfitIntel />}
 
       {/* Category tree management (1b) */}
       {!needsMig && (

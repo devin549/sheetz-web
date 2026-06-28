@@ -6,7 +6,8 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { canAny } from '@/lib/roles';
 import { postToDiscord } from '@/lib/discord';
-import { marginPct, priceForTargetMargin, canMovePrice, canEditPriceFields } from '@/lib/pricebookEngine';
+import { marginPct, priceForTargetMargin, canMovePrice, canEditPriceFields, rollupMaterialCost, exceedsMaterialThreshold, materialPctOfTicket, priceForMaterialThreshold, effectiveHourly } from '@/lib/pricebookEngine';
+import { onsiteHours } from '@/lib/hours';
 import { vendorPrices } from '@/lib/serpVendor';
 
 // Owner pricebook editor — add/customize items, and let Flush Gordon hype new drops to the team.
@@ -272,6 +273,201 @@ export async function removeBarcode(id) {
   if (error) return { ok: false, msg: error.message };
   revalidatePath('/pricebook-admin');
   return { ok: true, msg: 'Barcode removed.' };
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// PHASE 2a — MARGIN & PROFIT INTELLIGENCE.  Everything here SUGGESTS; nothing auto-moves a live price.
+// Cost-writes (the rollup) gate to canEditPriceFields (owner/gm/om) — that's COST, not the sell price.
+// Price-raises route through the SAME owner-approve queue (approvePriceChange, owner/admin only).
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+// Read the material-% guardrail threshold from pricebook_settings (migration 124). Degrade to 20% if the
+// table/column isn't there yet — never crash the page over a missing setting.
+async function materialThreshold(sb) {
+  try {
+    const { data, error } = await sb.from('pricebook_settings').select('material_pct_threshold').eq('id', 1).maybeSingle();
+    if (error) return 20;
+    const t = Number(data?.material_pct_threshold);
+    return t > 0 && t < 100 ? t : 20;
+  } catch (_) { return 20; }
+}
+
+// ── #1 Parts → material-cost rollup ───────────────────────────────────────────────────────────────
+// For every active service that has learned part-links carrying a vendor price, compute a SUGGESTED
+// material cost = Σ(vendor_price × qty). Surfaces as a review list; the owner/gm/om CONFIRMS one to write
+// estimated_material_cost (cost, not price). Closes the "margin blind on 93% of catalog" gap.
+export async function suggestMaterialCosts() {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err, rows: [] };
+  if (!canEditPriceFields(c.profile.role)) return { ok: false, msg: 'Owner / office only — cost is a price-tier field.', rows: [] };
+  let links = [];
+  try {
+    const { data, error } = await c.sb.from('pricebook_learned_links')
+      .select('service_item_id, part_name, quantity, status, vendor_price')
+      .neq('status', 'rejected').gt('vendor_price', 0).limit(8000);
+    if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/119_pricebook_learned_links.sql first.' : error.message, rows: [] };
+    links = data || [];
+  } catch (e) { return { ok: false, msg: String(e?.message || e), rows: [] }; }
+  if (!links.length) return { ok: true, msg: 'No priced learned parts yet — run “price all parts” on a service first.', rows: [] };
+
+  // Group links by service and roll up.
+  const byService = {};
+  for (const l of links) { if (!l.service_item_id) continue; (byService[l.service_item_id] = byService[l.service_item_id] || []).push(l); }
+  const sids = Object.keys(byService);
+  let items = [];
+  try { const { data } = await c.sb.from('pricebook_items').select('id, name, customer_name, retail_price, estimated_material_cost').in('id', sids); items = data || []; } catch (_) {}
+  const byId = {}; items.forEach((i) => { byId[i.id] = i; });
+
+  const rows = [];
+  for (const sid of sids) {
+    const it = byId[sid]; if (!it) continue;
+    const { cost, parts } = rollupMaterialCost(byService[sid], { includeSuggested: true });
+    if (cost <= 0) continue;
+    const current = Number(it.estimated_material_cost) || 0;
+    rows.push({
+      itemId: sid,
+      name: it.customer_name || it.name,
+      suggestedCost: cost,
+      partCount: parts,
+      currentCost: current,
+      // worth confirming if it's meaningfully different (or the item has no cost at all today)
+      changed: current <= 0 || Math.abs(cost - current) >= 0.5,
+    });
+  }
+  rows.sort((a, b) => (b.changed - a.changed) || (b.suggestedCost - a.suggestedCost));
+  const toReview = rows.filter((r) => r.changed).length;
+  return { ok: true, rows, msg: toReview ? `${toReview} service${toReview === 1 ? '' : 's'} have a suggested material cost to confirm.` : 'Every service’s baked cost already matches its parts. 👍' };
+}
+
+// Owner/gm/om CONFIRMS a rollup → writes estimated_material_cost. This is COST (margin input), not the
+// sell price — so it's canEditPriceFields, never the live-price gate. Recompute server-side; don't trust
+// a number posted from the client.
+export async function confirmMaterialCost(itemId) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  if (!canEditPriceFields(c.profile.role)) return { ok: false, msg: 'Owner / office only.' };
+  const sid = clean(itemId, 60); if (!sid) return { ok: false, msg: 'No item.' };
+  let links = [];
+  try { const { data } = await c.sb.from('pricebook_learned_links').select('quantity, status, vendor_price').eq('service_item_id', sid).neq('status', 'rejected').gt('vendor_price', 0); links = data || []; } catch (e) { return { ok: false, msg: /relation|schema cache|does not exist/i.test(e?.message || '') ? 'Run supabase/119_pricebook_learned_links.sql first.' : e.message }; }
+  const { cost, parts } = rollupMaterialCost(links, { includeSuggested: true });
+  if (cost <= 0) return { ok: false, msg: 'No priced parts to roll up.' };
+  const { error } = await c.sb.from('pricebook_items').update({ estimated_material_cost: cost }).eq('id', sid);
+  if (error) return { ok: false, msg: error.message };
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'pricebook.cost_rollup', entity: 'pricebook_item', entity_id: sid, detail: { cost, parts } }); } catch (_) {}
+  revalidatePath('/pricebook-admin'); revalidatePath('/catalog');
+  return { ok: true, msg: `Material cost set to $${cost} (from ${parts} part${parts === 1 ? '' : 's'}).`, cost };
+}
+
+// ── #2 Material-over-threshold guardrail ──────────────────────────────────────────────────────────
+// Sibling of margin-watch: where material / retail > threshold% (from settings, default 20), FLAG it and
+// SUGGEST the lowest retail that pulls material back under the line — routed through the SAME owner-approve
+// queue (a pricebook_price_update_requests row). Owner approves via approvePriceChange (owner-only).
+export async function runMaterialGuardrail() {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  if (!canEditPriceFields(c.profile.role)) return { ok: false, msg: 'Owner / office only.' };
+  const threshold = await materialThreshold(c.sb);
+  let items = [];
+  try {
+    const { data, error } = await c.sb.from('pricebook_items')
+      .select('id, name, customer_name, retail_price, estimated_material_cost')
+      .eq('active', true).gt('retail_price', 0).gt('estimated_material_cost', 0).limit(2000);
+    if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/104_pricebook.sql first.' : error.message };
+    items = data || [];
+  } catch (e) { return { ok: false, msg: String(e?.message || e) }; }
+
+  // Don't double-file — skip items with a pending request already in the queue.
+  const pending = new Set();
+  try { const { data } = await c.sb.from('pricebook_price_update_requests').select('item_id').eq('status', 'pending'); (data || []).forEach((r) => pending.add(r.item_id)); } catch (_) {}
+
+  const reqs = [];
+  for (const it of items) {
+    if (pending.has(it.id)) continue;
+    if (!exceedsMaterialThreshold(it.retail_price, it.estimated_material_cost, threshold)) continue;
+    const rec = priceForMaterialThreshold(it.estimated_material_cost, threshold);
+    if (!rec || rec <= it.retail_price) continue; // can't compute, or already high enough
+    const pct = materialPctOfTicket(it.retail_price, it.estimated_material_cost);
+    reqs.push({
+      item_id: it.id, old_price: it.retail_price, recommended_price: rec,
+      old_cost: it.estimated_material_cost, new_cost: it.estimated_material_cost,
+      reason: `Material is ${pct}% of the ticket — over the ${threshold}% guardrail. Raising to $${rec} brings it back in line.`,
+      source: 'material-guardrail', status: 'pending', requested_by: c.user.id,
+    });
+  }
+  if (!reqs.length) return { ok: true, msg: `No items over the ${threshold}% material guardrail. 👍` };
+  const { error } = await c.sb.from('pricebook_price_update_requests').insert(reqs);
+  if (error) return { ok: false, msg: error.message };
+  revalidatePath('/pricebook-admin');
+  return { ok: true, msg: `Flagged ${reqs.length} item${reqs.length === 1 ? '' : 's'} over the ${threshold}% material line for your approval — no prices changed.` };
+}
+
+// ── #3 Profit intelligence (read-only insight) ────────────────────────────────────────────────────
+// Aggregate job_pricebook_usage per item: avg actual time-to-complete, effective $/hr, avg margin %, #
+// sold. Actual minutes come from the job timeline (jobs.started_at→completed_at via onsiteHours); when a
+// job has no clean timeline we fall back to the line's estimated_labor_hours and LABEL the row "est."
+// Flags money-losers (low $/hr or low/negative margin). Cheap: capped pull + in-memory aggregate.
+const LOW_HOURLY = 150;   // CB floor — under this effective $/hr is a money-loser to eyeball
+const LOW_MARGIN = 35;    // material-margin % under this is thin enough to surface
+export async function loadProfitIntel({ limit = 40 } = {}) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err, rows: [] };
+  if (!canEditPriceFields(c.profile.role)) return { ok: false, msg: 'Owner / office only.', rows: [] };
+  let usage = [];
+  const since = new Date(Date.now() - 180 * 86400000).toISOString(); // rolling 180-day window — bounds the scan
+  try {
+    const { data, error } = await c.sb.from('job_pricebook_usage')
+      .select('item_id, job_id, quantity, sold_price, actual_cost, estimated_labor_hours, margin_pct')
+      .gte('sold_at', since).limit(8000);
+    if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/104_pricebook.sql first.' : error.message, rows: [] };
+    usage = data || [];
+  } catch (e) { return { ok: false, msg: String(e?.message || e), rows: [] }; }
+  if (!usage.length) return { ok: true, rows: [], msg: 'No jobs sold from the pricebook yet — nothing to analyze.' };
+
+  // Pull the job timeline once for every job referenced, so we can derive ACTUAL on-site hours.
+  const jobIds = [...new Set(usage.map((u) => u.job_id).filter(Boolean))];
+  const jobTime = {}; // job_id → actual on-site hours (0 when no clean timeline)
+  if (jobIds.length) {
+    try {
+      const { data: jobs } = await c.sb.from('jobs').select('id, started_at, completed_at').in('id', jobIds);
+      (jobs || []).forEach((j) => { jobTime[j.id] = onsiteHours(j.started_at, j.completed_at); });
+    } catch (_) { /* no timeline access → all fall back to estimate */ }
+  }
+
+  // Aggregate per item.
+  const agg = {}; // item_id → totals
+  for (const u of usage) {
+    if (!u.item_id) continue;
+    const a = agg[u.item_id] || (agg[u.item_id] = { n: 0, sold: 0, hours: 0, estHours: 0, estHoursN: 0, actualJobs: 0, margin: 0, marginN: 0 });
+    a.n += 1;
+    a.sold += Number(u.sold_price) || 0;
+    const actual = jobTime[u.job_id]; // hours, may be undefined/0
+    if (actual && actual > 0) { a.hours += actual; a.actualJobs += 1; }
+    const est = Number(u.estimated_labor_hours) || 0;
+    if (est > 0) { a.estHours += est; a.estHoursN += 1; } // average est-hours only over rows that HAVE an estimate
+    if (u.margin_pct != null && !Number.isNaN(Number(u.margin_pct))) { a.margin += Number(u.margin_pct); a.marginN += 1; }
+  }
+  const ids = Object.keys(agg);
+  let names = {};
+  try { const { data: its } = await c.sb.from('pricebook_items').select('id, customer_name, name').in('id', ids); (its || []).forEach((i) => { names[i.id] = i.customer_name || i.name; }); } catch (_) {}
+
+  const rows = ids.map((id) => {
+    const a = agg[id];
+    // Prefer real on-site hours; fall back to the estimate (labeled) when no job had a clean timeline.
+    const usedActual = a.actualJobs > 0;
+    const avgHours = usedActual ? a.hours / a.actualJobs : (a.estHoursN ? a.estHours / a.estHoursN : 0);
+    const avgSold = a.n ? a.sold / a.n : 0;
+    const avgMargin = a.marginN ? Math.round((a.margin / a.marginN) * 10) / 10 : null;
+    const hourly = effectiveHourly(avgSold, avgHours);
+    const low = (hourly != null && hourly < LOW_HOURLY) || (avgMargin != null && avgMargin < LOW_MARGIN);
+    return {
+      itemId: id, name: names[id] || 'Item', timesSold: a.n,
+      avgSold: Math.round(avgSold * 100) / 100,
+      avgHours: Math.round(avgHours * 100) / 100,
+      hourly, avgMargin, usedActual, lowProfit: low,
+    };
+  });
+  // Money-losers first, then by times sold (the high-volume losers hurt most).
+  rows.sort((a, b) => (b.lowProfit - a.lowProfit) || (b.timesSold - a.timesSold));
+  const capped = rows.slice(0, Math.max(1, Math.min(200, Number(limit) || 40)));
+  const losers = rows.filter((r) => r.lowProfit).length;
+  const anyActual = rows.some((r) => r.usedActual);
+  return { ok: true, rows: capped, total: rows.length, losers, anyActual, lowHourly: LOW_HOURLY, lowMargin: LOW_MARGIN, msg: losers ? `${losers} low-profit item${losers === 1 ? '' : 's'} flagged.` : 'No money-losers in the data. 👍' };
 }
 
 // 🚀 Flush Gordon hypes the items added in the last `sinceHours` to the team Discord.
