@@ -149,7 +149,7 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
         { icon: '‹', label: 'My Day', href: '/my-day' },
         { icon: '📋', label: 'Overview', href: `/job/${curId}` },
         { icon: '📝', label: 'Forms', href: `/job/${curId}/forms` },
-        { icon: '🧾', label: 'Proof', href: `/job/${curId}/photos` },
+        { icon: '📸', label: 'Photos', href: `/job/${curId}/photos` },
         { icon: '🧾', label: 'Estimate', href: `/job/${curId}/estimate` },
         { icon: '💳', label: 'Invoice', href: `/job/${curId}/invoice` },
         { icon: '📦', label: 'Parts/PO', href: `/job/${curId}/parts` },
