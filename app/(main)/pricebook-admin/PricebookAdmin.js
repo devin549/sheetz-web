@@ -7,6 +7,7 @@ import CategoryTree from './CategoryTree';
 import ItemEditor from './ItemEditor';
 import MaterialCostRollup from './MaterialCostRollup';
 import ProfitIntel from './ProfitIntel';
+import PhotoBackfill from './PhotoBackfill';
 import ConversionStats from './ConversionStats';
 import LearnedCustomJobs from './LearnedCustomJobs';
 import BundleBuilder from './BundleBuilder';
@@ -115,6 +116,9 @@ export default function PricebookAdmin({ items, cats, needsMig, newCount, priceR
         <button className="btn" disabled={busy} onClick={announce} style={{ marginLeft: 8 }}>🚀 Announce drop (Flush Gordon)</button>
         {msg && <span style={{ marginLeft: 12, color: msg.ok ? 'var(--green)' : 'var(--red)', fontSize: 13 }}>{msg.t}</span>}
       </div>
+
+      {/* 📸 Bulk photo backfill — fill every photoless item via image search. Merchandising, so content editors. */}
+      {canEditContent && <PhotoBackfill />}
 
       {/* 📉 Margin Watch — AI suggests, you approve. Never auto-changes a price. Hidden from price-locked roles. */}
       {canEditPriceFields && (

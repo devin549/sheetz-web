@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { canAny } from '@/lib/roles';
-import { findProductPhotos, findSimilarPhotos } from '@/lib/serpPhotos';
+import { findProductPhotos, findSimilarPhotos, serpConfigured } from '@/lib/serpPhotos';
 import sharp from 'sharp';
 
 const BUCKET = 'pricebook-photos';
@@ -107,6 +107,62 @@ export async function setItemPhotoUrl(itemId, url) {
   try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'pricebook.item.photo', entity: 'pricebook_item', entity_id: String(itemId), detail: { via: 'serp' } }); } catch (_) {}
   revalidatePath('/catalog');
   return { ok: true, msg: 'Photo set.', url: stored };
+}
+
+// 📸 Bulk photo backfill — auto-find a product photo for every active item that has none. Manager-run, in
+// small batches (one SerpAPI search + re-host per item) so it stays within serverless time + search quota;
+// the client loops batches until done. Idempotent: only touches items WITHOUT a primary photo, so re-runs and
+// the per-item picker never fight. Pass limit:0 to just COUNT what's missing (spends no searches).
+export async function backfillItemPhotos({ limit, afterId } = {}) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const batch = Math.max(0, Math.min(20, limit == null ? 8 : Number(limit) || 0));
+
+  // Every active item missing a photo (null OR blank), in a STABLE total order (lexicographic id — works for
+  // uuid or int). Filter in JS (dodges PostgREST empty-eq quirks). Cheap select.
+  let missing = [];
+  try {
+    const { data, error } = await c.sb.from('pricebook_items')
+      .select('id, name, customer_name, sku, manufacturer, primary_photo_url')
+      .eq('active', true).limit(3000);
+    if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/104_pricebook.sql first.' : error.message };
+    missing = (data || []).filter((r) => !String(r.primary_photo_url || '').trim())
+      .sort((a, b) => (String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0));
+  } catch (e) { return { ok: false, msg: String(e?.message || e) }; }
+
+  const remainingTotal = missing.length;
+  if (batch === 0) return { ok: true, filled: 0, failed: 0, scanned: 0, remaining: remainingTotal, lastId: null, done: remainingTotal === 0 };
+  if (!serpConfigured()) return { ok: false, msg: 'Image search isn’t configured (SERPAPI_KEY missing). Add the key, or set photos per item.', remaining: remainingTotal };
+
+  // CURSOR by id (not by position): take the next `batch` items whose id sorts AFTER afterId. This walks every
+  // missing item exactly once and never re-hits a failed/unfillable item — so the client loop always terminates
+  // and a wall of un-fillable items can't block the fillable ones behind it. (The audit P0 fix.)
+  const cursor = afterId ? String(afterId) : '';
+  const windowItems = (cursor ? missing.filter((m) => String(m.id) > cursor) : missing).slice(0, batch);
+  if (!windowItems.length) return { ok: true, filled: 0, failed: 0, scanned: 0, remaining: remainingTotal, lastId: null, done: true };
+
+  let filled = 0, failed = 0;
+  for (const it of windowItems) {
+    // Smart query: manufacturer + customer-facing name + SKU (e.g. "PROFLO PF1500 toilet") lands real product shots.
+    const q = [it.manufacturer, it.customer_name || it.name, it.sku].filter(Boolean).join(' ').slice(0, 160);
+    let cands = [];
+    try { const r = await findProductPhotos(q, { limit: 6 }); cands = (r && r.photos) || []; } catch (_) { cands = []; }
+    let set = false;
+    for (const p of cands) {
+      const url = p && p.url;
+      if (!url || unsafeRemoteUrl(url)) continue;             // re-host (SerpAPI thumbs are ephemeral) + SSRF-guard + sharp/WebP
+      try {
+        const stored = await storeFromUrl(c.sb, url, it.id);
+        const { error } = await c.sb.from('pricebook_items').update({ primary_photo_url: stored }).eq('id', it.id);
+        if (!error) { set = true; break; }
+      } catch (_) { /* bad candidate → try the next one */ }
+    }
+    if (set) filled++; else failed++;                          // failed = no usable candidate (cursor still advances past it)
+  }
+  const lastId = String(windowItems[windowItems.length - 1].id);
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'pricebook.photo.backfill', entity: 'pricebook', entity_id: '', detail: { filled, failed, batch } }); } catch (_) {}
+  revalidatePath('/catalog'); revalidatePath('/pricebook-admin');
+  // done = this window was the tail (fewer than a full batch remained after the cursor).
+  return { ok: true, filled, failed, scanned: windowItems.length, remaining: remainingTotal - filled, lastId, done: windowItems.length < batch };
 }
 
 // ⬆ Upload a custom photo for an item (Devin's own ST art / a real shot).
