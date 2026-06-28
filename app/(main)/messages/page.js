@@ -25,24 +25,45 @@ export default async function CommsDesk() {
   if (isField) {
     let feed = [];
     try {
-      let r = await sb.from('cb_comms').select('id, from_name, body, created_at, channel, direction').is('deleted_at', null).order('created_at', { ascending: false }).limit(60);
-      if (r.error) r = await sb.from('cb_comms').select('id, from_name, body, created_at, channel').order('created_at', { ascending: false }).limit(60);
+      let r = await sb.from('cb_comms').select('id, from_name, body, created_at, channel, direction, reply_to, provider_id').is('deleted_at', null).order('created_at', { ascending: false }).limit(80);
+      if (r.error) r = await sb.from('cb_comms').select('id, from_name, body, created_at, channel').order('created_at', { ascending: false }).limit(80);
       // team feed only — the #sheetz/internal posts, not customer SMS/email threads
       feed = (r.data || []).filter((m) => /discord|internal|team|sheetz/i.test(String(m.channel || '')) || !m.channel).reverse();
     } catch (_) {}
-    // Tag each message so the chat blinks by importance: 📌 personal (your name's in it = address this) >
-    // 🏢 office (a heads-up from the office) > general crew chatter.
-    const myFirst = String(profile.name || '').trim().split(/\s+/)[0].toLowerCase();
-    let officeFirsts = new Set();
-    try { const { data } = await sb.from('profiles').select('name, role').in('role', ['owner', 'admin', 'gm', 'om', 'csr', 'dispatcher', 'accounting', 'marketing', 'sales']); (data || []).forEach((p) => { if (p.name) officeFirsts.add(String(p.name).trim().split(/\s+/)[0].toLowerCase()); }); } catch (_) {}
+    // Tag each message by importance off the TEAM ROSTER (techs.position + discord_name) — so it SCALES as
+    // you hire: add a person on /team, pick their position, type their Discord handle, and the lanes follow
+    // automatically (no SQL, no code change). 📌 personal (your name/handle is in it) > 🏢 office (from
+    // office/management) > 💬 general crew. These are the non-field + management positions from lib/positions.
+    const lc = (s) => String(s || '').trim().toLowerCase();
+    const OFFICE_POSITIONS = new Set(['dispatcher', 'office_manager', 'accounting', 'shop', 'office', 'general_manager', 'owner', 'field_supervisor']);
+    let roster = [];
+    try { const rq = await sb.from('techs').select('name, position, discord_name'); roster = (rq.data || []).filter((t) => t.name); } catch (_) {}
+    // Match an incoming #sheetz sender (stamped with a Discord handle) to a roster person: their mapped
+    // discord_name first (exact), then full name, then first-name fallback.
+    const matchPerson = (sender) => {
+      const s = lc(sender); if (!s) return null;
+      return roster.find((t) => t.discord_name && lc(t.discord_name) === s)
+        || roster.find((t) => lc(t.name) === s)
+        || roster.find((t) => lc(t.name).split(/\s+/)[0] === s.split(/\s+/)[0])
+        || null;
+    };
+    // What "your name" looks like in a message: your first name + your mapped Discord handle.
+    const meRow = matchPerson(profile.name);
+    const myTokens = [String(profile.name || '').trim().split(/\s+/)[0], meRow && meRow.discord_name]
+      .filter((x) => x && String(x).length >= 2).map((x) => lc(x));
     feed = feed.map((m) => {
-      const fromFirst = String(m.from_name || '').trim().split(/\s+/)[0].toLowerCase();
       const isHank = /hank/i.test(m.from_name || '');
-      const personal = !isHank && myFirst.length >= 2 && new RegExp(`\\b${myFirst.replace(/[^a-z0-9]/g, '')}\\b`, 'i').test(String(m.body || ''));
-      const office = !isHank && fromFirst && officeFirsts.has(fromFirst);
+      const body = String(m.body || '');
+      const personal = !isHank && myTokens.some((tok) => new RegExp(`(^|[^a-z0-9])${tok.replace(/[^a-z0-9]/g, '')}([^a-z0-9]|$)`, 'i').test(body));
+      const sender = matchPerson(m.from_name);
+      const office = !isHank && sender && OFFICE_POSITIONS.has(lc(sender.position));
       return { ...m, tag: personal ? 'personal' : office ? 'office' : 'general' };
     });
-    return <TechChat messages={feed} me={profile.name || user.email} />;
+    // Per-tech "Resolve" lives in their profile prefs (no migration) — clears a line from THIS person's
+    // chat only, never the shared feed. Pull the set so the client can tuck them into a Resolved tab.
+    let resolvedIds = [];
+    try { const { data: pr } = await sb.from('profiles').select('prefs').eq('user_id', user.id).maybeSingle(); resolvedIds = (pr && pr.prefs && Array.isArray(pr.prefs.chat_resolved)) ? pr.prefs.chat_resolved : []; } catch (_) {}
+    return <TechChat messages={feed} me={profile.name || user.email} resolvedIds={resolvedIds} />;
   }
 
   const canDelete = DELETE.includes(String(role || '').toLowerCase());

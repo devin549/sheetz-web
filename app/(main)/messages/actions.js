@@ -98,6 +98,49 @@ export async function ackChat(fromName) {
   return { ok: true, msg: 'Marked: on it.' };
 }
 
+// Tech-side threaded reply — answer ONE specific message. Quotes the parent in #sheetz so the thread
+// reads cleanly, and threads it in-app via reply_to. Any active employee (same as posting).
+export async function replyChat(parentId, text) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const profile = user ? await loadProfile(user) : null;
+  if (!user || !profile || profile.active === false) return { ok: false, msg: 'Sign in required.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const who = profile.name || user.email;
+  const body = String(text || '').trim().slice(0, 1500);
+  if (!body) return { ok: false, msg: 'Write a reply.' };
+  // Quote who/what we're answering so the Discord side threads too (in-app uses reply_to).
+  let parent = null;
+  try { const { data } = await sb.from('cb_comms').select('id, from_name, body').eq('id', parentId).maybeSingle(); parent = data; } catch (_) {}
+  const ref = parent ? `↪ ${String(parent.from_name || 'someone').trim().split(/\s+/)[0]}: "${String(parent.body || '').slice(0, 60)}"\n` : '';
+  const r = await postToDiscord(`${ref}💬 ${who}: ${body}`);
+  try { await sb.from('cb_comms').insert({ channel: 'discord', direction: 'out', to_addr: '#sheetz', body, status: r.ok ? 'sent' : 'failed', error: r.ok ? null : r.error, sent_by: who, from_name: who, reply_to: parentId }); } catch (_) {}
+  revalidatePath('/messages');
+  return r.ok ? { ok: true, msg: 'Replied.' } : { ok: true, msg: 'Replied (Discord offline — saved to the feed).' };
+}
+
+// Per-tech "Resolve" — clears a line from THIS person's Team Chat only (keeps their page clean), never
+// the shared feed. Stored in their profile prefs (jsonb, no migration). Pass done=false to bring it back.
+export async function resolveChatForMe(id, done = true) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const profile = user ? await loadProfile(user) : null;
+  if (!user || !profile || profile.active === false) return { ok: false, msg: 'Sign in required.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  try {
+    const { data: cur } = await sb.from('profiles').select('prefs').eq('user_id', user.id).maybeSingle();
+    const prefs = (cur && cur.prefs) || {};
+    const set = new Set(Array.isArray(prefs.chat_resolved) ? prefs.chat_resolved : []);
+    if (done) set.add(id); else set.delete(id);
+    // Bound it — only ids still inside the feed window matter; keep the most recent 200.
+    await sb.from('profiles').update({ prefs: { ...prefs, chat_resolved: [...set].slice(-200) } }).eq('user_id', user.id);
+  } catch (_) { return { ok: false, msg: 'Could not update.' }; }
+  revalidatePath('/messages');
+  return { ok: true, msg: done ? 'Cleared from your chat.' : 'Back in your chat.' };
+}
+
 // Pull #sheetz chatter into the feed (the read-back the webhook alone can't do). Button-triggered;
 // the core lives in lib/discordSync so the cron route can share it without crossing the action boundary.
 export async function syncDiscordNow() {
