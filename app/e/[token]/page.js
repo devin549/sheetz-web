@@ -16,7 +16,7 @@ export default async function PublicEstimate({ params }) {
 
   // Mark viewed (first open) + drop a proof-timeline event.
   if (est.status === 'sent') {
-    try { await sb.from('pricebook_estimates').update({ status: 'viewed', viewed_at: new Date().toISOString() }).eq('id', est.id); } catch (_) {}
+    try { await sb.from('pricebook_estimates').update({ status: 'viewed', viewed_at: new Date().toISOString() }).eq('id', est.id).eq('status', 'sent'); } catch (_) {}
     try { await sb.from('pricebook_estimate_events').insert({ estimate_id: est.id, token: est.token, event_type: 'viewed', method: 'link', actor: est.customer_name || 'Customer', actor_role: 'customer' }); } catch (_) {}
   }
 

@@ -46,7 +46,9 @@ async function ctx() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { err: 'Sign in required.' };
   const profile = await loadProfile(user);
-  if (!(can(profile.role, 'changeStatus') || can(profile.role, 'seeOwnOnly') || can(profile.role, 'collectPayment') || can(profile.role, 'seeAllJobs')))
+  // Require an ACTIONABLE permission — never a read-only role. seeAllJobs/seeOwnOnly alone (a Viewer) must
+  // NOT be able to send a text/email (cost + spam) or create estimates; techs keep access via changeStatus.
+  if (!(can(profile.role, 'changeStatus') || can(profile.role, 'collectPayment') || can(profile.role, 'createJobs')))
     return { err: 'Not allowed.' };
   return { user, profile, sb: getSupabaseAdmin() };
 }

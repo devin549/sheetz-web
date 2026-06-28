@@ -71,7 +71,7 @@ async function logEvent(sb, est, type, extra = {}) {
 export async function chooseTier(token, tierKey) {
   const { sb, est } = await loadByToken(token);
   if (!est) return { ok: false, msg: 'Estimate not found.' };
-  if (est.status === 'approved') return { ok: false, msg: 'This estimate is already approved.' };
+  if (TERMINAL.includes(est.status)) return { ok: false, msg: 'This estimate is already finalized.' };
   const key = clean(tierKey, 16);
   const tiers = Array.isArray(est.tiers) ? est.tiers : [];
   const tier = tiers.find((t) => t && t.key === key);
@@ -81,7 +81,12 @@ export async function chooseTier(token, tierKey) {
   const subtotal = Number(tier.subtotal) || lines.reduce((s, l) => s + (Number(l.price) || 0), 0);
   const cardFee = Math.round(subtotal * 0.04 * 100) / 100;
   try {
-    await sb.from('pricebook_estimates').update({ lines, subtotal, card_fee: cardFee, selected_tier_key: key, tier_key: key }).eq('id', est.id);
+    // Conditional write — never re-point the snapshot after the close is finalized (races approve/decline).
+    const { data: rows, error } = await sb.from('pricebook_estimates')
+      .update({ lines, subtotal, card_fee: cardFee, selected_tier_key: key, tier_key: key })
+      .eq('id', est.id).not('status', 'in', `(${TERMINAL.join(',')})`).select('id');
+    if (error) throw error;
+    if (!rows || !rows.length) return { ok: false, msg: 'This estimate was already finalized.' };
   } catch (e) { return { ok: false, msg: 'Could not select that option — try again.' }; }
   await logEvent(sb, est, 'tier_selected', { method: 'link', actor: est.customer_name || 'Customer', note: tier.name || key, amount: subtotal });
   revalidatePath(`/e/${est.token}`);

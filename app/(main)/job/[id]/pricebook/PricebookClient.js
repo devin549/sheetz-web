@@ -149,7 +149,7 @@ export default function PricebookClient({ job, customer, items = [], categories 
               const st = TIER_STYLE[t.key] || TIER_STYLE.good;
               return (
                 <div key={t.key} className="card" style={{ borderColor: t.recommended ? 'var(--amber)' : 'var(--border)', borderWidth: t.recommended ? 2 : 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-                  {t.recommended && <span style={{ position: 'absolute', top: -10, left: 12, background: 'var(--amber)', color: '#1a1a1a', fontSize: 9.5, fontWeight: 800, padding: '2px 8px', borderRadius: 20 }}>MOST POPULAR</span>}
+                  {t.recommended && <span style={{ position: 'absolute', top: -10, left: 12, background: 'var(--amber)', color: '#1a1a1a', fontSize: 9.5, fontWeight: 800, padding: '2px 8px', borderRadius: 20 }}>RECOMMENDED</span>}
                   <div style={{ fontWeight: 800, fontSize: 15, color: st.c }}>{t.name}</div>
                   {t.bestFor && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{t.bestFor}</div>}
                   <div style={{ display: 'grid', gap: 3, margin: '9px 0' }}>
