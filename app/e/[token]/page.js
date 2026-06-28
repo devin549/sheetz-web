@@ -30,13 +30,25 @@ export default async function PublicEstimate({ params }) {
   const tiers = (Array.isArray(est.tiers) ? est.tiers : [])
     .map((t) => ({
       key: t.key, name: t.name || '', icon: t.icon || '🔧', pitch: t.pitch || '', bestFor: t.bestFor || '',
-      warranty: t.warranty || '', recommended: !!t.recommended, mostChosen: !!t.mostChosen,
+      warranty: t.warranty || '', caveat: t.caveat || '', recommended: !!t.recommended, mostChosen: !!t.mostChosen,
       includes: Array.isArray(t.includes) ? t.includes : [],
       lines: (Array.isArray(t.lines) ? t.lines : []).map(safeLine),
       subtotal: Number(t.subtotal) || (Array.isArray(t.lines) ? t.lines.reduce((s, l) => s + (Number(l.price) || 0), 0) : 0),
     }))
     .filter((t) => t.lines.length)
     .sort((a, b) => (ORDER[a.key] ?? 9) - (ORDER[b.key] ?? 9));
+
+  // Lever #3 (member savings DISPLAY) + #4 (financing partner) context — customer-safe, defensive. Absent
+  // before migration 127 → the close renders nothing for that lever. NEITHER carries cost/margin; member is
+  // the existing plan discount %, financing is the configured partner's standard terms (no number unless set).
+  const mc = est.member_ctx && typeof est.member_ctx === 'object' ? est.member_ctx : null;
+  const member = mc && Number(mc.discountPct) > 0
+    ? { name: String(mc.name || 'Clog Club'), discountPct: Number(mc.discountPct) || 0, monthlyPrice: Number(mc.monthlyPrice) || null }
+    : null;
+  const fc = est.financing_ctx && typeof est.financing_ctx === 'object' ? est.financing_ctx : null;
+  const financing = fc
+    ? { partner: String(fc.partner || ''), slug: String(fc.slug || ''), months: Number(fc.months) || 0, aprPct: Number(fc.aprPct) || 0, applyUrl: fc.applyUrl ? String(fc.applyUrl) : null }
+    : null;
 
   const safe = {
     token: est.token, customerName: est.customer_name || '', techName: est.tech_name || '',
@@ -46,6 +58,7 @@ export default async function PublicEstimate({ params }) {
     status: est.status, declineReason: est.decline_reason || '',
     approvedName: est.approved_name || '', approvalMethod: est.approval_method || '',
     approvedAt: est.responded_at || '', consentText: est.consent_text || '',
+    member, financing,
   };
 
   return wrap(<CustomerEstimate est={safe} />);

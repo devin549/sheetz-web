@@ -9,6 +9,7 @@ import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { postToDiscord } from '@/lib/discord';
 import { marginPct } from '@/lib/pricebookEngine';
+import { financingPartner } from '@/lib/financing';
 import { sendSms } from '@/lib/twilio';
 import { sendOne, isEmailConfigured, appBaseUrl } from '@/lib/email';
 
@@ -104,19 +105,32 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
   let snapLines = snapOf(lines);
   if (!snapLines.length) return { ok: false, msg: 'No sellable items in the cart.' };
 
-  // Build the customer-safe ladder. Only customer fields survive — icon/pitch/bestFor/warranty/recommended
+  // Bundle-level Good/Better/Best CAVEATS (migration 127, loss-contrast lever). Best-effort + defensive: absent
+  // before the migration → no caveats → the close renders nothing for that lever. Honest copy authored by the
+  // owner/GBB builder; we only thread + render it.
+  const caveatByKey = {};
+  if (opts.bundleSlug) {
+    try {
+      const { data: bc } = await c.sb.from('pricebook_bundles').select('good_caveat, better_caveat, best_caveat').eq('slug', opts.bundleSlug).maybeSingle();
+      if (bc) { caveatByKey.good = clean(bc.good_caveat, 240); caveatByKey.better = clean(bc.better_caveat, 240); caveatByKey.best = clean(bc.best_caveat, 240); }
+    } catch (_) {}
+  }
+
+  // Build the customer-safe ladder. Only customer fields survive — icon/pitch/bestFor/warranty/recommended/caveat
   // are presentation copy (no prices moved here). Drop any tier that resolves to nothing.
   const TIER_ICON = { good: '🥉', better: '🥈', best: '🥇' };
   const tierSnaps = tierInput.map((t) => {
     const tLines = snapOf(t.lines);
     if (!tLines.length) return null;
+    const key = clean(t.key, 16) || 'tier';
     return {
-      key: clean(t.key, 16) || 'tier',
+      key,
       name: clean(t.name, 60) || (t.key ? String(t.key) : 'Option'),
       icon: t.icon || TIER_ICON[t.key] || '🔧',
       pitch: clean(t.pitch, 240),
       bestFor: clean(t.bestFor, 160),
       warranty: clean(t.warranty, 160),
+      caveat: clean(t.caveat, 240) || caveatByKey[key] || '',   // honest "does NOT cover" line (per-tier override → bundle)
       includes: tLines.map((l) => l.name),
       lines: tLines,
       subtotal: tLines.reduce((s, l) => s + l.price, 0),
@@ -146,18 +160,39 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
     try { const { data: b } = await c.sb.from('pricebook_bundles').select('customer_description, warranty_text, approval_button_text').eq('slug', opts.bundleSlug).maybeSingle(); if (b) { customerDescription = b.customer_description || ''; warrantyText = b.warranty_text || ''; approveText = b.approval_button_text || approveText; } } catch (_) {}
   }
 
+  // ⭐ Clog Club member-savings context — snapshot the EXISTING active plan rate so the close can DISPLAY what
+  // the customer would save by joining (a nudge, never a price move / auto-discount). Best-effort + defensive:
+  // absent before migration 118 → no banner. Honest: this is the catalog discount %, not an edit.
+  let memberPlan = null;
+  try {
+    const { data: mp } = await c.sb.from('membership_plans').select('slug, name, discount_pct, monthly_price, perks').eq('active', true).order('sort_order').limit(1).maybeSingle();
+    if (mp && Number(mp.discount_pct) > 0) memberPlan = { slug: mp.slug, name: mp.name || 'Clog Club', discountPct: Number(mp.discount_pct) || 0, monthlyPrice: Number(mp.monthly_price) || null, perks: mp.perks || '' };
+  } catch (_) {}
+
+  // 💳 Financing context — snapshot which partner (if any) is configured + their standard terms so the close
+  // can show a REAL "as low as $X/mo" + apply link. NO partner → close shows the honest no-number prompt.
+  const partner = financingPartner();
+  const financing = partner ? { partner: partner.name, slug: partner.slug, months: partner.months, aprPct: partner.aprPct, applyUrl: partner.applyUrl } : null;
+
   const row = {
     token, job_id: jobId, job_number: job.job_number || null, customer_id: job.customer_id || null,
     customer_name: (job.customers && job.customers.name) || null, tech_id: job.tech_id || null, tech_name: c.profile.name || c.user.email,
     bundle_slug: opts.bundleSlug || null, tier_key: opts.tierKey || null, headline,
     customer_description: customerDescription, warranty_text: warrantyText, approve_text: approveText,
     lines: snapLines, tiers: tierSnaps, subtotal, card_fee: cardFee, status: 'sent', created_by: c.user.id,
+    member_ctx: memberPlan, financing_ctx: financing,   // levers #3/#4 context (migration 127); dropped below if un-migrated
   };
   let { error } = await c.sb.from('pricebook_estimates').insert(row);
+  // Backward-compat: if the lever-context columns (migration 127) aren't migrated yet, drop them and retry so
+  // sending never hard-fails on an un-run migration.
+  if (error && /(member_ctx|financing_ctx)/.test(error.message || '') && missing(error)) {
+    const { member_ctx: _m, financing_ctx: _f, ...noCtx } = row;
+    ({ error } = await c.sb.from('pricebook_estimates').insert(noCtx));
+  }
   // Backward-compat: if the `tiers` column isn't migrated yet, fall back to the flat single-tier insert so
   // sending an estimate never hard-fails on an un-run migration.
   if (error && /tiers/.test(error.message || '') && missing(error)) {
-    const { tiers: _drop, ...flat } = row;
+    const { tiers: _drop, member_ctx: _m2, financing_ctx: _f2, ...flat } = row;
     ({ error } = await c.sb.from('pricebook_estimates').insert(flat));
   }
   if (error) return { ok: false, msg: missing(error) ? 'Run supabase/106_pricebook_estimates.sql first.' : error.message };

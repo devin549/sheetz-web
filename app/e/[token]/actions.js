@@ -161,6 +161,25 @@ export async function approveEstimate(token, opts = {}) {
   return { ok: true, msg: 'Approved — thank you! Our office will reach out to get you on the schedule.', approvedName: name };
 }
 
+// ⭐ Join the Clog Club — INTEREST ONLY. Tapping the member-savings banner does NOT enroll the customer and
+// does NOT change the quoted price. It tells the office the customer wants to hear about membership, and drops
+// a proof-timeline event so the tech/office can follow up + actually enroll them properly. Honest nudge.
+export async function joinClogClub(token) {
+  const { sb, est } = await loadByToken(token);
+  if (!est) return { ok: false, msg: 'Estimate not found.' };
+  const plan = est.member_ctx && typeof est.member_ctx === 'object' ? est.member_ctx : null;
+  const planName = clean(plan?.name || 'Clog Club', 80);
+  // Log + ping the office only ONCE per estimate — a repeated tap (or a scripted POST on the token) must not
+  // spam the channel or pile up rows. The friendly message still returns every time.
+  let already = false;
+  try { const { data } = await sb.from('pricebook_estimate_events').select('id').eq('estimate_id', est.id).eq('event_type', 'membership_interest').limit(1); already = !!(data && data.length); } catch (_) {}
+  if (!already) {
+    await logEvent(sb, est, 'membership_interest', { method: 'link', actor: est.customer_name || 'Customer', note: `Interested in ${planName}` });
+    await notify(`⭐ **${planName} interest** — ${est.customer_name || 'Customer'}${est.job_number ? ` · job ${est.job_number}` : ''} tapped "Join" on their estimate. Follow up to enroll them (${est.tech_name || ''}).`);
+  }
+  return { ok: true, msg: `Great — we'll tell you all about the ${planName} and how to join. Nothing changes on this estimate.` };
+}
+
 // ❓ Ask a question — routes to the office, customer never waits on hold.
 export async function askQuestion(token, text) {
   const { sb, est } = await loadByToken(token);
