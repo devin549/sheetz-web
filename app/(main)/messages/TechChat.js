@@ -24,6 +24,7 @@ export default function TechChat({ messages = [], me = '' }) {
   const formRef = useRef(null);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
+  const [filter, setFilter] = useState('all'); // category tab — keeps the board below clean
   // 🪠 Ask Hank — the gold flow ported from the office Comms Desk (simpler): a question box wired to
   // askHank, plus a "read #sheetz" button wired to hankReadFeed so Hank reads the team feed + chimes in.
   const [hankOpen, setHankOpen] = useState(false);
@@ -73,7 +74,7 @@ export default function TechChat({ messages = [], me = '' }) {
   };
 
   return (
-    <div className="wrap" style={{ maxWidth: 1100 }}>
+    <div className="wrap" style={{ maxWidth: 640 }}>
       <div className="h1" style={{ fontSize: 20 }}>👥 Team Chat</div>
       <p className="muted" style={{ fontSize: 12.5 }}>The whole crew + office in #sheetz. Quick question, status, or a heads-up — everyone sees it. 🪠 Hank chimes in when he can help.</p>
 
@@ -104,32 +105,36 @@ export default function TechChat({ messages = [], me = '' }) {
       </form>
       {msg && <div style={{ fontSize: 12, margin: '6px 0', color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.msg}</div>}
 
-      {/* feed — broken down by category */}
       {messages.length === 0 && <div className="card" style={{ marginTop: 12 }}><span className="muted">No team messages yet. Say hi 👋</span></div>}
 
-      {/* feed in COLUMNS — one column per category (auto-stacks to 1 column on a narrow iPad). */}
-      {messages.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: 14, marginTop: 16, alignItems: 'start' }}>
-          {SECTIONS.map((s) => {
-            const list = buckets[s.tag] || [];
-            return (
-              <div key={s.tag}>
-                {/* column header — colored to the category's importance */}
-                <div style={{ padding: '4px 2px 8px', borderBottom: `2px solid ${s.color}`, marginBottom: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: s.color, textTransform: 'uppercase', letterSpacing: 0.4 }}>{s.label}</span>
-                    <span className="pill" style={{ fontSize: 10, color: s.color, border: `1px solid ${s.color}` }}>{list.length}</span>
-                  </div>
-                  <div className="muted" style={{ fontSize: 10, marginTop: 2 }}>{s.hint}</div>
-                </div>
-                {list.length === 0
-                  ? <div className="muted" style={{ fontSize: 11.5, padding: '6px 2px', fontStyle: 'italic' }}>Nothing here yet.</div>
-                  : <div style={{ display: 'grid', gap: 8 }}>{list.map((m) => renderMsg(m, s.color))}</div>}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* category breakdown as TABS up top → one clean board below (not a messy 3-column spread). */}
+      {messages.length > 0 && (() => {
+        const TABS = [{ tag: 'all', label: '💬 All', color: 'var(--amber)' }, ...SECTIONS];
+        const count = (t) => (t === 'all' ? messages.length : (buckets[t] || []).length);
+        const shown = filter === 'all' ? messages : (buckets[filter] || []);
+        const accentFor = (tag) => (SECTIONS.find((s) => s.tag === tag) || {}).color || 'var(--amber)';
+        return (
+          <div style={{ marginTop: 14 }}>
+            {/* tab strip — the section breakdown, with counts */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 9, marginBottom: 12 }}>
+              {TABS.map((t) => {
+                const on = filter === t.tag;
+                return (
+                  <button key={t.tag} onClick={() => setFilter(t.tag)} style={{ cursor: 'pointer', fontSize: 12, fontWeight: on ? 800 : 600, padding: '6px 11px', borderRadius: 20, whiteSpace: 'nowrap',
+                    border: `1px solid ${on ? t.color : 'var(--border)'}`, color: on ? t.color : 'var(--fg-2)',
+                    background: on ? `color-mix(in oklab, ${t.color} 14%, var(--surface-2))` : 'var(--surface-2)' }}>
+                    {t.label} <span style={{ opacity: 0.85, fontWeight: 800 }}>{count(t.tag)}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {/* clean single-column board (filtered to the selected tab; per-message accent shows its category) */}
+            {shown.length === 0
+              ? <div className="muted" style={{ fontSize: 12.5, padding: '8px 2px', fontStyle: 'italic' }}>Nothing in here right now.</div>
+              : <div style={{ display: 'grid', gap: 8 }}>{shown.map((m) => renderMsg(m, accentFor(m.tag)))}</div>}
+          </div>
+        );
+      })()}
     </div>
   );
 }
