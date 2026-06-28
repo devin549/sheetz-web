@@ -133,10 +133,11 @@ export default function PricebookClient({ job, customer, items = [], categories 
         <div>
           <BarcodeScan onAdd={addScanned} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search price, part, symptom, SKU — try seesnake, wax ring, water heater" style={{ ...input, width: '100%', marginBottom: 10 }} />
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-            <button onClick={() => setCat('suggested')} className="pill" style={{ cursor: 'pointer', fontWeight: cat === 'suggested' ? 800 : 600, border: cat === 'suggested' ? '1px solid var(--amber)' : '1px solid var(--border)' }}>⭐ Suggested</button>
-            {categories.map((c) => <button key={c.id} onClick={() => setCat(c.id)} className="pill" style={{ cursor: 'pointer', fontWeight: cat === c.id ? 800 : 600, border: cat === c.id ? '1px solid var(--amber)' : '1px solid var(--border)' }}>{c.name}</button>)}
-          </div>
+          {/* Categories as ONE dropdown (was ~45 pills of noise). ⭐ Suggested = job-smart picks. */}
+          <select value={cat} onChange={(e) => setCat(e.target.value)} style={{ ...input, width: '100%', marginBottom: 12, cursor: 'pointer' }}>
+            <option value="suggested">⭐ Suggested for this job</option>
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
           <div style={{ display: 'grid', gap: 8 }}>
             {filtered.slice(0, 40).map((it) => (
               <div key={it.id} className="card" style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '11px 13px', borderColor: it.suggested ? 'var(--amber-dim)' : 'var(--border)' }}>

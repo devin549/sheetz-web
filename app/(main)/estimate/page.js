@@ -1,10 +1,11 @@
-import { requireHref } from '@/lib/guard';
+import { requirePerm } from '@/lib/guard';
 import EstimateBuilder from './EstimateBuilder';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Estimate() {
-  await requireHref('/estimate');
+  // Pricebook/estimate builder is on the tech rail — allow field crew + office (was sales-nav-gated).
+  await requirePerm('changeStatus', 'seeOwnOnly', 'seeCrew', 'collectPayment', 'seeFinancials', 'manageInventory', 'seeAllJobs');
   return (
     <div className="wrap" style={{ maxWidth: 620 }}>
       <div className="h1">🧾 Estimate <span className="muted" style={{ fontSize: 13, fontWeight: 400 }}>· Good / Better / Best</span></div>
