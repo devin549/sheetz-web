@@ -19,8 +19,26 @@ Body:
 
 ```json
 {
-  "agents": ["accounting-money", "dispatch-ops", "price-margin"],
-  "collaborator": true
+  "agents": [
+    "accounting-money",
+    "dispatch-ops",
+    "price-margin",
+    "field-tech-ux",
+    "crm-flow",
+    "security-risk"
+  ],
+  "collaborator": true,
+  "focus": "Review the tech iPad My Day and job cockpit. Find wasted taps, missing quick actions, confusing rails, and any launch blockers.",
+  "urls": [
+    "https://tech.sheetzz.com/my-day",
+    "https://tech.sheetzz.com/job/77149b3e-0bdb-422d-90fa-3091b1f91236"
+  ],
+  "screenshots": [
+    {
+      "name": "Tech My Day",
+      "notes": "Completed jobs are cluttering the route. Need quick Call/Text/Map on each card and full rails only after opening the job."
+    }
+  ]
 }
 ```
 
@@ -29,8 +47,16 @@ Body:
 - `accounting-money`: uses the Accounting Claude key. Looks for AR, payment, payroll, fee, receipt, and cash-custody risk.
 - `dispatch-ops`: uses the GM Claude key. Looks for late/stale jobs, helper needs, ETA gaps, capacity, and board workflow issues.
 - `price-margin`: uses the Owner Claude key. Looks for price-book gaps, vendor price changes, repeated parts/tools, margin leaks, and owner-approval price changes.
+- `field-tech-ux`: uses the GM Claude key. Looks for wasted taps, confusing iPad/phone flows, bad rail organization, hidden blockers, and missing quick actions.
+- `crm-flow`: uses the GM Claude key. Looks for broken handoffs across booking, dispatch, customer profile, projects, tech work, proof, estimate, invoice, payment, and follow-up.
+- `security-risk`: uses the Owner Claude key. Looks for launch risk, role/permission gaps, public endpoint exposure, payment/webhook safety, audit logs, and override controls.
 
 After the specialist agents run, the route sends their reports to the OpenAI collaborator for one owner-ready rollup.
+
+Notes:
+
+- `urls` are context labels unless their page content is also included somewhere in the request. The agents do not browse by themselves.
+- For visual review, put the screenshot facts in `screenshots[].notes`, or paste the screenshot description into `focus`.
 
 ## Env Vars
 
@@ -62,8 +88,9 @@ Fallbacks:
 ```powershell
 $secret = "YOUR_SECRET"
 $body = @{
-  agents = @("accounting-money", "dispatch-ops", "price-margin")
+  agents = @("accounting-money", "dispatch-ops", "price-margin", "field-tech-ux", "crm-flow", "security-risk")
   collaborator = $true
+  focus = "Deep audit tech iPad My Day, job cockpit, customer profile, dispatch flow, pricebook, photos, security, and launch risk."
 } | ConvertTo-Json
 
 Invoke-RestMethod `

@@ -32,6 +32,11 @@ export async function GET(request) {
     postBody: {
       agents: AGENT_IDS,
       collaborator: true,
+      focus: 'Optional plain-English audit focus.',
+      urls: ['Optional URLs for context only. Include screenshot notes if you want visual review.'],
+      screenshots: [
+        { name: 'Optional screenshot label', notes: 'What the screenshot shows and what feels wrong.' },
+      ],
     },
   });
 }
@@ -47,6 +52,10 @@ export async function POST(request) {
     const result = await runAgentHub({
       agents: Array.isArray(body.agents) ? body.agents : AGENT_IDS,
       collaborator: body.collaborator !== false,
+      focus: body.focus,
+      notes: body.notes || body.brief,
+      urls: body.urls,
+      screenshots: body.screenshots,
     });
     return NextResponse.json(result);
   } catch (error) {
