@@ -68,7 +68,9 @@ export default function CustomerEstimate({ est }) {
         transform: hero ? 'scale(1.02)' : 'none', zIndex: hero ? 2 : 1,
       }}>
         {hero && (
-          <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', background: GOLD, color: '#2a1f00', fontSize: 11, fontWeight: 900, letterSpacing: '.04em', padding: '4px 12px', borderRadius: 20, boxShadow: '0 3px 10px rgba(0,0,0,.4)' }}>★ MOST CHOSEN</div>
+          /* Honest badge: "Most chosen" ONLY when real approvals back THIS tier (data-true). Otherwise the
+             always-true "Recommended" — never a popularity claim that isn't in the numbers. */
+          <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', background: GOLD, color: '#2a1f00', fontSize: 11, fontWeight: 900, letterSpacing: '.04em', padding: '4px 12px', borderRadius: 20, boxShadow: '0 3px 10px rgba(0,0,0,.4)' }}>{t.mostChosen ? '★ MOST CHOSEN' : '★ RECOMMENDED'}</div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: hero ? 26 : 22 }}>{t.icon}</span>
@@ -140,7 +142,16 @@ export default function CustomerEstimate({ est }) {
           </div>
 
           <div style={{ textAlign: 'center', fontSize: 12.5, color: MUTE, marginTop: 2 }}>
-            Most customers choose <strong style={{ color: GOLD }}>{(tiers.find((t) => t.recommended) || {}).name || 'the middle option'}</strong>. No pressure — choosing just records your estimate; nothing is charged until you approve.
+            {(() => {
+              // Honest framing: claim "most customers choose" ONLY when a tier is data-backed (mostChosen);
+              // otherwise the always-true "We recommend". Never a popularity claim without the count behind it.
+              const chosen = tiers.find((t) => t.mostChosen);
+              const rec = tiers.find((t) => t.recommended) || {};
+              return chosen
+                ? <>Most customers choose <strong style={{ color: GOLD }}>{chosen.name}</strong>. </>
+                : <>We recommend <strong style={{ color: GOLD }}>{rec.name || 'the middle option'}</strong>. </>;
+            })()}
+            No pressure — choosing just records your estimate; nothing is charged until you approve.
           </div>
 
           {/* Secondary actions — visually demoted under the ladder. */}

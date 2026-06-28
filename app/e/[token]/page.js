@@ -30,7 +30,7 @@ export default async function PublicEstimate({ params }) {
   const tiers = (Array.isArray(est.tiers) ? est.tiers : [])
     .map((t) => ({
       key: t.key, name: t.name || '', icon: t.icon || '🔧', pitch: t.pitch || '', bestFor: t.bestFor || '',
-      warranty: t.warranty || '', recommended: !!t.recommended,
+      warranty: t.warranty || '', recommended: !!t.recommended, mostChosen: !!t.mostChosen,
       includes: Array.isArray(t.includes) ? t.includes : [],
       lines: (Array.isArray(t.lines) ? t.lines : []).map(safeLine),
       subtotal: Number(t.subtotal) || (Array.isArray(t.lines) ? t.lines.reduce((s, l) => s + (Number(l.price) || 0), 0) : 0),

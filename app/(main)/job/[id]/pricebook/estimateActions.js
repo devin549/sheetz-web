@@ -2,17 +2,44 @@
 
 import { randomUUID } from 'crypto';
 import { revalidatePath } from 'next/cache';
+import { headers } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { postToDiscord } from '@/lib/discord';
 import { marginPct } from '@/lib/pricebookEngine';
+import { sendSms } from '@/lib/twilio';
+import { sendOne, isEmailConfigured, appBaseUrl } from '@/lib/email';
 
 const missing = (e) => /relation|column|schema cache|does not exist/i.test(e?.message || '');
 const num = (v) => Number(v) || 0;
 const clean = (v, n = 400) => String(v == null ? '' : v).trim().slice(0, n);
 const APPROVAL_METHODS = ['phone', 'in_person', 'text', 'email'];
+const MOST_CHOSEN_THRESHOLD = 20;   // approvals needed before we make an honest "Most chosen" claim
+
+// 🏅 TRUE "most chosen" — count APPROVED estimates by the tier the customer actually selected, scoped to this
+// bundle (job type) so the badge reflects what real people on real jobs picked. Returns the genuinely
+// most-selected tier key ONLY when the sample clears the threshold; otherwise null → the close falls back to
+// the always-true "Recommended" wording. Never fabricates popularity. Best-effort; never throws.
+async function mostChosenTier(sb, bundleSlug) {
+  try {
+    let q = sb.from('pricebook_estimates').select('selected_tier_key, tier_key').eq('status', 'approved');
+    if (bundleSlug) q = q.eq('bundle_slug', bundleSlug);
+    const { data, error } = await q.limit(5000);
+    if (error || !Array.isArray(data)) return { key: null, total: 0, backed: false };
+    const tally = {}; let total = 0;
+    for (const r of data) {
+      const k = r.selected_tier_key || r.tier_key;
+      if (!k) continue;
+      tally[k] = (tally[k] || 0) + 1; total += 1;
+    }
+    let key = null, max = -1;
+    for (const k of Object.keys(tally)) { if (tally[k] > max) { max = tally[k]; key = k; } }
+    const backed = total >= MOST_CHOSEN_THRESHOLD && key != null;
+    return { key: backed ? key : null, total, backed, tally };
+  } catch (_) { return { key: null, total: 0, backed: false }; }
+}
 
 async function ctx() {
   const supabase = createClient();
@@ -96,6 +123,12 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
   }).filter(Boolean);
   // Guarantee exactly one recommended (the middle if the tech didn't flag one).
   if (tierSnaps.length && !tierSnaps.some((t) => t.recommended)) tierSnaps[Math.min(1, tierSnaps.length - 1)].recommended = true;
+  // 🏅 Honest "most chosen": if enough real approvals back a specific tier for THIS bundle, flag that exact
+  // tier so the close badges it truthfully. Below threshold → no tier gets it → close shows "Recommended".
+  if (tierSnaps.length) {
+    const mc = await mostChosenTier(c.sb, opts.bundleSlug);
+    tierSnaps.forEach((t) => { t.mostChosen = !!(mc.key && t.key === mc.key); });
+  }
   // When a ladder exists, the flat snapshot (the approval source + the fallback view) defaults to the
   // RECOMMENDED tier — so it's coherent no matter what the cart held when Send was tapped. The customer can
   // still switch tiers at the close, which re-points lines/subtotal.
@@ -131,6 +164,99 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
   try { await c.sb.from('pricebook_estimate_events').insert({ token, event_type: 'sent', method: 'link', actor: row.tech_name, actor_role: 'tech', amount: subtotal }); } catch (_) {}
   return { ok: true, token, url: `/e/${token}`, msg: 'Estimate ready to present or send.' };
 }
+
+// ── Build the customer-facing absolute URL for the token. Prefer APP_URL/Vercel prod; fall back to the live
+// request host so a texted/emailed link is always tappable from the customer's phone. ──
+function estimateUrl(token) {
+  let base = appBaseUrl();
+  if (!base) { try { const h = headers(); const host = h.get('x-forwarded-host') || h.get('host'); const proto = h.get('x-forwarded-proto') || 'https'; if (host) base = `${proto}://${host}`; } catch (_) {} }
+  return `${base || ''}/e/${token}`;
+}
+
+// Load an estimate the current user is allowed to act on + the customer's delivery + consent fields.
+async function loadSendCtx(token) {
+  const c = await ctx(); if (c.err) return { err: c.err };
+  const tk = clean(token, 64); if (!tk) return { err: 'No estimate.' };
+  const { data: est } = await c.sb.from('pricebook_estimates').select('id, token, job_id, job_number, customer_id, customer_name, headline, subtotal, tech_name').eq('token', tk).maybeSingle();
+  if (!est) return { err: 'Estimate not found.' };
+  let cust = {};
+  if (est.customer_id) {
+    try { const { data } = await c.sb.from('customers').select('name, phone, phones, email, sms_consent').eq('id', est.customer_id).maybeSingle(); cust = data || {}; } catch (_) {}
+  }
+  const phone = cust.phone || (Array.isArray(cust.phones) ? cust.phones[0] : cust.phones) || '';
+  return { c, est, cust, phone, email: cust.email || '', smsConsent: !!cust.sms_consent };
+}
+
+// 💬 TEXT the link — GATED ON CONSENT. We never text a customer who hasn't opted in (no-auto-send / TCPA).
+export async function sendEstimateText(token) {
+  const x = await loadSendCtx(token); if (x.err) return { ok: false, msg: x.err };
+  const { c, est, phone, smsConsent } = x;
+  if (!phone) return { ok: false, msg: 'No phone number on file for this customer.' };
+  if (!smsConsent) return { ok: false, msg: 'This customer hasn’t opted in to texts — present it on the iPad or email it instead.' };
+  const url = estimateUrl(est.token);
+  const body = `Here are your options from Clog Busterz Plumbing: ${url}\nNothing is charged until you approve. Reply STOP to opt out.`;
+  const r = await sendSms(phone, body);
+  if (!r.ok) return { ok: false, msg: r.msg || 'Text didn’t send.' };
+  try { await c.sb.from('pricebook_estimate_events').insert({ estimate_id: est.id, token: est.token, event_type: 'sent', method: 'text', actor: est.tech_name, actor_role: 'tech', note: `Texted to ${r.to || phone}`, amount: Number(est.subtotal) || null }); } catch (_) {}
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: est.tech_name, role: c.profile.role, action: 'estimate.send.text', entity: 'pricebook_estimate', entity_id: est.token, detail: { to: r.to || phone } }); } catch (_) {}
+  return { ok: true, msg: `Texted to ${r.to || phone}.` };
+}
+
+// 📧 EMAIL the link — best-effort; needs EMAIL_API_KEY. Email isn't consent-gated the way SMS is, but we
+// only send to the address on the customer record.
+export async function sendEstimateEmail(token) {
+  const x = await loadSendCtx(token); if (x.err) return { ok: false, msg: x.err };
+  const { c, est, email } = x;
+  if (!email) return { ok: false, msg: 'No email on file for this customer.' };
+  if (!isEmailConfigured) return { ok: false, msg: 'Email isn’t set up yet (EMAIL_API_KEY) — text it or present on the iPad.' };
+  const url = estimateUrl(est.token);
+  const subject = `Your options from Clog Busterz Plumbing${est.job_number ? ` · job ${est.job_number}` : ''}`;
+  const html = `<!doctype html><html><body style="margin:0;background:#f4f3ef;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a">
+    <div style="max-width:560px;margin:0 auto;padding:24px"><div style="background:#fff;border:1px solid #e3e0d8;border-radius:10px;overflow:hidden">
+    <div style="background:#FF6B00;color:#fff;padding:14px 20px;font-weight:800;font-size:16px">Clog Busterz Plumbing</div>
+    <div style="padding:22px 20px;font-size:14px"><p style="margin:0 0 14px;line-height:1.55">Hi${est.customer_name ? ' ' + esc(est.customer_name) : ''}, here are your options for the work we discussed.</p>
+    <p style="margin:0 0 18px;line-height:1.55">Tap below to review the details and approve when you’re ready — nothing is charged until you do.</p>
+    <p style="margin:0 0 8px"><a href="${esc(url)}" style="display:inline-block;background:#3fb56a;color:#06210f;font-weight:800;text-decoration:none;padding:13px 22px;border-radius:10px">View your estimate →</a></p>
+    <p style="margin:14px 0 0;font-size:12px;color:#888">Or paste this link: ${esc(url)}</p></div>
+    <div style="padding:14px 20px;border-top:1px solid #eee;font-size:11px;color:#888">Clog Busterz Plumbing · (859) 408-3382 · Prices held for this visit.</div></div></div></body></html>`;
+  const r = await sendOne({ to: email, subject, html });
+  if (!r.ok) return { ok: false, msg: 'Email didn’t send: ' + (r.error || 'unknown') };
+  try { await c.sb.from('pricebook_estimate_events').insert({ estimate_id: est.id, token: est.token, event_type: 'sent', method: 'email', actor: est.tech_name, actor_role: 'tech', note: `Emailed to ${email}`, amount: Number(est.subtotal) || null }); } catch (_) {}
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: est.tech_name, role: c.profile.role, action: 'estimate.send.email', entity: 'pricebook_estimate', entity_id: est.token, detail: { to: email } }); } catch (_) {}
+  return { ok: true, msg: `Emailed to ${email}.` };
+}
+
+// 📱 Present on this iPad — no send. Mark it presented (proof timeline) and confirm the link to open.
+export async function markPresented(token) {
+  const x = await loadSendCtx(token); if (x.err) return { ok: false, msg: x.err };
+  const { c, est } = x;
+  try { await c.sb.from('pricebook_estimate_events').insert({ estimate_id: est.id, token: est.token, event_type: 'presented', method: 'ipad', actor: est.tech_name, actor_role: 'tech' }); } catch (_) {}
+  return { ok: true, url: `/e/${est.token}`, msg: 'Presenting on this device.' };
+}
+
+// 🔁 Live status for the tech's iPad mirror — what the customer did on ANY channel. Lightweight: status,
+// which tier they chose, and how the close arrived. Polled every ~10s by the tech client until terminal.
+export async function getEstimateStatus(token) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const tk = clean(token, 64); if (!tk) return { ok: false, msg: 'No estimate.' };
+  try {
+    const { data: est } = await c.sb.from('pricebook_estimates').select('status, selected_tier_key, tier_key, approval_channel, approved_name, responded_at, viewed_at, subtotal').eq('token', tk).maybeSingle();
+    if (!est) return { ok: false, msg: 'Estimate not found.' };
+    const status = est.status || 'sent';
+    const terminal = ['approved', 'declined'].includes(status);
+    return {
+      ok: true, status, terminal,
+      selectedTierKey: est.selected_tier_key || est.tier_key || null,
+      approvalChannel: est.approval_channel || null,
+      approvedName: est.approved_name || null,
+      respondedAt: est.responded_at || null,
+      viewedAt: est.viewed_at || null,
+      subtotal: Number(est.subtotal) || 0,
+    };
+  } catch (e) { return { ok: false, msg: 'Could not read status.' }; }
+}
+
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
 // 📞 Log a phone / verbal / text approval that happened OFF the link — the out-of-state landlord who
 // says "yes" on the phone. The tech is the witness on record. Same proof table, same conversion to usage

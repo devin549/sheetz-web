@@ -18,6 +18,31 @@ async function loadByToken(token) {
 }
 const notify = async (msg) => { try { await postToDiscord(msg); } catch (_) {} };
 
+// 🔒 Atomic first-write-wins lock. The same estimate token can be open on the tech's iPad AND texted AND
+// emailed at once. To make a terminal close (approve/decline) un-double-bookable, we move the status with a
+// CONDITIONAL update — `where id=<id> and status not in (already-terminal)` — and ask Postgres to RETURN the
+// rows it actually changed. If it returns a row, THIS channel won the race and may proceed; if it returns
+// none, another channel already closed it (or the column-degrade path below handles an un-migrated extra
+// column). First write wins; every other channel falls through to the friendly locked-state message.
+// `extra` holds the rest of the status write (responded_at, proof fields, tier write, approval_channel…).
+const TERMINAL = ['approved', 'declined'];
+async function lockTo(sb, est, newStatus, extra = {}) {
+  const guard = (q) => q.eq('id', est.id).not('status', 'in', `(${TERMINAL.join(',')})`).select('id');
+  let res = await guard(sb.from('pricebook_estimates').update({ status: newStatus, ...extra }));
+  // Degrade: if a NOT-YET-MIGRATED column (e.g. approval_channel) is in `extra`, retry with just status +
+  // responded_at so the close still lands atomically. We never lose the race-guard, only the optional column.
+  if (res.error && /column|schema cache|does not exist/i.test(res.error.message || '')) {
+    res = await guard(sb.from('pricebook_estimates').update({ status: newStatus, responded_at: extra.responded_at || new Date().toISOString() }));
+  }
+  if (res.error) return { won: false, error: res.error };
+  return { won: Array.isArray(res.data) && res.data.length > 0 };
+}
+// Map a customer-side approval method to the snapshot's approval_channel ('text'|'email'|'ipad'|'in_person').
+function channelOf(opts = {}) {
+  const c = clean(opts.channel || opts.method || '', 16).toLowerCase();
+  return ['text', 'email', 'ipad', 'in_person', 'link'].includes(c) ? c : 'link';
+}
+
 // Best-effort device fingerprint for the proof record (server-side; the customer can't spoof it).
 function clientMeta() {
   try {
@@ -98,12 +123,18 @@ export async function approveEstimate(token, opts = {}) {
     const price = Number(l.price) || 0;
     return { job_id: est.job_id, job_number: est.job_number, customer_id: est.customer_id, tech_id: est.tech_id, item_id: l.itemId, quantity: Number(l.quantity) || 1, sold_price: price, actual_cost: cost, estimated_labor_hours: Number(it.estimated_labor_hours) || 0, margin_pct: marginPct({ retail_price: price, estimated_material_cost: cost }), source: 'customer_approval', sold_at: nowISO };
   });
-  if (usage.length) { try { await sb.from('job_pricebook_usage').insert(usage); } catch (_) {} }
   // Persist the locked-in tier so the approved record reflects exactly what was sold.
   const tierWrite = chosen ? { lines, subtotal: total, card_fee: Math.round(total * 0.04 * 100) / 100, selected_tier_key: chosen.key, tier_key: chosen.key } : {};
-  try {
-    await sb.from('pricebook_estimates').update({ status: 'approved', responded_at: nowISO, approved_name: name, approval_method: 'link', approver_ip: ip, approver_user_agent: ua, consent_text: consentText, ...tierWrite }).eq('id', est.id);
-  } catch (_) { await sb.from('pricebook_estimates').update({ status: 'approved', responded_at: nowISO }).eq('id', est.id); }
+  const channel = channelOf(opts);
+  // ── ATOMIC GUARD ── flip to 'approved' ONLY if not already terminal. If we lose the race, another channel
+  // (iPad / text / email) already closed it → return the friendly "already approved" without writing usage.
+  const lock = await lockTo(sb, est, 'approved', {
+    responded_at: nowISO, approved_name: name, approval_method: 'link', approval_channel: channel,
+    approver_ip: ip, approver_user_agent: ua, consent_text: consentText, ...tierWrite,
+  });
+  if (!lock.won) { revalidatePath(`/e/${est.token}`); return { ok: true, msg: 'Already approved — thank you!' }; }
+  // We won the race — NOW write the usage rows (so a losing channel never double-converts the sale).
+  if (usage.length) { try { await sb.from('job_pricebook_usage').insert(usage); } catch (_) {} }
   // If the original job is already closed (a later/remote approval), drop an UNASSIGNED · UNSCHEDULED work
   // request into the OFFICE's queue — the office schedules + assigns it (a tech never schedules). If the
   // job's still open, the tech does the work on this visit; nothing new is created.
@@ -142,7 +173,9 @@ export async function askQuestion(token, text) {
 export async function requestDeposit(token) {
   const { sb, est } = await loadByToken(token);
   if (!est) return { ok: false, msg: 'Estimate not found.' };
-  await sb.from('pricebook_estimates').update({ status: 'deposit_requested', responded_at: new Date().toISOString() }).eq('id', est.id);
+  // Non-terminal, but must not stomp a close that already won the race on another channel.
+  const lock = await lockTo(sb, est, 'deposit_requested', { responded_at: new Date().toISOString() });
+  if (!lock.won) { revalidatePath(`/e/${est.token}`); return { ok: true, msg: est.status === 'declined' ? 'This estimate was declined.' : 'Already approved — our office will reach out.' }; }
   await logEvent(sb, est, 'deposit_requested', { method: 'link', actor: est.customer_name || 'Customer' });
   await notify(`💳 **Deposit requested** — ${est.customer_name || 'Customer'}${est.job_number ? ` · job ${est.job_number}` : ''} wants to put a deposit down. Send a secure pay link (${est.tech_name || ''}).`);
   revalidatePath(`/e/${est.token}`);
@@ -155,7 +188,10 @@ export async function declineEstimate(token, reason) {
   if (!est) return { ok: false, msg: 'Estimate not found.' };
   const r = clean(reason, 400);
   const followUp = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-  await sb.from('pricebook_estimates').update({ status: 'declined', decline_reason: r || null, follow_up_at: followUp, responded_at: new Date().toISOString() }).eq('id', est.id);
+  // ── ATOMIC GUARD ── decline only if not already terminal. If they approved on another channel a beat ago,
+  // the approval wins and we surface that instead of overwriting it with a decline.
+  const lock = await lockTo(sb, est, 'declined', { decline_reason: r || null, follow_up_at: followUp, responded_at: new Date().toISOString() });
+  if (!lock.won) { revalidatePath(`/e/${est.token}`); return { ok: true, msg: est.status === 'approved' ? 'This estimate was already approved — thank you!' : 'Thanks for letting us know.' }; }
   await logEvent(sb, est, 'declined', { method: 'link', actor: est.customer_name || 'Customer', note: r || null });
   await notify(`🙅 **Estimate declined** — ${est.customer_name || 'Customer'}${est.job_number ? ` · job ${est.job_number}` : ''}${r ? `: "${r.slice(0, 200)}"` : ''}. Follow up by ${followUp}.`);
   revalidatePath(`/e/${est.token}`);
