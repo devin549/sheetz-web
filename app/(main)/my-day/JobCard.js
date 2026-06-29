@@ -126,7 +126,7 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
     : cur === 'enroute' ? '📍 Mark On-site when you arrive'
     : '🚚 Tap En route to head out';
 
-  // Live on-site timer (active + started) — drives the elapsed label AND the $/hr pace + next-stop math.
+  // Live on-site timer (active + started) — drives the elapsed label + next-stop math.
   const [elapsed, setElapsed] = useState('');
   const [elapsedMin, setElapsedMin] = useState(0);
   useEffect(() => {
@@ -134,9 +134,6 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
     const tick = () => { const ms = Date.now() - Date.parse(job.started_at); if (ms < 0) return; const m = Math.floor(ms / 60000); setElapsedMin(m); setElapsed(m < 60 ? `${m}m on-site` : `${Math.floor(m / 60)}h ${m % 60}m on-site`); };
     tick(); const i = setInterval(tick, 30000); return () => clearInterval(i);
   }, [variant, job.started_at]);
-  // ⏱ Revenue pace ($/hr) on the in-progress job — tech-only, the HTML "$921/hr pace" coach line.
-  const amt = Number(job.amount) || 0;
-  const paceHr = (cur === 'on_site' && job.started_at && amt > 0 && elapsedMin >= 1) ? Math.round(amt / (elapsedMin / 60)) : null;
   // 🎯 Next stop: drive there + whether we'll make their window (slack). Computed from the passed leg+time.
   let nextLine = null;
   if (next && next.time) {
@@ -168,10 +165,8 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
           {typeBits && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>🔧 {typeBits}</div>}
           {seeAll && t.name && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}><PersonCard name={t.name}><span style={{ cursor: 'pointer' }}>👷 {t.name}</span></PersonCard></div>}
           <TagRow tags={tags} />
-          {/* ⏱ on-site $/hr pace (live off the timer) — tech-only intelligence kept from the HTML */}
-          {variant === 'active' && !cancelled && !done && cur === 'on_site' && paceHr ? (
-            <div style={{ marginTop: 5, fontSize: 10.5, color: 'var(--amber-dim)', fontStyle: 'italic' }}>⏱ {money(amt)} / {elapsedMin}min = <strong style={{ color: 'var(--green-bright)' }}>{money(paceHr)}/hr pace</strong></div>
-          ) : null}
+          {/* (Removed the on-site $/hr pace line — billable hours / $-per-hour is a MANAGEMENT report now,
+              pulled company-wide + per-tech, not shown on the tech's card.) */}
           {/* 🎯 next stop — drive + will you make their window */}
           {variant === 'active' && !cancelled && !done && nextLine ? (
             <div style={{ marginTop: 5, fontSize: 11, color: 'var(--fg-2)', background: 'rgba(255,179,0,0.08)', border: '1px solid var(--amber-dim)', padding: '3px 7px', borderRadius: 6, display: 'inline-block' }}>🎯 {nextLine.driveMin}-min drive → <strong>{nextLine.customer}</strong> {nextLine.at} · <span style={{ color: nextLine.slack >= 0 ? 'var(--green)' : 'var(--red)' }}>{nextLine.slack >= 0 ? `+${nextLine.slack} slack` : `${-nextLine.slack} tight`}</span></div>
