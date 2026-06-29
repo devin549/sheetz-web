@@ -5,6 +5,7 @@ import { headers } from 'next/headers';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { postToDiscord } from '@/lib/discord';
 import { marginPct } from '@/lib/pricebookEngine';
+import { createInvoiceFromEstimate } from '@/lib/invoiceFromEstimate';
 
 // PUBLIC actions — authenticated by the unguessable token in the link, NOT a login. The customer can only
 // touch their own estimate. No internal data is ever returned to the browser.
@@ -140,6 +141,8 @@ export async function approveEstimate(token, opts = {}) {
   if (!lock.won) { revalidatePath(`/e/${est.token}`); return { ok: true, msg: 'Already approved — thank you!' }; }
   // We won the race — NOW write the usage rows (so a losing channel never double-converts the sale).
   if (usage.length) { try { await sb.from('job_pricebook_usage').insert(usage); } catch (_) {} }
+  // 🧾→💳 Bridge: the approval becomes an INVOICE (open, due now or Net-30). Best-effort; never blocks approval.
+  try { await createInvoiceFromEstimate(sb, { customerId: est.customer_id, jobId: est.job_id, jobNumber: est.job_number, total }); } catch (_) {}
   // 🔁 Reflect the result back on the WORK ORDER so the cockpit shows it WITHOUT the tech sitting on the
   // pricebook tab — and an estimate job's closeout gate unblocks (the customer's YES IS the outcome).
   // Best-effort; never blocks the customer's approval.

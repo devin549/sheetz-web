@@ -8,6 +8,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { scopeJob } from './scope';
+import { createInvoiceFromEstimate } from '@/lib/invoiceFromEstimate';
 import { postToDiscord } from '@/lib/discord';
 import { marginPct } from '@/lib/pricebookEngine';
 import { financingPartner } from '@/lib/financing';
@@ -341,6 +342,8 @@ export async function logManualApproval(token, opts = {}) {
   try {
     await c.sb.from('pricebook_estimates').update({ status: 'approved', responded_at: nowISO, approved_name: name, approval_method: method, consent_text: consentText, witnessed_by_tech_id: c.user.id, witnessed_by_name: c.profile.name || c.user.email }).eq('id', est.id);
   } catch (e) { return { ok: false, msg: missing(e) ? 'Run supabase/117_estimate_proof.sql first.' : e.message }; }
+  // 🧾→💳 Bridge: a recorded sale becomes an INVOICE (open, due now or Net-30). Best-effort.
+  try { await createInvoiceFromEstimate(c.sb, { customerId: est.customer_id, jobId: est.job_id, jobNumber: est.job_number, total }); } catch (_) {}
   try { await c.sb.from('pricebook_estimate_events').insert({ estimate_id: est.id, token: tk, event_type: 'phone_approval', method, actor: name, actor_role: 'customer', note: consentText, amount: total }); } catch (_) {}
   try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'estimate.manual_approval', entity: 'pricebook_estimate', entity_id: tk, detail: { name, method, total } }); } catch (_) {}
   try { await postToDiscord(`✅ **Approval logged (${methodLabel})** — ${name}${est.job_number ? ` · job ${est.job_number}` : ''} approved $${total.toLocaleString()}, witnessed by ${c.profile.name || ''}.`); } catch (_) {}
