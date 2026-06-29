@@ -14,7 +14,10 @@ const RANGES = { week: { days: 7, label: 'Last 7 days' }, month: { days: 30, lab
 const isDone = (s) => /done|complete|closed/.test(String(s || '').toLowerCase());
 
 export default async function BillableHours({ searchParams }) {
-  await requirePerm('seeReports', 'seeFinancials', 'seeAllTechs', 'manageUsers');
+  // Financial data (company revenue + per-tech $/hr) → gate on seeFinancials ONLY. This deliberately EXCLUDES
+  // the Field Supervisor (fs has seeReports but NOT seeFinancials — "FS sees no company financials") and other
+  // report-but-not-money roles (marketing/sales/dispatcher). Owner/admin/gm/om/accounting/viewer get in.
+  await requirePerm('seeFinancials');
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">⏱ Billable Hours</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel.</div></div>;
