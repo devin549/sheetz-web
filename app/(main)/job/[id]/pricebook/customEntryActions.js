@@ -23,6 +23,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
+import { scopeJob } from './scope';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 import { parseCoachResponse } from '@/lib/pricebookEngine';
 
@@ -106,6 +107,7 @@ export async function coachCustomEntry(rawName, rawDescription) {
 // still add the ad-hoc cart line without breaking.
 export async function recordCustomEntry(payload = {}) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err, recorded: false };
+  if (payload.jobId) { const s = await scopeJob(c, payload.jobId); if (s.err) return { ok: false, msg: s.err, recorded: false }; }
   const name = clean(payload.name, 160);
   if (!name) return { ok: false, msg: 'A name is required.', recorded: false };
 

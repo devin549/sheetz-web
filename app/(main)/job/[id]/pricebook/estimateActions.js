@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
+import { scopeJob } from './scope';
 import { postToDiscord } from '@/lib/discord';
 import { marginPct } from '@/lib/pricebookEngine';
 import { financingPartner } from '@/lib/financing';
@@ -64,6 +65,7 @@ async function ctx() {
 //   approval→usage path; the customer can switch tiers at the close, which re-points lines/subtotal server-side.
 export async function createEstimate(jobId, lines = [], opts = {}) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const s = await scopeJob(c, jobId); if (s.err) return { ok: false, msg: s.err };
   if (!Array.isArray(lines) || lines.length === 0) return { ok: false, msg: 'Add at least one item first.' };
 
   const { data: job } = await c.sb.from('jobs').select('id, job_number, customer_id, tech_id, customers(name)').eq('id', jobId).maybeSingle();
@@ -317,6 +319,7 @@ export async function logManualApproval(token, opts = {}) {
 
   const { data: est } = await c.sb.from('pricebook_estimates').select('*').eq('token', tk).maybeSingle();
   if (!est) return { ok: false, msg: 'Estimate not found.' };
+  const s = await scopeJob(c, est.job_id); if (s.err) return { ok: false, msg: s.err }; // can't witness an approval on another tech's job
   if (est.status === 'approved') return { ok: true, msg: 'Already approved.' };
 
   const total = num(est.subtotal);

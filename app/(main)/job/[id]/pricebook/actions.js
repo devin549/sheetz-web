@@ -6,6 +6,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { canOverrideMinimum, marginPct } from '@/lib/pricebookEngine';
+import { scopeJob } from './scope';
 
 const missing = (e) => /relation|column|schema cache|does not exist/i.test(e?.message || '');
 const clean = (v, n = 300) => String(v == null ? '' : v).trim().slice(0, n);
@@ -25,6 +26,7 @@ async function ctx() {
 // ask for approval (never silently discount). lines: [{ itemId, quantity, soldPrice, discountReason }].
 export async function recordSale(jobId, lines = [], opts = {}) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const s = await scopeJob(c, jobId); if (s.err) return { ok: false, msg: s.err };
   if (!Array.isArray(lines) || lines.length === 0) return { ok: false, msg: 'Add at least one item.' };
 
   // Pull the job context + the item rows (for cost/min/labor on each line).
