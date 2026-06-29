@@ -61,10 +61,12 @@ export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}
   // each tap, so re-tapping the same item re-opens it.
   useEffect(() => {
     const id = focusReq && focusReq.id; if (!id) return;
-    const it = byId[id]; if (!it) return;
+    const it = byId[id];
+    if (!it) { setSel(null); return; } // not in scope yet (book just switched) — the next render with full roots re-runs this
     const path = pathToItem(roots, id);
     setQ(''); if (path) setStack(path); setSel(it);
-  }, [focusReq, byId, roots]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusReq, byId]);
 
   const cur = stack[stack.length - 1] || null;
   const nodes = cur ? (cur.children || []) : roots;

@@ -210,8 +210,8 @@ export default function PricebookClient({ job, customer, roots = [], related = {
             </div>
           )}
           {/* Find the fix: 📸 scan the part, or describe the PROBLEM (symptom → our fixes). Search + browse below. */}
-          <PartPhotoScan onAdd={add} jobId={job.id} onFocus={(f) => setFocusReq({ id: f.id })} />
-          <ProblemFinder jobType={job.job_type || ''} onAdd={add} onFocus={(f) => setFocusReq({ id: f.id })} />
+          <PartPhotoScan onAdd={add} jobId={job.id} onFocus={(f) => { setBookId('all'); setFocusReq({ id: f.id }); }} />
+          <ProblemFinder jobType={job.job_type || ''} onAdd={add} onFocus={(f) => { setBookId('all'); setFocusReq({ id: f.id }); }} />
         </div>}
       />
 
