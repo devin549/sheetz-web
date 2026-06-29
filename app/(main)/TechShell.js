@@ -153,10 +153,9 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
         { icon: '📋', label: 'Overview', href: `/job/${curId}` },
         { icon: '📝', label: 'Forms', href: `/job/${curId}/forms` },
         { icon: '📸', label: 'Photos', href: `/job/${curId}/photos` },
-        // Sell flow in order: build in the Pricebook → present on the Estimate → collect on the Invoice.
+        // Sell flow: build in the Pricebook → the Quote tab carries it estimate → accept = invoice → collect.
         { icon: '📖', label: 'Pricebook', href: `/job/${curId}/pricebook` },
-        { icon: '🧾', label: 'Estimate', href: `/job/${curId}/estimate` },
-        { icon: '💳', label: 'Invoice', href: `/job/${curId}/invoice` },
+        { icon: '💵', label: 'Quote', href: `/job/${curId}/estimate` },
         { icon: '📦', label: 'Parts/PO', href: `/job/${curId}/parts` },
         { icon: '🔧', label: 'Equipment', href: `/job/${curId}/equipment` },
         { icon: '🕑', label: 'History', href: `/job/${curId}/history` },

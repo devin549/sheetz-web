@@ -19,7 +19,7 @@ export default function CustomerMemory({ mem, customer = {}, job = {} }) {
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 800, fontSize: 15 }}>{customer.name || 'Customer'}</span>
           {job.job_number ? <span className="muted" style={{ fontSize: 12 }}>#{job.job_number}</span> : null}
-          <Link href={`/job/${job.id}/invoice`} className="pill" style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--amber)' }}>🧾 Invoice · warranty + photos →</Link>
+          <Link href={`/job/${job.id}/estimate`} className="pill" style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--amber)' }}>💵 Quote · invoice + warranty →</Link>
         </div>
         {customer.address && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {customer.address}</div>}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
