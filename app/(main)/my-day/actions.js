@@ -15,27 +15,23 @@ export async function createJobPayLink(jobId, amountDollars) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const profile = user ? await loadProfile(user) : null;
-  if (!user || !profile || profile.active === false || !(can(profile.role, 'changeStatus') || can(profile.role, 'seeFinancials'))) return { ok: false, msg: 'Your role can’t collect payment.' };
+  if (!user || !profile || profile.active === false || !(can(profile.role, 'changeStatus') || can(profile.role, 'collectPayment'))) return { ok: false, msg: 'Your role can’t collect payment.' };
   if (!isStripeConfigured()) return { ok: false, msg: 'Stripe isn’t set up yet.' };
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Server not configured.' };
   const { data: job } = await sb.from('jobs').select('id, customer_id, job_number, job_type, amount, customers(name)').eq('id', jobId).maybeSingle();
   if (!job) return { ok: false, msg: 'Job not found.' };
-  // Suggested total = what the tech priced on this job (accepted proposal) → else the job's amount.
-  let suggested = Number(job.amount) || 0;
-  try {
-    const { data: props } = await sb.from('proposals').select('accepted_total, status, created_at').eq('job_id', jobId).order('created_at', { ascending: false }).limit(3);
-    const p = (props || []).find((x) => Number(x.accepted_total) > 0);
-    if (p) suggested = Number(p.accepted_total);
-  } catch (_) {}
+  const name = (job.customers && job.customers.name) || '';
+  // Prefer the OPEN invoice balance (it reflects any partial payment already taken) so a blank amount can't
+  // re-bill the full total — and tie the link to that invoice so the webhook marks it paid. Best-effort;
+  // falls back to the accepted proposal → the job's amount.
+  let invId = null, invNo = job.job_number || null, invBal = 0;
+  try { const { data: inv } = await sb.from('invoices').select('id, invoice_number, balance').eq('job_id', String(jobId)).gt('balance', 0).order('created_at', { ascending: false }).limit(1).maybeSingle(); if (inv) { invId = inv.id; invNo = inv.invoice_number || invNo; invBal = Number(inv.balance) || 0; } } catch (_) {}
+  let suggested = invBal > 0 ? invBal : (Number(job.amount) || 0);
+  if (!(invBal > 0)) { try { const { data: props } = await sb.from('proposals').select('accepted_total, created_at').eq('job_id', jobId).order('created_at', { ascending: false }).limit(3); const p = (props || []).find((x) => Number(x.accepted_total) > 0); if (p) suggested = Number(p.accepted_total); } catch (_) {} }
   const dollars = Number(amountDollars) > 0 ? Number(amountDollars) : suggested;
   const cents = Math.round(dollars * 100);
   if (cents < 50) return { ok: false, msg: 'Enter an amount to collect.' };
-  const name = (job.customers && job.customers.name) || '';
-  // Tie the pay-link to the job's OPEN invoice (auto-created from the approved estimate) so the Stripe webhook
-  // marks THAT invoice paid → balance 0. Best-effort; falls back to a job-number link if no invoice row yet.
-  let invId = null, invNo = job.job_number || null;
-  try { const { data: inv } = await sb.from('invoices').select('id, invoice_number').eq('job_id', String(jobId)).gt('balance', 0).order('created_at', { ascending: false }).limit(1).maybeSingle(); if (inv) { invId = inv.id; invNo = inv.invoice_number || invNo; } } catch (_) {}
   const r = await createInvoiceCheckout({ amountCents: cents, invoiceNumber: invNo, customerName: name, invoiceId: invId, customerId: job.customer_id });
   if (!r.ok) return { ok: false, msg: 'Stripe: ' + r.error };
   try { await sb.from('ar_activity').insert({ action: 'pay_link_created', customer_id: job.customer_id || null, customer_name: name || null, invoice_number: invNo, amount: cents / 100, by_email: 'field-paylink' }); } catch (_) {}

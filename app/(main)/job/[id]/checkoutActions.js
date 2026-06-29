@@ -17,9 +17,15 @@ import { revalidatePath } from 'next/cache';
 // paid_card so the close-out checklist reflects it. Shared by the reader + keyed-entry flows.
 async function recordPaidOnce(sb, jobId, profile, paymentIntentId, action) {
   try {
-    const { data: already } = await sb.from('ar_activity').select('id').eq('action', action).eq('invoice_number', paymentIntentId).limit(1).maybeSingle();
-    if (already) return;
-    await sb.from('ar_activity').insert({ action, invoice_number: paymentIntentId, by_email: profile.email || 'field-collect' });
+    // ATOMIC CLAIM — the unique index (mig 141) rejects a duplicate/concurrent insert, so only the FIRST
+    // caller gets past here. Closes the multi-tab/device reader-poll race that could double-post AR.
+    // Pre-141 (no index): fall back to a best-effort duplicate check (matches old behavior).
+    const claim = await sb.from('ar_activity').insert({ action, invoice_number: paymentIntentId, by_email: profile.email || 'field-collect' });
+    if (claim.error) {
+      if (/duplicate|unique|23505/i.test(claim.error.message || '')) return; // already recorded for this charge → stop
+      const { data: dup } = await sb.from('ar_activity').select('id').eq('action', action).eq('invoice_number', paymentIntentId).limit(2);
+      if ((dup || []).length > 1) return;
+    }
     await sb.from('job_closeout').upsert({ job_id: jobId, payment_disposition: 'paid_card', invoice_status: 'receipt_given', updated_by: profile.name || profile.email || 'field-collect', updated_at: new Date().toISOString() }, { onConflict: 'job_id' });
     // Reconcile to the job's OPEN invoice the same way the Stripe webhook does. Reader/keyed are raw
     // PaymentIntents the checkout.session webhook never sees, so we mark the invoice paid here, server-side,
@@ -37,13 +43,14 @@ async function recordPaidOnce(sb, jobId, profile, paymentIntentId, action) {
   } catch (_) {}
 }
 
-// Same gate as createJobPayLink — a role that can change status or see financials may collect.
+// Who may collect: a role that can change a job's status OR explicitly collect payment. NOT seeFinancials
+// alone — a read-only Viewer has seeFinancials but must never move money (audit F7).
 async function gateCollect() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const profile = user ? await loadProfile(user) : null;
   if (!user || !profile || profile.active === false) return { err: 'Not signed in.' };
-  if (!(can(profile.role, 'changeStatus') || can(profile.role, 'collectPayment') || can(profile.role, 'seeFinancials'))) return { err: 'Your role can’t collect payment.' };
+  if (!(can(profile.role, 'changeStatus') || can(profile.role, 'collectPayment'))) return { err: 'Your role can’t collect payment.' };
   return { user, profile };
 }
 
