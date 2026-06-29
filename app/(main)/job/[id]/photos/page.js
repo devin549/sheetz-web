@@ -91,7 +91,7 @@ export default async function JobPhotosScreen({ params }) {
       {/* Camera-FIRST proof tiles — tap a tile, the iPad camera opens. */}
       {canUpload && !photoError && (
         <div className="card" style={{ marginTop: 10 }}>
-          <ProofTiles jobId={id} photos={photos} segments={segments} requiredKinds={closeout.requiredKinds || []} requireVideo={closeout.requireVideo} />
+          <ProofTiles jobId={id} photos={photos} segments={segments} requiredKinds={closeout.requiredKinds || []} requireVideo={closeout.requireVideo} jobType={job.job_type || ''} />
         </div>
       )}
 

@@ -6,6 +6,7 @@
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { uploadJobPhoto, createVideoUploadUrl, recordVideoUpload } from './actions';
+import { prescanPhoto } from './photos/visionActions';
 import InAppCamera from './InAppCamera';
 
 // Equipment plate lives on the Equipment tab (AI plate scanner → make/model/year); Receipt lives on the
@@ -35,7 +36,7 @@ function getGps() {
   return new Promise((res) => { if (typeof navigator === 'undefined' || !navigator.geolocation) return res(null); navigator.geolocation.getCurrentPosition((p) => res({ lat: p.coords.latitude, lng: p.coords.longitude }), () => res(null), { enableHighAccuracy: true, timeout: 6000 }); });
 }
 
-export default function ProofTiles({ jobId, photos = [], segments = [], requiredKinds = [], requireVideo = false }) {
+export default function ProofTiles({ jobId, photos = [], segments = [], requiredKinds = [], requireVideo = false, jobType = '' }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [busyKind, setBusyKind] = useState(null);
@@ -127,6 +128,7 @@ export default function ProofTiles({ jobId, photos = [], segments = [], required
         <InAppCamera
           label={(TILES.find((t) => t.kind === camKind) || {}).label || 'Proof'}
           video={camKind === 'walkthrough'}
+          onPrecheck={camKind === 'walkthrough' ? null : (url) => prescanPhoto(url, jobType, requiredKinds)}
           onClose={() => setCamKind(null)}
           onCapture={(file) => { const k = camKind; setCamKind(null); start(() => shoot(file, k, 'camera')); }}
         />
