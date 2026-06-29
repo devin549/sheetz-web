@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
+import { canOverrideCreditHold } from '@/lib/creditHold';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 import { sendSms } from '@/lib/twilio';
 import { sendOne, isEmailConfigured } from '@/lib/email';
@@ -81,11 +82,15 @@ export async function customerSnapshot(id) {
     if (c.phone) { const { data: dup } = await sb.from('customers').select('id').eq('phone', c.phone).neq('id', id).limit(20); duplicates = (dup || []).length; }
   } catch (_) { /* ignore */ }
 
+  // credit hold (migration 130) — best-effort so the snapshot still works pre-migration.
+  let creditHold = false, creditHoldReason = null;
+  try { const { data: ch } = await sb.from('customers').select('credit_hold, credit_hold_reason').eq('id', id).maybeSingle(); if (ch) { creditHold = !!ch.credit_hold; creditHoldReason = ch.credit_hold_reason || null; } } catch (_) { /* pre-130 */ }
+
   return {
     name: c.name || 'Customer', phone: c.phone || '', email: c.email || '', address: c.address || '',
     lifetimeRevenue: Number(c.lifetime_revenue) || 0, lifetimeJobs: Number(c.lifetime_jobs) || 0,
     lastJob: c.last_job_completed || null, openBalance, doNotService: !!c.do_not_service, doNotMail: !!c.do_not_mail, type: c.type || '',
-    membership, priorTech, pastIssues: cancelled + lowReviews, duplicates,
+    membership, priorTech, pastIssues: cancelled + lowReviews, duplicates, creditHold, creditHoldReason,
   };
 }
 
@@ -247,6 +252,20 @@ export async function createBooking(formData) {
     delete consentPatch.marketing_consent; // pre-39 fallback
     await sb.from('customers').update(consentPatch).eq('id', customerId);
   }
+
+  // 🚦 Credit hold — a held customer can only be scheduled by an approver (owner/GM/accounting). Everyone
+  // else is blocked: no new work without approved terms. New customers can't be on hold. Best-effort so a
+  // pre-130 DB books normally.
+  try {
+    const { data: ch } = await sb.from('customers').select('credit_hold, credit_hold_reason').eq('id', customerId).maybeSingle();
+    if (ch?.credit_hold) {
+      if (!canOverrideCreditHold(ctx.profile.role)) {
+        return { ok: false, creditHold: true, msg: `🚦 CREDIT HOLD — ${ch.credit_hold_reason || 'past-due balance'}. Owner / GM / Accounting must approve before this customer is scheduled.` };
+      }
+      // Approver is booking it anyway — record the override so it's auditable.
+      try { await sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile.name || ctx.user.email, role: ctx.profile.role, action: 'job.book_credit_hold_override', entity: 'customer', entity_id: String(customerId), detail: { reason: ch.credit_hold_reason || null } }); } catch (_) {}
+    }
+  } catch (_) { /* pre-130: no hold column → book normally */ }
 
   let techName = null, techPhone = null;
   if (techId) {

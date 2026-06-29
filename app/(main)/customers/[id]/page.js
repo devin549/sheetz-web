@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { loadCustomerMemory } from '@/lib/customerMemory';
+import { canOverrideCreditHold } from '@/lib/creditHold';
+import CreditHoldToggle from './CreditHoldToggle';
 
 export const dynamic = 'force-dynamic';
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -10,11 +12,16 @@ const dial = (r) => { const d = String(r || '').replace(/[^\d]/g, ''); return d.
 const fmt = (iso) => { if (!iso) return ''; try { return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }); } catch { return ''; } };
 
 export default async function CustomerProfile({ params }) {
-  await requireHref('/customers');
+  const { role } = await requireHref('/customers');
   if (!isAdminConfigured) return <div className="wrap"><div className="h1">Customer</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code>.</div></div>;
   const sb = getSupabaseAdmin();
   const { data: c, error } = await sb.from('customers').select('id, cb_number, st_customer_id, name, phone, email, address, type, do_not_service, do_not_mail, lifetime_revenue, lifetime_jobs, last_job_completed').eq('id', params.id).maybeSingle();
   if (error || !c) notFound();
+
+  // Credit hold (migration 130) — best-effort so the profile still loads pre-migration.
+  let creditHold = false, creditHoldReason = null, creditHoldBy = null;
+  try { const { data: ch } = await sb.from('customers').select('credit_hold, credit_hold_reason, credit_hold_by').eq('id', c.id).maybeSingle(); if (ch) { creditHold = !!ch.credit_hold; creditHoldReason = ch.credit_hold_reason || null; creditHoldBy = ch.credit_hold_by || null; } } catch (_) { /* pre-130 */ }
+  const canHold = canOverrideCreditHold(role);
 
   // Reuse the Customer Memory aggregator (timeline / photos / equipment / balance / membership / summary).
   const mem = await loadCustomerMemory(sb, { customer_id: c.id, id: '__profile__' });
@@ -41,7 +48,9 @@ export default async function CustomerProfile({ params }) {
           {c.type && <span className="pill">{c.type}</span>}
           {mem.membership && <span className="pill" style={{ color: 'var(--green)' }}>⭐ {mem.membership}</span>}
           {c.do_not_service && <span className="pill" style={{ color: 'var(--red)', border: '1px solid var(--red)' }}>⛔ DO NOT SERVICE</span>}
+          {creditHold && <span className="pill" style={{ color: 'var(--red)', border: '1px solid var(--red)', fontWeight: 800 }}>🚦 CREDIT HOLD</span>}
         </div>
+        <CreditHoldToggle customerId={c.id} held={creditHold} reason={creditHoldReason} by={creditHoldBy} canEdit={canHold} />
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 8, fontSize: 13 }}>
           {tel && <a href={`tel:${tel}`}>📞 {c.phone}</a>}
           {c.email && <a href={`mailto:${c.email}`}>✉️ {c.email}</a>}

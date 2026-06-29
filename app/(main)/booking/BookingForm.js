@@ -135,8 +135,14 @@ export default function BookingForm({ techs }) {
             </div>
             {/* Dispatcher Co-Pilot snapshot */}
             {snap && (
-              <div className="card" style={{ padding: '10px 12px', borderLeft: `3px solid ${snap.doNotService ? 'var(--red)' : 'var(--amber)'}` }}>
+              <div className="card" style={{ padding: '10px 12px', borderLeft: `3px solid ${(snap.doNotService || snap.creditHold) ? 'var(--red)' : 'var(--amber)'}` }}>
                 <div style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>📋 Co-Pilot · before you book</div>
+                {snap.creditHold && (
+                  <div style={{ marginBottom: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(239,83,80,.12)', border: '1px solid var(--red)' }}>
+                    <div style={{ fontWeight: 800, fontSize: 12, color: 'var(--red)' }}>🚦 CREDIT HOLD</div>
+                    <div style={{ fontSize: 11.5, marginTop: 2 }}>{snap.creditHoldReason || 'Past-due balance.'} Owner / GM / Accounting must approve before scheduling.</div>
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
                   <span style={{ fontSize: 12.5 }}><strong>{money(snap.lifetimeRevenue)}</strong> <span className="muted">lifetime</span></span>
                   <span style={{ fontSize: 12.5 }}><strong>{snap.lifetimeJobs}</strong> <span className="muted">jobs</span></span>
