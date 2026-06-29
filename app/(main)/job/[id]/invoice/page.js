@@ -1,9 +1,10 @@
 import Link from 'next/link';
 import { loadCockpitMoney } from '../cockpit';
 import JobHeader from '../JobHeader';
-import CollectPay from './CollectPay';
+import CloseoutCheckout from '../CloseoutCheckout';
 import WorkSummaryCoach from '../WorkSummaryCoach';
 import { can } from '@/lib/roles';
+import { isStripeConfigured } from '@/lib/stripe';
 
 export const dynamic = 'force-dynamic';
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -22,6 +23,11 @@ export default async function InvoiceTab({ params }) {
   let workSummary = '';
   try { const { data: ws } = await c.sb.from('jobs').select('work_summary').eq('id', String(params.id)).maybeSingle(); workSummary = ws?.work_summary || ''; } catch (_) { /* pre-134 */ }
   const canEditSummary = can(c.role, 'changeStatus');
+  // Full pay menu: tap reader (preferred) · send card link · key in card · bank/ACH. Reader button unlocks
+  // once a WisePOS E is paired (migration 123). stripeReady gates the whole menu on STRIPE_SECRET_KEY.
+  const stripeReady = isStripeConfigured();
+  let hasReader = false;
+  try { const { count } = await c.sb.from('terminal_readers').select('id', { count: 'exact', head: true }); hasReader = (count || 0) > 0; } catch (_) { /* pre-123 */ }
 
   return (
     <div className="wrap" style={{ maxWidth: 760 }}>
@@ -50,7 +56,7 @@ export default async function InvoiceTab({ params }) {
         )}
       </div>
 
-      {canCollect && <CollectPay jobId={params.id} defaultAmount={amount} tel={dial(c.customer.phone)} />}
+      {canCollect && <CloseoutCheckout jobId={params.id} suggested={amount} tel={dial(c.customer.phone)} hasReader={hasReader} stripeReady={stripeReady} />}
     </div>
   );
 }
