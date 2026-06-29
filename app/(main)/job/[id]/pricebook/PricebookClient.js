@@ -62,6 +62,23 @@ export default function PricebookClient({ job, customer, roots = [], related = {
     }
   }, [preAdd]);
 
+  // 📕🌊 Book scope — top-level roots ARE the books (Clog plumbing vs Flood Busterz). Default to the book that
+  // matches THIS job's business unit, but never hard-lock: a one-tap switch covers the cross-sell job. Only
+  // shows the picker when there's more than one book.
+  const FLOOD_RE = /flood|water ?damage|mitigation|drying|restoration|content/i;
+  const jobIsFlood = FLOOD_RE.test(`${job.business_unit || ''} ${job.job_type || ''} ${job.job_class || ''}`);
+  const defaultBookId = useMemo(() => {
+    if (!roots || roots.length <= 1) return 'all';
+    const flood = roots.find((r) => FLOOD_RE.test(r.label || ''));
+    const plumbing = roots.find((r) => !FLOOD_RE.test(r.label || ''));
+    if (jobIsFlood && flood) return flood.id;
+    if (!jobIsFlood && plumbing) return plumbing.id;
+    return 'all';
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roots, jobIsFlood]);
+  const [bookId, setBookId] = useState(defaultBookId);
+  const shownRoots = bookId === 'all' ? roots : (roots || []).filter((r) => r.id === bookId);
+
   const cartIds = useMemo(() => new Set(cart.map((l) => l.id)), [cart]);
 
   const listSubtotal = cart.reduce((s, l) => s + (Number(l.soldPrice) || 0), 0);
@@ -175,10 +192,19 @@ export default function PricebookClient({ job, customer, roots = [], related = {
         {/* The full pricebook, drill-down. Tap an item → "Add to estimate" drops it in the cart. Scan-a-part
             and Custom-item ride on top of the browse. Cost/margin shows to managers only. */}
         <CatalogBrowser
-          embedded roots={roots} related={related} upgrades={upgrades} total={total}
+          embedded roots={shownRoots} related={related} upgrades={upgrades} total={total}
           showCost={showMargin} canEdit={false}
           onAddItem={add} cartIds={cartIds}
           topSlot={<div style={{ marginBottom: 10 }}>
+            {roots && roots.length > 1 && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                {roots.map((r) => {
+                  const on = bookId === r.id;
+                  return <button key={r.id} type="button" onClick={() => setBookId(r.id)} className="pill" style={{ cursor: 'pointer', fontWeight: on ? 800 : 600, background: on ? 'var(--amber)' : 'var(--surface-2)', color: on ? '#1a1206' : 'var(--fg-2)', border: '1px solid var(--border)' }}>{r.icon} {r.label}</button>;
+                })}
+                <button type="button" onClick={() => setBookId('all')} className="pill" style={{ cursor: 'pointer', fontWeight: bookId === 'all' ? 800 : 600, background: bookId === 'all' ? 'var(--amber)' : 'var(--surface-2)', color: bookId === 'all' ? '#1a1206' : 'var(--fg-2)', border: '1px solid var(--border)' }}>All books</button>
+              </div>
+            )}
             <CustomEntry jobId={job.id} onAdd={addCustom} />
             <BarcodeScan onAdd={addScanned} />
           </div>}
