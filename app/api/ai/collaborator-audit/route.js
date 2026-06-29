@@ -54,9 +54,12 @@ async function gatherSnapshot() {
   ] = await Promise.all([
     safeQuery(
       'todaysJobs',
+      // jobs has NO flat customer_name — the name lives on the related customers row (same class of bug
+      // already fixed below for top_past_due / recent_job_moves). Join customers(name); it's flattened to
+      // customer_name in the snapshot mapping below so the AI prompt reads a plain name.
       sb
         .from('jobs')
-        .select('id, job_number, customer_name, status, scheduled_at, tech_name, amount, job_type, priority')
+        .select('id, job_number, status, scheduled_at, tech_name, amount, job_type, priority, customers(name)')
         .gte('scheduled_at', todayStart)
         .lte('scheduled_at', todayEnd)
         .order('scheduled_at', { ascending: true })
@@ -145,7 +148,7 @@ async function gatherSnapshot() {
       seven_days_ago: sevenDaysAgo.toISOString(),
     },
     data_errors: errors,
-    todays_jobs: todaysJobs.data,
+    todays_jobs: (todaysJobs.data || []).map(({ customers, ...j }) => ({ ...j, customer_name: customers?.name || null })),
     open_eta_reports: openEtaReports.data,
     failed_closeouts: failedCloseouts.data,
     top_past_due: topPastDue.data,
