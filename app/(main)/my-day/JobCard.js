@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useTransition } from 'react';
+import { useState, useEffect, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { updateMyJobStatus, reportEta, createJobPayLink } from './actions';
-import { notifyEnRoute } from '../job/[id]/actions';
+import { notifyEnRoute, notifyArrived } from '../job/[id]/actions';
 import PersonCard from '@/components/PersonCard';
 import { TAG_COLOR } from '@/lib/jobTags';
 
@@ -13,6 +13,8 @@ const ETA_CHIPS = [15, 30, 45, 60];
 function fmtTime(iso) { if (!iso) return '—'; try { return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch { return '—'; } }
 function money(n) { return '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
 function dial(raw) { const d = String(raw || '').replace(/[^\d]/g, ''); if (d.length === 10) return '+1' + d; if (d.length === 11 && d[0] === '1') return '+' + d; return d ? '+' + d : ''; }
+function metersBetween(aLat, aLng, bLat, bLng) { const R = 6371000, rad = (d) => (d * Math.PI) / 180; const dLat = rad(bLat - aLat), dLng = rad(bLng - aLng); const x = Math.sin(dLat / 2) ** 2 + Math.cos(rad(aLat)) * Math.cos(rad(bLat)) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); }
+const ARRIVE_RADIUS_M = 150; // same geofence the shell uses to auto-quiet the ribbon at the house
 function statusPill(status) {
   const s = String(status || '').toLowerCase();
   if (/done|complete|closed/.test(s)) return { label: '✓ COMPLETE', cls: 'pill pill-green' };
@@ -20,7 +22,9 @@ function statusPill(status) {
   if (/on_site|onsite/.test(s)) return { label: '📍 ON-SITE', cls: 'pill pill-green' };
   if (/enroute|en route|rolling/.test(s)) return { label: '🚚 EN ROUTE', cls: 'pill', color: 'var(--amber)' };
   if (/cancel/.test(s)) return { label: 'CANCELLED', cls: 'pill', color: 'var(--fg-3)' };
-  return { label: (status || 'scheduled').toUpperCase(), cls: 'pill' };
+  // Scheduled = not started yet → show it as PENDING (flips to EN ROUTE → ON-SITE → COMPLETE as they go).
+  if (!s || /schedul|pending/.test(s)) return { label: '⏳ PENDING', cls: 'pill', color: 'var(--fg-3)' };
+  return { label: status.toUpperCase(), cls: 'pill' };
 }
 
 // Big touch-friendly step buttons — the field workflow the iPad exists for.
@@ -90,6 +94,12 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
   // en-route notify belongs with the customer on My Day; once you're IN the job you're at the house).
   const notify = () => { setEnrMsg(null); start(async () => { const r = await notifyEnRoute(job.id); setEnrMsg(r); if (r?.ok) router.refresh(); }); };
 
+  // 📍 Auto-arrival (app open): while EN ROUTE, watch GPS; when within ~150m of the job, ping the office once
+  // ("GPS arrived") and show the tech an Arrive prompt. They still confirm by tapping (no false-positive
+  // auto-on-site). Web limit: only works while the app is open — hands-off arrival needs the native app.
+  const [atJob, setAtJob] = useState(false);
+  const arrivedRef = useRef(false);
+
   const makePayLink = () => { setPayErr(null); start(async () => { const r = await createJobPayLink(job.id, Number(payAmt)); if (r.ok) setPayLink(r); else setPayErr(r.msg); }); };
 
   const cust = job.customers || {};
@@ -134,12 +144,28 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
     const tick = () => { const ms = Date.now() - Date.parse(job.started_at); if (ms < 0) return; const m = Math.floor(ms / 60000); setElapsedMin(m); setElapsed(m < 60 ? `${m}m on-site` : `${Math.floor(m / 60)}h ${m % 60}m on-site`); };
     tick(); const i = setInterval(tick, 30000); return () => clearInterval(i);
   }, [variant, job.started_at]);
+  // 📍 Geofence: while EN ROUTE to this job, watch GPS; within ~150m → ping the office once + show Arrive.
+  useEffect(() => {
+    if (variant !== 'active' || cur !== 'enroute' || job.lat == null || job.lng == null) return;
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    let alive = true, watchId = null;
+    const onPos = (pos) => {
+      if (!alive) return;
+      const d = metersBetween(pos.coords.latitude, pos.coords.longitude, Number(job.lat), Number(job.lng));
+      if (d <= ARRIVE_RADIUS_M) { setAtJob(true); if (!arrivedRef.current) { arrivedRef.current = true; notifyArrived(job.id).catch(() => {}); } }
+    };
+    watchId = navigator.geolocation.watchPosition(onPos, () => {}, { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 });
+    return () => { alive = false; if (watchId != null) navigator.geolocation.clearWatch(watchId); };
+  }, [variant, cur, job.lat, job.lng, job.id]);
   // 🎯 Next stop: drive there + whether we'll make their window (slack). Computed from the passed leg+time.
   let nextLine = null;
   if (next && next.time) {
-    const arriveMs = Date.now() + (Number(next.driveMin) || 0) * 60000;
+    const driveMin = Math.round(Number(next.driveMin) || 0);
+    const arriveMs = Date.now() + driveMin * 60000;
     const slack = Math.round((Date.parse(next.time) - arriveMs) / 60000);
-    nextLine = { customer: String(next.customer || 'next stop').split(/\s+/)[0], at: fmtTime(next.time), driveMin: Math.round(Number(next.driveMin) || 0), slack };
+    // "Wrap up by" = leave-by time to still make the next window = next start − drive time.
+    const finishBy = fmtTime(new Date(Date.parse(next.time) - driveMin * 60000).toISOString());
+    nextLine = { customer: String(next.customer || 'next stop').split(/\s+/)[0], at: fmtTime(next.time), driveMin, slack, finishBy };
   }
 
   // Whole card is a tap-target into the job (HTML cbOpenJob) — but clicks on inner controls (Running late
@@ -171,12 +197,31 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
           {variant === 'active' && !cancelled && !done && nextLine ? (
             <div style={{ marginTop: 5, fontSize: 11, color: 'var(--fg-2)', background: 'rgba(255,179,0,0.08)', border: '1px solid var(--amber-dim)', padding: '3px 7px', borderRadius: 6, display: 'inline-block' }}>🎯 {nextLine.driveMin}-min drive → <strong>{nextLine.customer}</strong> {nextLine.at} · <span style={{ color: nextLine.slack >= 0 ? 'var(--green)' : 'var(--red)' }}>{nextLine.slack >= 0 ? `+${nextLine.slack} slack` : `${-nextLine.slack} tight`}</span></div>
           ) : null}
+          {/* ⏳ finish-by nudge — only while ON-SITE: wrap up by X to keep the next job on time (red if over). */}
+          {variant === 'active' && !cancelled && !done && cur === 'on_site' && nextLine ? (
+            <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: nextLine.slack >= 0 ? 'var(--amber)' : 'var(--red)' }}>
+              {nextLine.slack >= 0
+                ? `⏳ Wrap up by ${nextLine.finishBy} to keep ${nextLine.customer} ${nextLine.at} on time`
+                : `🚨 Running into ${nextLine.customer}'s ${nextLine.at} — ${-nextLine.slack} min over · tap “Running late” to auto-text them`}
+            </div>
+          ) : null}
         </div>
         <span className={pill.cls} style={pill.color ? { color: pill.color } : undefined}>{cur === 'on_site' && elapsedMin > 0 ? `${pill.label} · ${elapsedMin}m` : pill.label}</span>
       </div>
 
+      {/* 📍 GPS says you're at the job — confirm Arrive (the office was already pinged). */}
+      {variant === 'active' && canAct && !cancelled && !done && cur === 'enroute' && atJob && (
+        <div data-no-nav style={{ marginTop: 8 }}>
+          <button onClick={() => setStatus('on_site')} disabled={pending}
+            style={{ width: '100%', padding: '13px', borderRadius: 10, border: 'none', background: 'var(--green-bright, #2ee6a0)', color: '#06210f', fontWeight: 800, fontSize: 14, cursor: pending ? 'default' : 'pointer', opacity: pending ? 0.6 : 1 }}>
+            📍 You're at {(cust.name || 'the customer').split(/\s+/)[0]}&apos;s — tap to Arrive
+          </button>
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>GPS detected you here · office notified</div>
+        </div>
+      )}
+
       {/* 🚐 On my way — the en-route notify lives HERE on the My Day card (with the customer), not the job. */}
-      {variant === 'active' && canAct && !cancelled && !done && cur !== 'on_site' && (
+      {variant === 'active' && canAct && !cancelled && !done && cur !== 'on_site' && !atJob && (
         <div data-no-nav style={{ marginTop: 8 }}>
           <button onClick={notify} disabled={pending}
             style={{ width: '100%', padding: '11px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#0d47a1 0%,#1565c0 100%)', color: '#fff', fontWeight: 800, fontSize: 13, cursor: pending ? 'default' : 'pointer', opacity: pending ? 0.6 : 1 }}>

@@ -337,6 +337,17 @@ export async function notifyEnRoute(jobId) {
   return { ok: true, msg: `Marked en route — office will text ${custName(ctx.job)} your ETA.` };
 }
 
+// GPS-detected arrival → tell the office (the tech's device crossed into ~150m of the job while the app's
+// open). Does NOT flip status — the tech still confirms by tapping Arrive (no false-positive auto-on-site).
+// Idempotent-ish: the caller fires it once per geofence entry. Office relay only, never the customer.
+export async function notifyArrived(jobId) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!can(ctx.role, 'changeStatus')) return { ok: false, msg: 'Your role can’t update status.' };
+  await pingOffice(ctx, 'job.arrived_gps', `📍 **GPS — ${ctx.profile?.name || 'Tech'} arrived** at ${custName(ctx.job)}${ctx.job.job_number ? ` · job ${ctx.job.job_number}` : ''} (within ~150m).`, { job_number: ctx.job.job_number, via: 'gps' });
+  return { ok: true };
+}
+
 // "Need a hand?" + step-away (Parts run / Lunch / Personal). The job STAYS OPEN; the office is told why
 // the tech stepped off so nobody thinks it stalled. Internal only.
 const STEP_REASONS = { parts_run: 'Parts run', lunch: 'Lunch', personal: 'Personal', help: 'Needs a hand' };
