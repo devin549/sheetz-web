@@ -4,6 +4,7 @@ import { useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { updateMyJobStatus, reportEta, createJobPayLink } from './actions';
+import { notifyEnRoute } from '../job/[id]/actions';
 import PersonCard from '@/components/PersonCard';
 import { TAG_COLOR } from '@/lib/jobTags';
 
@@ -83,6 +84,11 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
   const [payAmt, setPayAmt] = useState(job.amount ? String(job.amount) : '');
   const [payLink, setPayLink] = useState(null);
   const [payErr, setPayErr] = useState(null);
+  const [enrMsg, setEnrMsg] = useState(null);
+
+  // 🚐 "On my way" — pings the office to text the customer your ETA. Lives on the My Day card (Devin: the
+  // en-route notify belongs with the customer on My Day; once you're IN the job you're at the house).
+  const notify = () => { setEnrMsg(null); start(async () => { const r = await notifyEnRoute(job.id); setEnrMsg(r); if (r?.ok) router.refresh(); }); };
 
   const makePayLink = () => { setPayErr(null); start(async () => { const r = await createJobPayLink(job.id, Number(payAmt)); if (r.ok) setPayLink(r); else setPayErr(r.msg); }); };
 
@@ -174,8 +180,19 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
         <span className={pill.cls} style={pill.color ? { color: pill.color } : undefined}>{cur === 'on_site' && elapsedMin > 0 ? `${pill.label} · ${elapsedMin}m` : pill.label}</span>
       </div>
 
-      {/* Running late relay — active card only (the HTML on-site ETA nudge). data-no-nav stops the card-tap. */}
-      {variant === 'active' && canAct && !cancelled && !done && (
+      {/* 🚐 On my way — the en-route notify lives HERE on the My Day card (with the customer), not the job. */}
+      {variant === 'active' && canAct && !cancelled && !done && cur !== 'on_site' && (
+        <div data-no-nav style={{ marginTop: 8 }}>
+          <button onClick={notify} disabled={pending}
+            style={{ width: '100%', padding: '11px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#0d47a1 0%,#1565c0 100%)', color: '#fff', fontWeight: 800, fontSize: 13, cursor: pending ? 'default' : 'pointer', opacity: pending ? 0.6 : 1 }}>
+            🚐 {cur === 'enroute' ? `Notify ${(cust.name || 'the customer').split(/\s+/)[0]} — I'm on my way` : `On my way — text ${(cust.name || 'the customer').split(/\s+/)[0]} my ETA`}
+          </button>
+          {enrMsg && <div style={{ fontSize: 11.5, marginTop: 6, color: enrMsg.ok ? 'var(--green)' : 'var(--red)' }}>{enrMsg.msg}</div>}
+        </div>
+      )}
+
+      {/* Running late / how-much-longer relay — the ON-SITE ETA nudge. data-no-nav stops the card-tap. */}
+      {variant === 'active' && canAct && !cancelled && !done && cur === 'on_site' && (
         <div data-no-nav style={{ marginTop: 8 }}>
           {!lateOpen ? (
             <button onClick={() => { setLateOpen(true); setLateMsg(null); }}

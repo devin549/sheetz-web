@@ -18,6 +18,7 @@ import JobVideo from './JobVideo';
 import CustomerMemory from './CustomerMemory';
 import LinkToProject from './LinkToProject';
 import JobActionCards from './JobActionCards';
+import RollOverCard from './RollOverCard';
 import JobHeader from './JobHeader';
 import { loadCustomerMemory } from '@/lib/customerMemory';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
@@ -368,6 +369,9 @@ export default async function JobDetail({ params }) {
         isDone={isDone}
         currentUserId={user.id}
       />
+
+      {/* 🏁 End of the job — bill it out or roll it over (moved here from the top, per Devin). */}
+      {!isDone && <RollOverCard jobId={id} canAct={canAct} />}
     </div>
   );
 }
