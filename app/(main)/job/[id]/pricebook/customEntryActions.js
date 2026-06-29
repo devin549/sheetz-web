@@ -188,3 +188,48 @@ export async function reviewWorkSummary(notes, jobType) {
     },
   };
 }
+
+// ── 4. Describe-the-problem → find-the-fix ────────────────────────────────────────────────────────────────
+// The tech describes the SYMPTOM ("toilet leaking around base", "disposal humming") instead of naming a part.
+// Claude maps it to the fix concepts a plumber would do, then we match those to OUR pricebook → the fixes to
+// add (the Good/Better/Best). Solves the parts the photo scan struggles with (disposals) + symptom search
+// ("leaking around base" → wax ring). Suggest-only; fails soft without the owner key.
+const FIX_FINDER_SYSTEM = [
+  "You are a plumbing fix-finder for Clog Busterz. A tech describes a PROBLEM/symptom (not a part name).",
+  "Name the likely cause in one short line, and give 2-6 SHORT lowercase search terms a pricebook of plumbing",
+  "SERVICES would contain for the fix. Examples:",
+  "  'toilet leaking around base' → cause: failed wax ring / loose flange; terms: [\"wax ring\",\"reset toilet\",\"toilet flange\",\"rebuild toilet\",\"replace toilet\"]",
+  "  'garbage disposal humming, won't spin' → cause: jammed or failed motor; terms: [\"garbage disposal\",\"disposal replace\",\"disposal repair\"]",
+  "  'kitchen sink slow, grease' → cause: grease-coated line; terms: [\"hydro jet\",\"drain cleaning\",\"cable drain\",\"camera inspection\"]",
+  'Return ONLY JSON: {"cause":"…","terms":["…"]}. No prices, no preamble.',
+].join('\n');
+
+export async function findFixesByProblem(problem, jobType) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const p = clean(problem, 300);
+  if (!p) return { ok: false, msg: 'Describe the problem first.' };
+  if (!isAiConfigured(COACH_ROLE)) return { ok: false, msg: 'Add ANTHROPIC_KEY_OWNER in Vercel to use the fix-finder.' };
+  const anthropic = getAnthropic(COACH_ROLE);
+  let res;
+  try {
+    res = await anthropic.messages.create({
+      model: AI_MODEL, max_tokens: 300, output_config: { effort: 'low' },
+      system: FIX_FINDER_SYSTEM,
+      messages: [{ role: 'user', content: `Job type: ${clean(jobType, 80) || '(unknown)'}\nProblem: ${p}\nJSON only.` }],
+    });
+  } catch (e) { return { ok: false, msg: 'AI error: ' + String((e && e.message) || e).slice(0, 140) }; }
+  await logAiUsage(c, 'fix-finder', res);
+  let j; try { j = JSON.parse((aiText(res).match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch (_) { j = {}; }
+  const cause = clean(j.cause, 160);
+  const terms = (Array.isArray(j.terms) ? j.terms : []).map((t) => clean(t, 40).toLowerCase()).filter(Boolean);
+  if (!terms.length) return { ok: true, cause, fixes: [] };
+  let items = [];
+  try { const { data } = await c.sb.from('pricebook_items').select('id, name, customer_name, retail_price, tags').eq('active', true).eq('customer_visible', true).limit(2000); items = data || []; } catch (_) {}
+  const scored = items.map((it) => {
+    const hay = `${it.customer_name || ''} ${it.name || ''} ${(it.tags || []).join(' ')}`.toLowerCase();
+    let s = 0;
+    for (const t of terms) { if (hay.includes(t)) s += 3; else for (const w of t.split(/\s+/)) { if (w.length > 2 && hay.includes(w)) s += 1; } }
+    return { it, s };
+  }).filter((x) => x.s > 0).sort((a, b) => b.s - a.s).slice(0, 6);
+  return { ok: true, cause, fixes: scored.map(({ it }) => ({ id: it.id, name: it.customer_name || it.name, price: Number(it.retail_price) || 0 })) };
+}

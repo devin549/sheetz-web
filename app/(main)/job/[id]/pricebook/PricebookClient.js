@@ -10,6 +10,7 @@ import { createEstimate, sendEstimateText, sendEstimateEmail, markPresented, get
 import { coachCustomEntry, recordCustomEntry } from './customEntryActions';
 import BarcodeScan from './BarcodeScan';
 import PartPhotoScan from './PartPhotoScan';
+import ProblemFinder from './ProblemFinder';
 import CatalogBrowser from '@/app/(main)/catalog/CatalogBrowser';
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString();
@@ -207,8 +208,9 @@ export default function PricebookClient({ job, customer, roots = [], related = {
               <button type="button" onClick={() => setBookId('all')} className="pill" style={{ cursor: 'pointer', fontWeight: bookId === 'all' ? 800 : 600, background: bookId === 'all' ? 'var(--amber)' : 'var(--surface-2)', color: bookId === 'all' ? '#1a1206' : 'var(--fg-2)', border: '1px solid var(--border)' }}>All books</button>
             </div>
           )}
-          {/* Step 1: scan the part. (Search + browse render right below, inside the book.) */}
+          {/* Find the fix: 📸 scan the part, or describe the PROBLEM (symptom → our fixes). Search + browse below. */}
           <PartPhotoScan onAdd={add} />
+          <ProblemFinder jobType={job.job_type || ''} onAdd={add} />
         </div>}
       />
 
