@@ -6,6 +6,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { postToDiscord } from '@/lib/discord';
 import { marginPct } from '@/lib/pricebookEngine';
 import { createInvoiceFromEstimate } from '@/lib/invoiceFromEstimate';
+import { TERMS_VERSION } from '@/lib/estimateTerms';
 
 // PUBLIC actions — authenticated by the unguessable token in the link, NOT a login. The customer can only
 // touch their own estimate. No internal data is ever returned to the browser.
@@ -116,7 +117,7 @@ export async function approveEstimate(token, opts = {}) {
   const chosen = tierKey ? allTiers.find((t) => t && t.key === tierKey) : null;
   const lines = chosen && Array.isArray(chosen.lines) && chosen.lines.length ? chosen.lines : (Array.isArray(est.lines) ? est.lines : []);
   const total = chosen ? (Number(chosen.subtotal) || lines.reduce((s, l) => s + (Number(l.price) || 0), 0)) : Number(est.subtotal || 0);
-  const consentText = `I, ${name}, approve this estimate of $${total.toLocaleString()} from Clog Busterz Plumbing and authorize the work described.`;
+  const consentText = `I, ${name}, approve this estimate of $${total.toLocaleString()} from Clog Busterz Plumbing, authorize the work described, and agree to the Clog Busterz Work Authorization & Terms and Conditions (${TERMS_VERSION}).`;
 
   const itemIds = lines.map((l) => l.itemId).filter(Boolean);
   const costById = {};

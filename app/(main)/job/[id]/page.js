@@ -6,6 +6,7 @@ import { can } from '@/lib/roles';
 import { computeCloseout, getDispo, getParts, getForms, isEstimateJob, ruleForJob } from '@/lib/qa';
 import JobPhotos from './JobPhotos';
 import CloseoutV2 from './CloseoutV2';
+import CompletionSignature from './CompletionSignature';
 import JobParts from './JobParts';
 import JobForms from './JobForms';
 import JobFlow from './JobFlow';
@@ -365,6 +366,7 @@ export default async function JobDetail({ params }) {
       })()}
 
       {!photoError && !isEstimate && <CloseoutV2 jobId={id} dispo={dispo} needWarranty={needWarranty} officeBilled={officeBilled} netDays={netDays} />}
+      {!photoError && !isEstimate && <CompletionSignature jobId={id} signedName={dispo.row?.completion_signed_name} signedAt={dispo.row?.completion_signed_at} />}
 
       <JobVideo jobId={id} videos={videos} canUpload={canUpload && !photoError} requireVideo={closeout.requireVideo} />
 

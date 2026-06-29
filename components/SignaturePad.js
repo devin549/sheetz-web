@@ -1,7 +1,7 @@
 'use client';
 
-// ✍️ Finger/stylus/mouse signature pad → PNG data URL. Used on the customer estimate approval (the
-// stand-in for text-to-sign until Twilio A2P clears). onChange(dataUrl|null) fires as they sign / clear.
+// ✍️ Finger/stylus/mouse signature pad → PNG data URL. Shared by the customer estimate approval and the
+// job completion sign-off. onChange(dataUrl|null) fires as they sign / clear.
 import { useRef, useState } from 'react';
 
 export default function SignaturePad({ onChange, height = 150 }) {

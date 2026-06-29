@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from 'react';
 import { approveEstimate, askQuestion, requestDeposit, declineEstimate, chooseTier, joinClogClub } from './actions';
-import SignaturePad from './SignaturePad';
+import SignaturePad from '@/components/SignaturePad';
+import { WORK_AUTHORIZATION_TERMS } from '@/lib/estimateTerms';
 import { memberOffer } from '@/lib/memberSavings';
 import { financingOffer } from '@/lib/financing';
 
@@ -353,12 +354,13 @@ export default function CustomerEstimate({ est }) {
           <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 4, color: INK }}>
             Approve {money(approveTotal)}{hasLadder && pickedTier ? <span style={{ color: GOLD }}> · {pickedTier.name}</span> : ''}
           </div>
-          <p style={{ color: MUTE, fontSize: 13, margin: '0 0 12px' }}>Type your name to authorize the work. This is your record of approval.</p>
+          <p style={{ color: MUTE, fontSize: 13, margin: '0 0 10px' }}>Please read the terms, type your name, and sign to authorize the work.</p>
+          <div style={{ maxHeight: 200, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: SURF2, border: `1px solid ${LINE}`, borderRadius: 10, padding: 12, marginBottom: 12, fontSize: 11.5, lineHeight: 1.55, color: MUTE, whiteSpace: 'pre-wrap' }}>{WORK_AUTHORIZATION_TERMS}</div>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your full name" autoFocus
             style={{ width: '100%', boxSizing: 'border-box', background: SURF2, border: `1px solid ${LINE}`, color: INK, borderRadius: 10, padding: 13, fontSize: 16, marginBottom: 12 }} />
           <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5, color: INK, cursor: 'pointer', marginBottom: 14 }}>
             <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }} />
-            <span>I, <strong>{name.trim() || 'the customer'}</strong>, approve this {money(approveTotal)} estimate from Clog Busterz Plumbing and authorize the work described.</span>
+            <span>I, <strong>{name.trim() || 'the customer'}</strong>, approve this {money(approveTotal)} estimate from Clog Busterz Plumbing, authorize the work described, and agree to the Work Authorization & Terms and Conditions above.</span>
           </label>
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Sign to approve</div>

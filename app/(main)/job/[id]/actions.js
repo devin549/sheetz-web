@@ -397,6 +397,24 @@ export async function flagFieldSubcontractor(jobId, dataUrl, opts = {}) {
   return { ok: true, msg: 'Sent to accounting to verify before payment.' };
 }
 
+// ✍️ FINAL (completion) signature — the customer signs the completion-acceptance terms when the work is done
+// ("full and final acceptance of the work performed"). Stored on the job's closeout row. changeStatus-gated;
+// fail-soft pre-migration 140.
+export async function saveCompletionSignature(jobId, opts = {}) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!can(ctx.role, 'changeStatus')) return { ok: false, msg: 'Not allowed.' };
+  const sig = (typeof opts.signature === 'string' && /^data:image\//.test(opts.signature)) ? opts.signature.slice(0, 300000) : null;
+  const name = cleanText(opts.name, 120);
+  if (!sig) return { ok: false, msg: 'Have the customer sign first.' };
+  if (!name) return { ok: false, msg: 'Enter the customer’s name.' };
+  const { error } = await ctx.sb.from('job_closeout').upsert({ job_id: ctx.job.id, completion_signature: sig, completion_signed_name: name, completion_signed_at: new Date().toISOString() }, { onConflict: 'job_id' });
+  if (error) return { ok: false, msg: /completion_sign|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/140_completion_signature.sql first.' : error.message };
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'job.completion_signed', entity: 'job', entity_id: String(ctx.job.id), detail: { name } }); } catch (_) {}
+  revalidatePath(`/job/${ctx.job.id}`);
+  return { ok: true, msg: 'Final acceptance signed — thank you.' };
+}
+
 // 🏷 Office tags on a job — the office types free labels (gate code, 2 dogs, proof needed, "water heater
 // install"). The tech sees them on the My Day card; tag→form rules attach matching forms (lib/jobTags).
 // Office/dispatch only — a field tech can't tag their own job.

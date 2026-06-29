@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { loadCockpitMoney } from '../../cockpit';
+import { WORK_AUTHORIZATION_TERMS } from '@/lib/estimateTerms';
 
 export const dynamic = 'force-dynamic';
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -13,7 +14,12 @@ export default async function InvoiceSummary({ params }) {
   if (!c.configured) return <div className="wrap"><div className="h1">Invoice</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code>.</div></div>;
 
   let est = null, inv = null, workSummary = '';
-  try { const { data } = await c.sb.from('pricebook_estimates').select('lines, subtotal, headline, status, approved_name, approval_method, consent_text, responded_at').eq('job_id', c.job.id).order('created_at', { ascending: false }).limit(20); est = (data || []).find((e) => e.status === 'approved') || (data || [])[0] || null; } catch (_) {}
+  const ESTSEL = 'lines, subtotal, headline, status, approved_name, approval_method, consent_text, responded_at';
+  try {
+    let { data, error } = await c.sb.from('pricebook_estimates').select(ESTSEL + ', signature_data, signed_at').eq('job_id', c.job.id).order('created_at', { ascending: false }).limit(20);
+    if (error && /signature|column|schema cache/i.test(error.message || '')) ({ data } = await c.sb.from('pricebook_estimates').select(ESTSEL).eq('job_id', c.job.id).order('created_at', { ascending: false }).limit(20)); // pre-139
+    est = (data || []).find((e) => e.status === 'approved') || (data || [])[0] || null;
+  } catch (_) {}
   try { const { data } = await c.sb.from('invoices').select('invoice_number, total, balance, status, invoice_date, due_date').eq('job_id', String(params.id)).order('created_at', { ascending: false }).limit(1).maybeSingle(); inv = data || null; } catch (_) {}
   try { const { data } = await c.sb.from('jobs').select('work_summary').eq('id', String(params.id)).maybeSingle(); workSummary = data?.work_summary || ''; } catch (_) {}
 
@@ -101,13 +107,19 @@ export default async function InvoiceSummary({ params }) {
           <div style={{ marginTop: 18, padding: '10px 12px', border: cardBorder, borderRadius: 8, fontSize: 12, color: '#444' }}>
             <div style={{ fontWeight: 800, color: '#1a1a1a', marginBottom: 2 }}>Customer authorization</div>
             {est.consent_text || `Approved by ${est.approved_name}${est.approval_method ? ` (${est.approval_method})` : ''}.`}{est.responded_at ? ` · ${fmt(est.responded_at)}` : ''}
+            {est.signature_data && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 10, color: '#888' }}>Signature</div>
+                <img src={est.signature_data} alt="Customer signature" style={{ maxHeight: 80, maxWidth: 280, background: '#fff', border: '1px solid #e3ddcf', borderRadius: 6 }} />
+                <div style={{ fontSize: 11, color: '#1a1a1a', borderTop: '1px solid #1a1a1a', width: 280, marginTop: 2, paddingTop: 2 }}>{est.approved_name}{est.signed_at ? ` · ${fmt(est.signed_at)}` : ''}</div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Terms */}
-        <div style={{ marginTop: 14, fontSize: 10.5, color: '#777', lineHeight: 1.6 }}>
-          <strong>Terms:</strong> Payment due immediately upon completion unless prior bill-out/commercial arrangements (net 30). All invoices due upon receipt. $50 fee for returned checks. Unpaid balances accrue a 1.5%/mo finance charge (18% APR) until paid; customer agrees to pay reasonable collection costs, attorney fees, and court costs as permitted by law. Thank you for choosing Clog Busterz Plumbing!
-        </div>
+        {/* Terms — verbatim Work Authorization & Terms and Conditions (drafted by counsel). */}
+        <div style={{ marginTop: 14, fontSize: 9.5, color: '#666', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{WORK_AUTHORIZATION_TERMS}</div>
+        <div style={{ marginTop: 8, fontSize: 10, color: '#999', textAlign: 'center' }}>Thank you for choosing Clog Busterz Plumbing!</div>
       </div>
     </div>
   );
