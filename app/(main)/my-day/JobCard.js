@@ -146,7 +146,7 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
   }, [variant, job.started_at]);
   // 📍 Geofence: while EN ROUTE to this job, watch GPS; within ~150m → ping the office once + show Arrive.
   useEffect(() => {
-    if (variant !== 'active' || cur !== 'enroute' || job.lat == null || job.lng == null) return;
+    if (!canAct || variant !== 'active' || cur !== 'enroute' || job.lat == null || job.lng == null) return;
     if (typeof navigator === 'undefined' || !navigator.geolocation) return;
     let alive = true, watchId = null;
     const onPos = (pos) => {
@@ -156,10 +156,10 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
     };
     watchId = navigator.geolocation.watchPosition(onPos, () => {}, { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 });
     return () => { alive = false; if (watchId != null) navigator.geolocation.clearWatch(watchId); };
-  }, [variant, cur, job.lat, job.lng, job.id]);
+  }, [canAct, variant, cur, job.lat, job.lng, job.id]);
   // 🎯 Next stop: drive there + whether we'll make their window (slack). Computed from the passed leg+time.
   let nextLine = null;
-  if (next && next.time) {
+  if (next && next.time && Number.isFinite(Date.parse(next.time))) {
     const driveMin = Math.round(Number(next.driveMin) || 0);
     const arriveMs = Date.now() + driveMin * 60000;
     const slack = Math.round((Date.parse(next.time) - arriveMs) / 60000);

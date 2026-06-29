@@ -29,9 +29,13 @@ export async function loadJob(sb, jobId) {
   // Tier 1: everything. Tier 2: drop the newest cost columns (migration 73 may not be live yet)
   // but keep all the rich dispatch fields. Tier 3: bare base — last resort so the page still renders.
   // must_tell_tech / customer_promise / arrival_window / triage = the field-context the cockpit header surfaces.
-  const richFields = ', job_number, job_type, amount, tech_name, tech_email, enroute_at, started_at, completed_at, notes, access_notes, must_tell_tech, customer_promise, arrival_window, triage, job_class, estimate_outcome, dispatchme_job_id, converted_to_job_id, converted_from_job_id, project_id, project_unit_id, lat, lng, office_tags';
+  const richFields = ', job_number, job_type, amount, tech_name, tech_email, enroute_at, started_at, completed_at, notes, access_notes, must_tell_tech, customer_promise, arrival_window, triage, job_class, estimate_outcome, dispatchme_job_id, converted_to_job_id, converted_from_job_id, project_id, project_unit_id, lat, lng';
   const costFields = ', material_cost_cents, dispatch_fee_cents, sub_cost_cents, sub_vendor, sub_verified';
+  // office_tags is the newest column (migration 129) — keep it in its OWN top tier so a pre-migration DB
+  // drops just that one field, not the whole rich context (the audit's P1: don't collapse to base-only).
+  const tagField = ', office_tags';
   const tiers = [
+    `${base}${richFields}${costFields}${tagField}${relations}`,
     `${base}${richFields}${costFields}${relations}`,
     `${base}${richFields}${relations}`,
     `${base}${relations}`,
