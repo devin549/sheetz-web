@@ -9,7 +9,7 @@ import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import {
   isStripeConfigured, createCardPresentIntent, processIntentOnReader,
-  getCardPresentStatus, cancelReaderAction, createKeyedCardIntent, createInvoiceCheckout,
+  getCardPresentStatus, cancelReaderAction, createInvoiceCheckout,
 } from '@/lib/stripe';
 import { revalidatePath } from 'next/cache';
 
@@ -142,32 +142,7 @@ export async function cancelReaderCharge(readerId, paymentIntentId) {
   return { ok: true };
 }
 
-// ── KEYED entry (virtual terminal / MOTO) — fallback when no reader is available. Staff types the card by
-// hand for a phone or in-hand payment. Card data goes straight to Stripe via Elements; never our server.
-
-// START a keyed charge: make the MOTO PaymentIntent + return its client_secret for the client to confirm.
-export async function startKeyedCharge(jobId, amountDollars) {
-  const g = await gateCollect();
-  if (g.err) return { ok: false, msg: g.err };
-  if (!isStripeConfigured()) return { ok: false, msg: 'Stripe isn’t set up yet.' };
-  const sb = getSupabaseAdmin();
-  if (!sb) return { ok: false, msg: 'Server not configured.' };
-
-  const { data: job } = await sb.from('jobs').select('id, customer_id, job_number, amount, customers(name)').eq('id', jobId).maybeSingle();
-  if (!job) return { ok: false, msg: 'Job not found.' };
-
-  const dollars = Number(amountDollars) > 0 ? Number(amountDollars) : await suggestedDollars(sb, jobId, job);
-  const cents = Math.round(dollars * 100);
-  if (cents < 50) return { ok: false, msg: 'Enter an amount to collect.' };
-  const name = (job.customers && job.customers.name) || '';
-
-  const pi = await createKeyedCardIntent({ amountCents: cents, invoiceNumber: job.job_number || null, customerName: name, invoiceId: null, customerId: job.customer_id });
-  if (!pi.ok) return { ok: false, msg: 'Stripe: ' + pi.error };
-
-  try { await sb.from('ar_activity').insert({ action: 'keyed_charge_started', customer_id: job.customer_id || null, customer_name: name || null, invoice_number: job.job_number || null, amount: pi.totalCents / 100, by_email: g.profile.email || 'field-keyed' }); } catch (_) {}
-
-  return { ok: true, clientSecret: pi.clientSecret, paymentIntentId: pi.id, baseDollars: pi.baseCents / 100, feeDollars: pi.feeCents / 100, totalDollars: pi.totalCents / 100 };
-}
+// (Key-in / MOTO removed by Devin — the reader is preferred; pay-link + ACH cover card-not-present.)
 
 // ── ACH (bank transfer) — LAST RESORT. No card fee, but settles in ~4 business days and can return/bounce.
 // Bank-based, so there's no swipe/keypad: it's a hosted link the customer completes by connecting their bank.
@@ -198,15 +173,3 @@ export async function createJobAchLink(jobId, amountDollars) {
   return { ok: true, url: r.url, baseDollars: (r.baseCents || cents) / 100, feeDollars: 0, totalDollars: (r.totalCents || cents) / 100, ach: true };
 }
 
-// CONFIRM a keyed charge AFTER the client confirms with Stripe — re-check status server-side (don't trust
-// the client) and record + flip disposition. Returns { ok, paid }.
-export async function confirmKeyedCharge(jobId, paymentIntentId) {
-  const g = await gateCollect();
-  if (g.err) return { ok: false, msg: g.err };
-  const sb = getSupabaseAdmin();
-  if (!sb) return { ok: false, msg: 'Server not configured.' };
-  const s = await getCardPresentStatus(paymentIntentId); // status check is method-agnostic (retrieves the PI)
-  if (!s.ok) return { ok: false, msg: s.error };
-  if (s.paid) { await recordPaidOnce(sb, jobId, g.profile, paymentIntentId, 'keyed_charge_paid'); return { ok: true, paid: true }; }
-  return { ok: true, paid: false, status: s.status, lastError: s.lastError || null };
-}

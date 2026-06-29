@@ -4,13 +4,13 @@
 // amount pre-filled and picks how to collect:
 //   • Collect on reader → WisePOS E tap/insert.   [startReaderCharge]   ← PREFERRED (card-present, cheaper)
 //   • Send link         → customer pays on phone.  [createJobPayLink]
-//   • Key in card       → staff types the card.     [startKeyedCharge]   ← fallback only, no reader
+//   • Send bank/ACH link → no card fee, last resort. [createJobAchLink]
 // All server-side; card data never touches this component. A paid charge auto-flips disposition to paid_card.
+// (Key-in / MOTO removed by Devin — reader is preferred, link/ACH cover the rest.)
 import { useState, useEffect, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createJobPayLink } from '../../my-day/actions';
-import { startReaderCharge, pollReaderCharge, cancelReaderCharge, startKeyedCharge, createJobAchLink } from './checkoutActions';
-import KeyInCard from './KeyInCard';
+import { startReaderCharge, pollReaderCharge, cancelReaderCharge, createJobAchLink } from './checkoutActions';
 
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -18,12 +18,10 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
   const router = useRouter();
   const [amt, setAmt] = useState(suggested ? String(suggested) : '');
   const [payNow, setPayNow] = useState(false); // office-billed: collection hidden until the customer chooses to pay now
-  const [mode, setMode] = useState(null); // null | 'link' | 'reader' | 'keyed'
+  const [mode, setMode] = useState(null); // null | 'link' | 'reader' | 'ach'
   const [link, setLink] = useState(null);
   const [reader, setReader] = useState(null);
   const [readerState, setReaderState] = useState(null); // 'waiting' | 'paid' | 'failed'
-  const [keyed, setKeyed] = useState(null); // { clientSecret, paymentIntentId, base, fee, total }
-  const [keyedPaid, setKeyedPaid] = useState(false);
   const [err, setErr] = useState(null);
   const [pending, start] = useTransition();
   const pollRef = useRef(null);
@@ -63,15 +61,6 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
     });
   }
 
-  function startKeyed() {
-    setErr(null); setMode('keyed');
-    start(async () => {
-      const r = await startKeyedCharge(jobId, amtNum);
-      if (!r.ok) { setErr(r.msg); setMode(null); return; }
-      setKeyed({ clientSecret: r.clientSecret, paymentIntentId: r.paymentIntentId, base: r.baseDollars, fee: r.feeDollars, total: r.totalDollars });
-    });
-  }
-
   async function cancelReader() {
     if (pollRef.current) clearInterval(pollRef.current);
     if (reader) await cancelReaderCharge(reader.readerId, reader.paymentIntentId);
@@ -81,10 +70,10 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
   const card = { borderLeft: '3px solid #635bff', marginTop: 10 };
   const input = { flex: 1, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 15 };
 
-  // PAID (reader or keyed).
-  if (readerState === 'paid' || keyedPaid) {
-    const total = keyedPaid ? keyed.total : reader.totalDollars;
-    const how = keyedPaid ? 'keyed in' : `on ${reader.readerLabel}`;
+  // PAID (reader).
+  if (readerState === 'paid') {
+    const total = reader.totalDollars;
+    const how = `on ${reader.readerLabel}`;
     return (
       <div className="card" style={{ ...card, borderLeftColor: 'var(--green)' }}>
         <div style={{ fontWeight: 800, color: 'var(--green)', fontSize: 15 }}>✅ Paid {money(total)} {how}</div>
@@ -104,17 +93,6 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
           <span className="pill" style={{ color: 'var(--amber)' }}>● Reader live</span>
           <button onClick={cancelReader} className="btn btn-ghost" style={{ marginLeft: 'auto' }}>Cancel</button>
         </div>
-      </div>
-    );
-  }
-
-  // KEYED — virtual terminal open.
-  if (mode === 'keyed' && keyed) {
-    return (
-      <div className="card" style={card}>
-        <div style={{ fontWeight: 800, marginBottom: 4 }}>⌨️ Key in card</div>
-        <div className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>Use this only when the reader isn’t available — keyed cards cost more and aren’t card-present.</div>
-        <KeyInCard jobId={jobId} clientSecret={keyed.clientSecret} paymentIntentId={keyed.paymentIntentId} totals={{ base: keyed.base, fee: keyed.fee, total: keyed.total }} onPaid={() => setKeyedPaid(true)} onCancel={() => { setKeyed(null); setMode(null); }} />
       </div>
     );
   }
@@ -154,15 +132,10 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
           </button>
           {hasReader && <div className="muted" style={{ fontSize: 10.5, marginTop: 5, textAlign: 'center' }}>Use the reader whenever you can — it’s cheaper and more secure than the options below.</div>}
 
-          {/* Fallbacks. */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-            <button onClick={makeLink} disabled={pending || !valid || !stripeReady} className="btn btn-ghost" style={{ flex: 1, minWidth: 140, opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>
-              {pending && mode === 'link' ? '…' : '✉️ Send pay link'}
-            </button>
-            <button onClick={startKeyed} disabled={pending || !valid || !stripeReady} className="btn btn-ghost" style={{ flex: 1, minWidth: 140, opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>
-              {pending && mode === 'keyed' ? '…' : '⌨️ Key in card'}
-            </button>
-          </div>
+          {/* Fallback: send the customer a pay link. */}
+          <button onClick={makeLink} disabled={pending || !valid || !stripeReady} className="btn btn-ghost" style={{ width: '100%', marginTop: 8, opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>
+            {pending && mode === 'link' ? '…' : '✉️ Send pay link'}
+          </button>
 
           {/* LAST RESORT: bank transfer — no card fee but slow + can bounce. */}
           <button onClick={makeAch} disabled={pending || !valid || !stripeReady} className="btn btn-ghost" style={{ width: '100%', marginTop: 8, fontSize: 12.5, opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>
