@@ -25,7 +25,7 @@ export default function PartPhotoScan({ onAdd }) {
   return (
     <div style={{ marginBottom: 10 }}>
       <button onClick={() => setCam(true)} disabled={pending} className="btn" style={{ width: '100%', padding: '11px', fontSize: 13, background: 'var(--surface-2)', color: 'var(--fg-1)', border: '1px solid var(--border-strong)' }}>
-        📸 Scan a part — match it to the book
+        📸 Scan the Pricebook <span className="muted" style={{ fontWeight: 400, fontSize: 11 }}>— snap a part, match the book</span>
       </button>
       {msg && <div style={{ fontSize: 12, marginTop: 6, color: msg.startsWith('🔎') ? 'var(--fg-2)' : 'var(--amber)' }}>{msg}</div>}
 
