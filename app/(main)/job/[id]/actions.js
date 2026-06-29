@@ -369,6 +369,34 @@ export async function scanReceipt(jobId, dataUrl) {
   return { ok: true, ...r, knownVendor };
 }
 
+// 🧱 Field "Confirm sub" — the crew scanned a bill that's actually a SUBCONTRACTOR's labor invoice (not a
+// parts receipt). Persist the photo (so accounting can see what they're verifying) + create a receipt_entry
+// held as pending_verify, routed to accounting's queue. The sub is NOT paid until accounting clears it.
+export async function flagFieldSubcontractor(jobId, dataUrl, opts = {}) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'changeStatus') || can(ctx.role, 'collectPayment') || can(ctx.role, 'seeFinancials') || canUploadPhotos(ctx.role))) return { ok: false, msg: 'Not allowed.' };
+  const m = String(dataUrl || '').match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
+  if (!m) return { ok: false, msg: 'Re-scan the bill first.' };
+  const mime = m[1]; const bytes = Buffer.from(m[2], 'base64');
+  if (!bytes.length || bytes.length > MAX_BYTES) return { ok: false, msg: 'Image too large or empty.' };
+  const id = randomUUID();
+  const ext = mime === 'image/jpeg' ? 'jpg' : mime.split('/')[1];
+  const storagePath = `jobs/${ctx.job.id}/${new Date().toISOString().slice(0, 10)}/${id}-sub-receipt.${ext}`;
+  const { error: upErr } = await ctx.sb.storage.from(BUCKET).upload(storagePath, bytes, { contentType: mime, upsert: false });
+  if (upErr) return { ok: false, msg: upErr.message };
+  const base = { id, job_id: ctx.job.id, storage_bucket: BUCKET, storage_path: storagePath, file_name: `sub-receipt.${ext}`, mime_type: mime, size_bytes: bytes.length, kind: 'receipt', caption: 'Subcontractor bill (field)', customer_visible: false, uploaded_by: ctx.user.id, uploaded_by_email: ctx.user.email, uploaded_by_name: ctx.user.user_metadata?.name || ctx.user.email };
+  const { error: insErr } = await ctx.sb.from('job_photos').insert(base);
+  if (insErr) return { ok: false, msg: 'Photo: ' + insErr.message };
+  const total = Number(opts.total) || 0;
+  const entry = { photo_id: id, job_id: ctx.job.id, vendor: cleanText(opts.vendor, 120) || null, amount_cents: total > 0 ? Math.round(total * 100) : null, is_subcontractor: true, sub_status: 'pending_verify', sub_name: cleanText(opts.subName, 120) || null, sub_confirmed_by: ctx.profile?.name || ctx.user.email, sub_confirmed_at: new Date().toISOString(), status: 'pending' };
+  const { error: eErr } = await ctx.sb.from('receipt_entries').upsert(entry, { onConflict: 'photo_id' });
+  if (eErr) return { ok: false, msg: /sub_|column|schema cache|does not exist/i.test(eErr.message || '') ? 'Run supabase/137_subcontractor_receipts.sql (+ 29_receipts.sql) first.' : eErr.message };
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'receipt.sub_confirmed_field', entity: 'receipt', entity_id: id, detail: { job_id: ctx.job.id, sub_name: entry.sub_name } }); } catch (_) {}
+  revalidatePath('/receipts');
+  return { ok: true, msg: 'Sent to accounting to verify before payment.' };
+}
+
 // 🏷 Office tags on a job — the office types free labels (gate code, 2 dogs, proof needed, "water heater
 // install"). The tech sees them on the My Day card; tag→form rules attach matching forms (lib/jobTags).
 // Office/dispatch only — a field tech can't tag their own job.

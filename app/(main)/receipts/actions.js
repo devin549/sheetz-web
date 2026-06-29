@@ -49,6 +49,42 @@ export async function saveReceipt(formData) {
   return { ok: true, msg: status === 'verified' ? 'Verified.' : status === 'flagged' ? 'Flagged.' : 'Saved.' };
 }
 
+// Flag a scanned bill as a SUBCONTRACTOR's → routes to accounting's verify queue, held from payment.
+// Available to any office reviewer who can see receipts (the field crew flags via the job-side action).
+export async function confirmSubcontractor(formData) {
+  let ctx; try { ctx = await assertAcct(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const photoId = clean(formData.get('photoId'), 80);
+  if (!photoId) return { ok: false, msg: 'No receipt.' };
+  const isSub = String(formData.get('isSub')) !== 'false';
+  const patch = isSub
+    ? { photo_id: photoId, is_subcontractor: true, sub_status: 'pending_verify', sub_name: clean(formData.get('subName'), 120) || null, sub_confirmed_by: ctx.profile.name || ctx.user.email, sub_confirmed_at: new Date().toISOString() }
+    : { photo_id: photoId, is_subcontractor: false, sub_status: null, sub_confirmed_by: null, sub_confirmed_at: null }; // undo
+  const { error } = await ctx.sb.from('receipt_entries').upsert(patch, { onConflict: 'photo_id' });
+  if (error) return { ok: false, msg: /sub_status|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/137_subcontractor_receipts.sql first.' : error.message };
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile.name || ctx.user.email, role: ctx.profile.role, action: isSub ? 'receipt.sub_confirmed' : 'receipt.sub_cleared_flag', entity: 'receipt', entity_id: photoId, detail: { sub_name: patch.sub_name || null } }); } catch (_) {}
+  revalidatePath('/receipts');
+  return { ok: true, msg: isSub ? 'Flagged as subcontractor — accounting must verify before it’s paid.' : 'Sub flag removed.' };
+}
+
+// Accounting VERIFIES a flagged subcontractor bill: cleared = OK to pay (in AP/QuickBooks — we move no money)
+// or rejected. seeFinancials only (the money decision); the confirm step can be done by any office reviewer.
+export async function verifySubcontractor(photoId, decision, reason) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const profile = await loadProfile(user);
+  if (!user || !can(profile.role, 'seeFinancials')) return { ok: false, msg: 'Only accounting / owner can verify a subcontractor payment.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const pid = clean(photoId, 80);
+  if (!['cleared', 'rejected'].includes(decision)) return { ok: false, msg: 'Bad decision.' };
+  const patch = { sub_status: decision, sub_verified_by: profile.name || user.email, sub_verified_at: new Date().toISOString(), sub_reject_reason: decision === 'rejected' ? (clean(reason, 300) || 'Not approved') : null };
+  const { error } = await sb.from('receipt_entries').update(patch).eq('photo_id', pid).eq('is_subcontractor', true);
+  if (error) return { ok: false, msg: /sub_status|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/137_subcontractor_receipts.sql first.' : error.message };
+  try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: decision === 'cleared' ? 'receipt.sub_cleared_to_pay' : 'receipt.sub_rejected', entity: 'receipt', entity_id: pid, detail: { reason: patch.sub_reject_reason || null } }); } catch (_) {}
+  revalidatePath('/receipts');
+  return { ok: true, msg: decision === 'cleared' ? 'Cleared to pay — pay it in your AP/QuickBooks.' : 'Rejected — held, not to be paid.' };
+}
+
 // AI-read a receipt photo → suggested vendor / amount / category (office reviews, then Verify).
 export async function readReceipt(photoId) {
   let ctx; try { ctx = await assertAcct(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
@@ -70,7 +106,7 @@ export async function readReceipt(photoId) {
   try {
     res = await anthropic.messages.create({
       model: AI_MODEL, max_tokens: 300, output_config: { effort: 'low' },
-      system: 'You read plumbing-supply receipts. Reply with ONLY compact JSON: {"vendor": string|null, "amount": number|null, "category": "materials"|"fuel"|"tools"|"permit"|"other"|null}. amount = the grand total in dollars as a number (no $, no commas).',
+      system: 'You read purchase receipts. Most are plumbing-supply receipts, but some are a SUBCONTRACTOR\'s labor/service invoice (an outside company we hire — excavation, concrete, drywall, electrician, restoration) rather than a parts store. Reply with ONLY compact JSON: {"vendor": string|null, "amount": number|null, "category": "materials"|"fuel"|"tools"|"permit"|"other"|null, "is_subcontractor": boolean, "sub_name": string|null}. amount = the grand total in dollars as a number (no $, no commas). Set is_subcontractor true ONLY if it clearly looks like an outside labor/service bill (a contractor invoice, not a parts-store receipt); if unsure, false.',
       messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: mime, data: b64 } }, { type: 'text', text: 'Extract vendor, total amount, and category from this receipt.' }] }],
     });
   } catch (e) { return { ok: false, msg: 'AI error: ' + (e && e.message ? e.message : String(e)) }; }
@@ -79,5 +115,5 @@ export async function readReceipt(photoId) {
   let parsed; try { parsed = JSON.parse(text); } catch { return { ok: false, msg: 'Couldn’t read that receipt clearly — enter it manually.' }; }
   const amount = Number(parsed.amount);
   try { await ctx.sb.from('ai_usage').insert({ role: ctx.profile.role, screen: 'receipts', model: AI_MODEL, input_tokens: res.usage?.input_tokens || 0, output_tokens: res.usage?.output_tokens || 0, user_email: ctx.user.email || '' }); } catch (_) {}
-  return { ok: true, vendor: parsed.vendor || '', amount: Number.isFinite(amount) && amount > 0 ? amount : '', category: CATS.includes(parsed.category) ? parsed.category : '' };
+  return { ok: true, vendor: parsed.vendor || '', amount: Number.isFinite(amount) && amount > 0 ? amount : '', category: CATS.includes(parsed.category) ? parsed.category : '', isSubcontractor: parsed.is_subcontractor === true, subName: String(parsed.sub_name || '').slice(0, 120) };
 }

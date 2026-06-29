@@ -6,7 +6,7 @@
 // "upload a saved photo" fallback covers the rare no-camera case.
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { scanReceipt, setJobCosts } from './actions';
+import { scanReceipt, setJobCosts, flagFieldSubcontractor } from './actions';
 import InAppCamera from './InAppCamera';
 
 function fileToScaledDataUrl(file, max = 1400) {
@@ -33,17 +33,23 @@ export default function ScanReceipt({ jobId, dispatchCents = 0 }) {
   const [res, setRes] = useState(null);
   const [err, setErr] = useState(null);
   const [savedMsg, setSavedMsg] = useState(null);
+  const [lastUrl, setLastUrl] = useState(null);   // the scanned image, kept so "Confirm sub" can persist it
+  const [subName, setSubName] = useState('');
+  const [subMsg, setSubMsg] = useState(null);
 
   // Shared: take a File (from the camera or an upload), scale it, read it.
   const scan = (file) => {
-    setErr(null); setRes(null); setSavedMsg(null);
+    setErr(null); setRes(null); setSavedMsg(null); setSubMsg(null); setSubName('');
     start(async () => {
       const url = await fileToScaledDataUrl(file);
       if (!url) { setErr('Could not read that image.'); return; }
+      setLastUrl(url);
       const r = await scanReceipt(jobId, url);
       if (r.ok) setRes(r); else setErr(r.msg);
     });
   };
+  // 🧱 Confirm this scan is a subcontractor's bill → persist it + route to accounting (held from pay).
+  const confirmSub = () => start(async () => { setSubMsg(null); const r = await flagFieldSubcontractor(jobId, lastUrl, { vendor: res.vendor, total: res.total, subName }); setSubMsg(r); if (r.ok) router.refresh(); });
   const onUpload = (e) => { const f = e.target.files?.[0]; if (f) scan(f); e.target.value = ''; };
 
   // "Use" → set the material cost to the scanned total (keep the existing dispatch fee untouched).
@@ -90,6 +96,18 @@ export default function ScanReceipt({ jobId, dispatchCents = 0 }) {
             </button>
           ) : <div style={{ fontSize: 12, marginTop: 10, color: 'var(--green)', fontWeight: 700 }}>{savedMsg}</div>}
           <div className="muted" style={{ fontSize: 10.5, marginTop: 8 }}>Review the read before you use it. This sets your material cost — it never auto-saves a blurry scan.</div>
+
+          {/* 🧱 Not a parts receipt? Flag it as a subcontractor's bill → accounting verifies before pay. */}
+          <div style={{ borderTop: '1px dashed var(--border)', marginTop: 10, paddingTop: 8 }}>
+            {res.isSubcontractor && <div style={{ fontSize: 11.5, color: 'var(--amber)', marginBottom: 5 }}>🤖 This looks like a subcontractor’s bill, not a parts receipt.</div>}
+            {!subMsg?.ok ? (
+              <div style={{ display: 'grid', gap: 6 }}>
+                <input value={subName} onChange={(ev) => setSubName(ev.target.value)} placeholder="Subcontractor name (optional)" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                <button onClick={confirmSub} disabled={pending || !lastUrl} className="pill" style={{ cursor: 'pointer', color: 'var(--amber)', border: `1px solid ${res.isSubcontractor ? 'var(--amber)' : 'var(--border-strong)'}`, fontWeight: 700, justifyContent: 'center', display: 'flex' }}>🧱 Confirm subcontractor — send to accounting</button>
+                {subMsg && !subMsg.ok && <div style={{ color: 'var(--red)', fontSize: 11.5 }}>{subMsg.msg}</div>}
+              </div>
+            ) : <div style={{ fontSize: 12, color: 'var(--green)', fontWeight: 700 }}>✓ {subMsg.msg} Held until accounting verifies.</div>}
+          </div>
         </div>
       )}
     </div>

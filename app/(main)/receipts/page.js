@@ -1,6 +1,7 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { isAiConfigured } from '@/lib/anthropic';
+import { can } from '@/lib/roles';
 import ReceiptInboxClient from './ReceiptInboxClient';
 
 export const dynamic = 'force-dynamic';
@@ -44,7 +45,11 @@ export default async function Receipts() {
   const entryByPhoto = {};
   let entriesReady = true;
   if (list.length) {
-    const { data: entries, error: eErr } = await sb.from('receipt_entries').select('photo_id, vendor, amount_cents, category, status, note, reviewed_by_name').in('photo_id', list.map((p) => p.id));
+    const ids = list.map((p) => p.id);
+    const BASE = 'photo_id, vendor, amount_cents, category, status, note, reviewed_by_name';
+    const SUB = BASE + ', is_subcontractor, sub_status, sub_name, sub_confirmed_by, sub_verified_by, sub_reject_reason';
+    let { data: entries, error: eErr } = await sb.from('receipt_entries').select(SUB).in('photo_id', ids);
+    if (eErr && /sub_|column|schema cache|does not exist/i.test(eErr.message || '')) ({ data: entries, error: eErr } = await sb.from('receipt_entries').select(BASE).in('photo_id', ids)); // pre-137
     if (eErr) entriesReady = false; else (entries || []).forEach((e) => { entryByPhoto[e.photo_id] = e; });
   }
 
@@ -59,7 +64,7 @@ export default async function Receipts() {
       <div className="h1">Receipt Inbox</div>
       <p className="muted">Receipt photos techs tag on jobs — enter vendor + amount, then verify or flag.</p>
       {!entriesReady && <div className="notice">Saving needs the entries table — run <code>supabase/29_receipts.sql</code>. You can still view receipts below.</div>}
-      <ReceiptInboxClient receipts={receipts} canSave={entriesReady} aiReady={isAiConfigured(role)} />
+      <ReceiptInboxClient receipts={receipts} canSave={entriesReady} canVerify={can(role, 'seeFinancials')} aiReady={isAiConfigured(role)} />
     </div>
   );
 }
