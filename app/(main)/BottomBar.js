@@ -15,11 +15,24 @@ const PRIMARY = [
   { icon: '💬', label: 'Chat', href: '/messages' },
   { icon: '🪠', label: 'Hank', href: '/hank' },
 ];
+// In a job, the thumb bar becomes the TICKET sections (Devin: "on this screen we need this rail") — the
+// most-used job tabs up front, the rest in "More". These labels match the in-job rail TechShell builds.
+const PRIMARY_JOB = ['My Day', 'Overview', 'Photos', 'Estimate', 'Pricebook'];
 
 export default function BottomBar({ rail = [] }) {
   const path = usePathname() || '';
   const [more, setMore] = useState(false);
-  const isActive = (href) => href === '/' ? path === '/' : (path === href || path.startsWith(href + '/'));
+  const isActive = (href) => {
+    if (href === '/') return path === '/';
+    if (/^\/job\/[^/]+$/.test(href)) return path === href; // Overview = the base job route; match exactly so it doesn't light up on every sub-tab
+    return path === href || path.startsWith(href + '/');
+  };
+  // When the rail is the job-contextual one ("This job"), drive the bottom tabs from the job sections so the
+  // tech navigates the ticket from the thumb bar; otherwise the global tabs. "More" still opens the full rail.
+  const jobGroup = rail.find((g) => g.group === 'This job');
+  const primary = jobGroup
+    ? PRIMARY_JOB.map((lbl) => jobGroup.items.find((it) => it.label === lbl)).filter(Boolean)
+    : PRIMARY;
 
   const tab = (icon, label, on, onClick, href) => {
     const inner = (
@@ -36,7 +49,7 @@ export default function BottomBar({ rail = [] }) {
   return (
     <>
       <nav className="cb-bottombar" style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 60, background: 'var(--surface-1)', borderTop: '1px solid var(--border)', paddingBottom: 'env(safe-area-inset-bottom, 0px)', boxShadow: '0 -2px 12px rgba(0,0,0,0.12)' }}>
-        {PRIMARY.map((t) => tab(t.icon, t.label, isActive(t.href), null, t.href))}
+        {primary.map((t) => tab(t.icon, t.label, isActive(t.href), null, t.href))}
         {tab('☰', 'More', more, () => setMore(true))}
       </nav>
 
