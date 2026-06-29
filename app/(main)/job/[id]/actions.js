@@ -364,6 +364,20 @@ export async function scanReceipt(jobId, dataUrl) {
   return { ok: true, ...r, knownVendor };
 }
 
+// 🏷 Office tags on a job — the office types free labels (gate code, 2 dogs, proof needed, "water heater
+// install"). The tech sees them on the My Day card; tag→form rules attach matching forms (lib/jobTags).
+// Office/dispatch only — a field tech can't tag their own job.
+export async function setOfficeTags(jobId, tags) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'assignJobs') || can(ctx.role, 'manageUsers') || can(ctx.role, 'seeCrew') || can(ctx.role, 'createJobs'))) return { ok: false, msg: 'Office / dispatch only.' };
+  const clean = (Array.isArray(tags) ? tags : []).map((t) => cleanText(t, 40)).filter(Boolean).slice(0, 12);
+  const { error } = await ctx.sb.from('jobs').update({ office_tags: clean }).eq('id', ctx.job.id);
+  if (error) return { ok: false, msg: /column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/129_job_office_tags.sql first.' : error.message };
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath(`/job/${ctx.job.id}/forms`); revalidatePath('/my-day');
+  return { ok: true, msg: 'Tags saved — the tech sees them on My Day; matching forms are attached.' };
+}
+
 // "Need a hand?" + step-away (Parts run / Lunch / Personal). The job STAYS OPEN; the office is told why
 // the tech stepped off so nobody thinks it stalled. Internal only.
 const STEP_REASONS = { parts_run: 'Parts run', lunch: 'Lunch', personal: 'Personal', help: 'Needs a hand' };

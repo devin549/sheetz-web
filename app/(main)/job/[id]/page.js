@@ -19,6 +19,7 @@ import CustomerMemory from './CustomerMemory';
 import LinkToProject from './LinkToProject';
 import JobActionCards from './JobActionCards';
 import RollOverCard from './RollOverCard';
+import OfficeTags from './OfficeTags';
 import JobHeader from './JobHeader';
 import { loadCustomerMemory } from '@/lib/customerMemory';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
@@ -233,6 +234,9 @@ export default async function JobDetail({ params }) {
       <div id="customer" style={{ scrollMarginTop: 70 }}><CustomerMemory mem={memory} customer={customer} job={job} /></div>
 
       <JobActionCards jobId={id} jobNumber={job.job_number} customerName={customer.name} jobType={job.job_type} status={job.status} canAct={canAct} />
+
+      {/* 🏷 Office tags — dispatch sets them (tech sees on My Day; ✨ tags attach a form). Read-only for techs. */}
+      <OfficeTags jobId={id} tags={job.office_tags || []} canEdit={can(role, 'assignJobs') || can(role, 'manageUsers') || can(role, 'seeCrew') || can(role, 'createJobs')} />
 
       <JobFlow jobId={id} status={st} reached={reached} gateReady={gateReady} gateMissing={gateMissing} nextHint={gateMissing[0] || ''} canAct={canAct} />
 

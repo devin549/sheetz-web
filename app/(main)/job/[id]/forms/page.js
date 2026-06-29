@@ -4,19 +4,22 @@ import JobForms from '../JobForms';
 import { getForms } from '@/lib/qa';
 import { can } from '@/lib/roles';
 import { canUploadPhotos } from '../jobAccess';
+import { formsForTags } from '@/lib/jobTags';
 
 export const dynamic = 'force-dynamic';
 
-// Required forms for THIS job, derived from job type/class. Incomplete required forms block closeout
-// (the closeout questions already gate; permit/warranty/photo-release are listed for the tech to complete).
+// Required forms for THIS job, derived from job type/class AND the office tags. Office tags trigger forms —
+// e.g. a "water heater install" tag adds the Water Heater Install form (see OFFICE_TAG_FORMS in lib/jobTags).
 function requiredForms(job) {
-  const t = `${job.job_type || ''} ${job.job_class || ''}`.toLowerCase();
+  const t = `${job.job_type || ''} ${job.job_class || ''} ${(job.office_tags || []).join(' ')}`.toLowerCase();
   const out = [];
   if (/install|excavat|dig|sewer|main|gas|water ?heater/.test(t)) out.push(['📄 Permit', 'Pull/attach the permit for this work.', true]);
   if (/warranty|insurance/.test(t) || job.warranty_provider) out.push(['🛡 Warranty claim form', 'Provider claim details + serials.', true]);
   if (/callback|re-?clog|re-?do/.test(t)) out.push(['🔁 Callback root-cause', 'What caused the repeat + the permanent fix.', true]);
+  formsForTags(job.office_tags).forEach((f) => out.push(f)); // tag-triggered forms (water heater, gas, backflow…)
   out.push(['📷 Photo / media release', 'Customer OK to use photos in their packet.', false]);
-  return out;
+  const seen = new Set();
+  return out.filter((f) => (seen.has(f[0]) ? false : seen.add(f[0]))); // dedup by label
 }
 
 export default async function FormsTab({ params }) {

@@ -5,7 +5,7 @@ import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
 import JobCard from './JobCard';
 import TodayMoney from './TodayMoney';
-import { deriveTags } from '@/lib/jobTags';
+import { deriveTags, officeTagPills } from '@/lib/jobTags';
 import ShareLocation from './ShareLocation';
 import { computeJobPay } from '@/lib/pay';
 import { haversineMiles, etaMinutes } from '@/lib/geo';
@@ -123,7 +123,7 @@ export default async function MyDay({ searchParams }) {
       else if (useName) q = q.ilike('techs.name', '%' + scopeName + '%');
       return q;
     };
-    let res = await run(', job_number, job_type, amount, customer_id, job_class, warranty_provider, notes, access_notes, started_at, enroute_at, lat, lng');
+    let res = await run(', job_number, job_type, amount, customer_id, job_class, warranty_provider, notes, access_notes, started_at, enroute_at, lat, lng, office_tags');
     if (res.error) res = await run(', job_number, job_type, amount'); // pre-tag-fields fallback
     if (res.error && /column .* does not exist/i.test(res.error.message || '')) {
       res = await run('');   // 07_jobs_card_fields.sql not run yet — fall back to base columns
@@ -383,7 +383,8 @@ export default async function MyDay({ searchParams }) {
       {!note && !error && tab === 'today' && list.map((j) => {
         const s = String(j.status || '').toLowerCase();
         const variant = j.id === activeJobId ? 'active' : /done|complete|closed|cancel/.test(s) ? 'done' : 'upcoming';
-        const tags = deriveTags(j, { member: memberByCust[j.customer_id], vip: vipByCust[j.customer_id], pastDue: pastDueByCust[j.customer_id] });
+        // Office-typed tags first (explicit, set by dispatch), then the auto-derived ones.
+        const tags = [...officeTagPills(j.office_tags), ...deriveTags(j, { member: memberByCust[j.customer_id], vip: vipByCust[j.customer_id], pastDue: pastDueByCust[j.customer_id] })];
         const leg = legByJobId[j.id];
         return (
           <Fragment key={j.id}>
