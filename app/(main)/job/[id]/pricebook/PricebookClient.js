@@ -81,6 +81,7 @@ export default function PricebookClient({ job, customer, roots = [], related = {
   const [bookId, setBookId] = useState(defaultBookId);
   const shownRoots = bookId === 'all' ? roots : (roots || []).filter((r) => r.id === bookId);
   const [cartOpen, setCartOpen] = useState(false); // slim cart footer expand
+  const [focusReq, setFocusReq] = useState(null);  // a scan/finder tap → open that item in the book (siblings + recommended-for-you)
 
   const cartIds = useMemo(() => new Set(cart.map((l) => l.id)), [cart]);
 
@@ -197,7 +198,7 @@ export default function PricebookClient({ job, customer, roots = [], related = {
       <CatalogBrowser
         embedded roots={shownRoots} related={related} upgrades={upgrades} total={total}
         showCost={showMargin} canEdit={false} recFor={(customer?.name || '').trim().split(/\s+/)[0] || ''}
-        onAddItem={add} cartIds={cartIds}
+        onAddItem={add} cartIds={cartIds} focusReq={focusReq}
         topSlot={<div style={{ marginBottom: 10 }}>
           {roots && roots.length > 1 && (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -209,8 +210,8 @@ export default function PricebookClient({ job, customer, roots = [], related = {
             </div>
           )}
           {/* Find the fix: 📸 scan the part, or describe the PROBLEM (symptom → our fixes). Search + browse below. */}
-          <PartPhotoScan onAdd={add} jobId={job.id} />
-          <ProblemFinder jobType={job.job_type || ''} onAdd={add} />
+          <PartPhotoScan onAdd={add} jobId={job.id} onFocus={(f) => setFocusReq({ id: f.id })} />
+          <ProblemFinder jobType={job.job_type || ''} onAdd={add} onFocus={(f) => setFocusReq({ id: f.id })} />
         </div>}
       />
 

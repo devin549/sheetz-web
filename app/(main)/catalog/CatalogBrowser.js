@@ -22,11 +22,25 @@ function htmlToText(s) {
     .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// Walk the category tree to the node that owns an item → the full drill path (so we can open that section).
+function pathToItem(roots, id) {
+  let found = null;
+  const walk = (nodes, trail) => {
+    for (const n of nodes) {
+      if ((n.items || []).some((it) => it.id === id)) { found = [...trail, n]; return true; }
+      if (n.children && walk(n.children, [...trail, n])) return true;
+    }
+    return false;
+  };
+  walk(roots, []);
+  return found;
+}
+
 // Reused two ways:
 //  • standalone /catalog (browse + "Add to ticket" → job picker) — pass myJobs, no onAddItem.
 //  • embedded in the work-order pricebook (browse + "Add to estimate" → the job's cart) — pass embedded,
 //    onAddItem(item), cartIds (Set of ids in the cart), and topSlot (scan + custom-item, rendered on top).
-export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}, showCost, canEdit, total, myJobs = [], embedded = false, onAddItem = null, cartIds = null, topSlot = null, recFor = '' }) {
+export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}, showCost, canEdit, total, myJobs = [], embedded = false, onAddItem = null, cartIds = null, topSlot = null, recFor = '', focusReq = null }) {
   const [stack, setStack] = useState([]);   // array of nodes (the drill path)
   const [sel, setSel] = useState(null);
   const [q, setQ] = useState('');
@@ -41,6 +55,16 @@ export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}
     walk(roots);
     return { allItems: all, byId, catOf };
   }, [roots]);
+
+  // A scan/finder result was tapped → jump into THAT item's section (so the customer sees the siblings) and
+  // open its detail sheet (which carries the "Recommended for you" cross-sell). focusReq is a fresh object
+  // each tap, so re-tapping the same item re-opens it.
+  useEffect(() => {
+    const id = focusReq && focusReq.id; if (!id) return;
+    const it = byId[id]; if (!it) return;
+    const path = pathToItem(roots, id);
+    setQ(''); if (path) setStack(path); setSel(it);
+  }, [focusReq, byId, roots]);
 
   const cur = stack[stack.length - 1] || null;
   const nodes = cur ? (cur.children || []) : roots;
