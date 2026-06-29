@@ -4,7 +4,7 @@
 // against the pricebook and show the matching FIXES (our curated items, not vendor prices). Tap the right
 // one to drop it on the estimate. Low-confidence shows the top few so the tech picks — never a wrong guess.
 import { useState, useTransition } from 'react';
-import { identifyPart } from '@/app/(main)/identify/actions';
+import { identifyPart, learnPartFix } from '@/app/(main)/identify/actions';
 import InAppCamera from '../InAppCamera';
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -20,7 +20,13 @@ export default function PartPhotoScan({ onAdd }) {
     setCam(false); setRes(null); setMsg('🔎 Matching it to your book…');
     start(async () => { const fd = new FormData(); fd.set('photo', file); const r = await identifyPart(fd); if (r.ok) { setRes(r); setMsg(null); } else setMsg(r.msg); });
   };
-  const pick = (f) => { if (onAdd) onAdd({ id: f.id, name: f.name, price: f.price, minimum: f.minimum ?? null }); setAdded((a) => ({ ...a, [f.id]: true })); };
+  const pick = (f) => {
+    if (onAdd) onAdd({ id: f.id, name: f.name, price: f.price, minimum: f.minimum ?? null });
+    setAdded((a) => ({ ...a, [f.id]: true }));
+    // Learn-on-correction: the tech confirmed this fix for what the camera saw → the book remembers, so the
+    // next scan of the same part (disposals etc.) IDs it instantly. Best-effort; never blocks the add.
+    if (res?.guess) learnPartFix(res.guess, f.id).catch(() => {});
+  };
 
   return (
     <div style={{ marginBottom: 10 }}>
