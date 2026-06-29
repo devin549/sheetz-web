@@ -227,7 +227,9 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
             style={{ width: '100%', padding: '13px', borderRadius: 10, border: 'none', background: 'var(--green-bright, #2ee6a0)', color: '#06210f', fontWeight: 800, fontSize: 14, cursor: pending ? 'default' : 'pointer', opacity: pending ? 0.6 : 1 }}>
             📍 You're at {(cust.name || 'the customer').split(/\s+/)[0]}&apos;s — tap to Arrive
           </button>
-          <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>GPS detected you here · office notified</div>
+          {err
+            ? <div style={{ fontSize: 11.5, marginTop: 5, color: 'var(--red)', fontWeight: 700 }}>⚠ {err} — tap to try again.</div>
+            : <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>GPS detected you here · office notified</div>}
         </div>
       )}
 
@@ -265,8 +267,10 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
         )
       )}
 
-      {/* Running late / how-much-longer relay — the ON-SITE ETA nudge. data-no-nav stops the card-tap. */}
-      {variant === 'active' && canAct && !cancelled && !done && cur === 'on_site' && (
+      {/* Running late / how-much-longer relay — the ON-SITE ETA nudge. data-no-nav stops the card-tap.
+          Suppressed when the red LATE-RISK box (above) is showing: it already has Text-ETA + Office and
+          they share lateMsg, so rendering both is a confusing double control for the same state. */}
+      {variant === 'active' && canAct && !cancelled && !done && cur === 'on_site' && !(nextLine && nextLine.slack < 0) && (
         <div data-no-nav style={{ marginTop: 8 }}>
           {!lateOpen ? (
             <button onClick={() => { setLateOpen(true); setLateMsg(null); }}

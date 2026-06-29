@@ -601,10 +601,18 @@ export async function setJobCosts(jobId, materialDollars, dispatchDollars) {
   if (!ctx.ok) return ctx;
   if (!(can(ctx.role, 'changeStatus') || can(ctx.role, 'collectPayment') || can(ctx.role, 'seeFinancials') || canUploadPhotos(ctx.role))) return { ok: false, msg: 'Your role can’t set job costs.' };
   const mc = Math.max(0, Math.round(Number(materialDollars) * 100)) || 0;
-  const df = Math.max(0, Math.round(Number(dispatchDollars) * 100)) || 0;
-  const { error } = await ctx.sb.from('jobs').update({ material_cost_cents: mc, dispatch_fee_cents: df }).eq('id', ctx.job.id);
+  // The dispatch fee feeds the tech's OWN commission base (pay subtracts it before commission), so a field
+  // earner must NOT lower it on their own job to bump their pay. `seeOwnOnly` marks exactly those field
+  // roles (tech/helper) — and getActionContext already scoped them to their own job — so they set MATERIAL
+  // cost only; dispatch/office/management (everyone else, or any financials role) set the fee. For a blocked
+  // role we keep whatever fee is already on the job.
+  const canSetDispatch = !can(ctx.role, 'seeOwnOnly') || can(ctx.role, 'seeFinancials');
+  const patch = { material_cost_cents: mc };
+  let df = ctx.job.dispatch_fee_cents || 0;
+  if (canSetDispatch) { df = Math.max(0, Math.round(Number(dispatchDollars) * 100)) || 0; patch.dispatch_fee_cents = df; }
+  const { error } = await ctx.sb.from('jobs').update(patch).eq('id', ctx.job.id);
   if (error) return { ok: false, msg: /material_cost|dispatch_fee|column|schema cache/i.test(error.message || '') ? 'Run supabase/73_pay_structure.sql first.' : error.message };
-  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'job.costs', entity: 'job', entity_id: String(ctx.job.id), detail: { material_cents: mc, dispatch_cents: df } }); } catch (_) {}
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'job.costs', entity: 'job', entity_id: String(ctx.job.id), detail: { material_cents: mc, dispatch_cents: df, dispatch_locked: !canSetDispatch } }); } catch (_) {}
   revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/pay');
   return { ok: true, msg: 'Job costs saved — feeds pay.' };
 }
