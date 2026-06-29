@@ -12,6 +12,7 @@ import { haversineMiles, etaMinutes } from '@/lib/geo';
 import DriveLeg from './DriveLeg';
 import JobSearch from './JobSearch';
 import MyJobs from './MyJobs';
+import DoneTray from './DoneTray';
 
 const DAILY_REVENUE_GOAL = 1500; // default tech daily revenue goal for "vs goal" until per-tech goals land
 
@@ -298,6 +299,26 @@ export default async function MyDay({ searchParams }) {
   }
   const tabHref = (t) => `/my-day${t === 'today' ? '' : `?tab=${t}`}`;
 
+  // Render one job card (+ its drive-leg, only for live route jobs). Reused for the route + the tray.
+  const renderCard = (j) => {
+    const s = String(j.status || '').toLowerCase();
+    const variant = j.id === activeJobId ? 'active' : /done|complete|closed|cancel/.test(s) ? 'done' : 'upcoming';
+    const tags = [...officeTagPills(j.office_tags), ...deriveTags(j, { member: memberByCust[j.customer_id], vip: vipByCust[j.customer_id], pastDue: pastDueByCust[j.customer_id] })];
+    const leg = legByJobId[j.id];
+    return (
+      <Fragment key={j.id}>
+        <JobCard job={j} seeAll={seeAll} canAct={can(role, 'changeStatus')} variant={variant} tags={tags} pastDue={pastDueByCust[j.customer_id] || 0} next={variant === 'active' ? activeNext : null} />
+        {variant !== 'done' && leg && <DriveLeg min={leg.min} miles={leg.miles} fromName={leg.fromName} long={leg.long} />}
+      </Fragment>
+    );
+  };
+  // Active route up top (active/upcoming); done + cancelled collapse into the tray to keep it clean.
+  const isTrayJob = (j) => /done|complete|closed|cancel/.test(String(j.status || '').toLowerCase());
+  const routeJobs = list.filter((j) => !isTrayJob(j));
+  const trayJobs = list.filter(isTrayJob);
+  const trayDone = trayJobs.filter((j) => /done|complete|closed/.test(String(j.status || '').toLowerCase())).length;
+  const trayCancelled = trayJobs.length - trayDone;
+
   return (
     <div className="wrap" style={{ maxWidth: 880 }}>
       <div className="h1">📋 My Day{scopeLabel}</div>
@@ -380,19 +401,10 @@ export default async function MyDay({ searchParams }) {
       {!note && !error && tab === 'today' && list.length === 0 && (
         <div className="card"><span className="muted">{seeAll ? 'No jobs yet. Run supabase/seed.sql to add samples.' : 'Nothing on your schedule today. 🎉'}</span></div>
       )}
-      {!note && !error && tab === 'today' && list.map((j) => {
-        const s = String(j.status || '').toLowerCase();
-        const variant = j.id === activeJobId ? 'active' : /done|complete|closed|cancel/.test(s) ? 'done' : 'upcoming';
-        // Office-typed tags first (explicit, set by dispatch), then the auto-derived ones.
-        const tags = [...officeTagPills(j.office_tags), ...deriveTags(j, { member: memberByCust[j.customer_id], vip: vipByCust[j.customer_id], pastDue: pastDueByCust[j.customer_id] })];
-        const leg = legByJobId[j.id];
-        return (
-          <Fragment key={j.id}>
-            <JobCard job={j} seeAll={seeAll} canAct={can(role, 'changeStatus')} variant={variant} tags={tags} pastDue={pastDueByCust[j.customer_id] || 0} next={variant === 'active' ? activeNext : null} />
-            {leg && <DriveLeg min={leg.min} miles={leg.miles} fromName={leg.fromName} long={leg.long} />}
-          </Fragment>
-        );
-      })}
+      {!note && !error && tab === 'today' && routeJobs.map(renderCard)}
+      {!note && !error && tab === 'today' && (
+        <DoneTray doneCount={trayDone} cancelledCount={trayCancelled}>{trayJobs.map(renderCard)}</DoneTray>
+      )}
 
       {/* ── 📅 WEEK — this week's jobs grouped by day (ported from HTML "My Jobs" weekly view) ── */}
 
