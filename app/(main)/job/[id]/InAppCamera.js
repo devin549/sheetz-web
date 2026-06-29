@@ -15,17 +15,26 @@ export default function InAppCamera({ label, onCapture, onClose }) {
 
   useEffect(() => {
     let cancelled = false;
+    // Watchdog: on some iPads getUserMedia resolves but the <video> never paints (stuck on "Starting
+    // camera…"). If we're not live within 7s, fall back to the native device camera so a shot is always
+    // possible. (Won't override a real 'denied'.)
+    const watchdog = setTimeout(() => { if (!cancelled) setErr((e) => e || 'unavailable'); }, 7000);
     (async () => {
       try {
         if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) throw new Error('unsupported');
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
-        if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play().catch(() => {}); }
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          // Clear the watchdog only once the feed is actually playing (real frames), not just on resolve.
+          videoRef.current.onplaying = () => { if (!cancelled) { clearTimeout(watchdog); setReady(true); } };
+          await videoRef.current.play().catch(() => {});
+        }
         setReady(true);
-      } catch (e) { setErr(e?.name === 'NotAllowedError' ? 'denied' : 'unavailable'); }
+      } catch (e) { clearTimeout(watchdog); setErr(e?.name === 'NotAllowedError' ? 'denied' : 'unavailable'); }
     })();
-    return () => { cancelled = true; if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop()); };
+    return () => { cancelled = true; clearTimeout(watchdog); if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop()); };
   }, []);
 
   const stop = () => { if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop()); };
