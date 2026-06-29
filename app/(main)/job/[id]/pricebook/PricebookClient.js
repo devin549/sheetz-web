@@ -9,6 +9,7 @@ import { recordSale } from './actions';
 import { createEstimate, sendEstimateText, sendEstimateEmail, markPresented, getEstimateStatus } from './estimateActions';
 import { coachCustomEntry, recordCustomEntry } from './customEntryActions';
 import BarcodeScan from './BarcodeScan';
+import PartPhotoScan from './PartPhotoScan';
 import CatalogBrowser from '@/app/(main)/catalog/CatalogBrowser';
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString();
@@ -207,8 +208,10 @@ export default function PricebookClient({ job, customer, roots = [], related = {
                 <button type="button" onClick={() => setBookId('all')} className="pill" style={{ cursor: 'pointer', fontWeight: bookId === 'all' ? 800 : 600, background: bookId === 'all' ? 'var(--amber)' : 'var(--surface-2)', color: bookId === 'all' ? '#1a1206' : 'var(--fg-2)', border: '1px solid var(--border)' }}>All books</button>
               </div>
             )}
-            <CustomEntry jobId={job.id} onAdd={addCustom} />
+            {/* 3 ways to add: 📸 scan the part (match to the book) · 🔢 barcode · ➕ not in the book */}
+            <PartPhotoScan onAdd={add} />
             <BarcodeScan onAdd={addScanned} />
+            <CustomEntry jobId={job.id} onAdd={addCustom} />
           </div>}
         />
 
