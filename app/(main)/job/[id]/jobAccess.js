@@ -25,7 +25,7 @@ function isMissingColumn(err) {
 
 export async function loadJob(sb, jobId) {
   const base = 'id, status, priority, scheduled_at, tech_id, customer_id';
-  const relations = ', customers(name, address, phone, email, type, tags, do_not_service, cb_number, lifetime_jobs, last_job_completed), techs(name)';
+  const relations = ', customers(name, address, phone, email, type, tags, do_not_service, cb_number, lifetime_jobs, lifetime_revenue, last_job_completed), techs(name)';
   // Tier 1: everything. Tier 2: drop the newest cost columns (migration 73 may not be live yet)
   // but keep all the rich dispatch fields. Tier 3: bare base — last resort so the page still renders.
   // must_tell_tech / customer_promise / arrival_window / triage = the field-context the cockpit header surfaces.

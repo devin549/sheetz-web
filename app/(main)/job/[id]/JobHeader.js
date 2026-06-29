@@ -16,12 +16,7 @@ function statusLabel(v) {
 }
 
 // Shared Job Cockpit top section — back · customer · job# · address · call/text/CSR/directions · warnings.
-// `tab` highlights the current tab in a compact sub-nav (so it's reachable even off the iPad rail).
-const TABS = [
-  ['Overview', ''], ['Forms', '/forms'], ['Photos', '/photos'], ['Estimate', '/estimate'],
-  ['Invoice', '/invoice'], ['Parts/PO', '/parts'], ['Pricebook', '/pricebook'], ['Equipment', '/equipment'], ['History', '/history'],
-];
-
+// (`tab` kept for caller compatibility; the in-header tab strip was removed — sections live in the rail/bottom bar.)
 export default function JobHeader({ job, customer = {}, tab = 'Overview' }) {
   const tel = dial(customer.phone);
   const addr = customer.address || '';
@@ -50,16 +45,7 @@ export default function JobHeader({ job, customer = {}, tab = 'Overview' }) {
 
       {/* Customer context card — must-tell, do-not-service, what we promised, access, flags. */}
       <JobContext job={job} customer={customer} />
-
-      {/* tab sub-nav (also works without the iPad rail) */}
-      <div style={{ display: 'flex', gap: 4, marginTop: 10, overflowX: 'auto', paddingBottom: 2 }}>
-        {TABS.map(([label, sub]) => {
-          const on = label === tab;
-          return (
-            <Link key={label} href={`/job/${job.id}${sub}`} className="pill" style={{ whiteSpace: 'nowrap', fontSize: 11, fontWeight: on ? 800 : 600, color: on ? '#1a1206' : 'var(--fg-2)', background: on ? 'var(--amber)' : 'var(--surface-2)', border: '1px solid var(--border)' }}>{label}</Link>
-          );
-        })}
-      </div>
+      {/* (Tab sub-nav removed — job sections live in the bottom bar on iPad / the side rail on desktop.) */}
     </div>
   );
 }

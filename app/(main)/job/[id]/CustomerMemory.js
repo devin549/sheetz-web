@@ -8,34 +8,25 @@ const KIND_LABEL = { active: 'ACTIVE', estimate: 'ESTIMATE', unpaid: 'UNPAID', p
 
 // "Customer Memory" — the cockpit's customer/history brain. Server component; everything pre-loaded.
 export default function CustomerMemory({ mem, customer = {}, job = {} }) {
-  const badge = (label, val, color) => val ? <span key={label} className="pill" style={{ fontSize: 11, color }}>{label}: {val}</span> : null;
-  const cid = customer.id || job.customer_id || null; // → the customer's full 360
+  const cid = customer.id || job.customer_id || null; // → the customer's full 360 (office-side link only)
 
   return (
     <div style={{ display: 'grid', gap: 10, marginTop: 10 }}>
-      {/* memory badges */}
+      {/* Lean customer line — tech-side only: name · address · lifetime revenue · #job, and a jump to the
+          Invoice (where warranty + photos live). The deep 360 (timeline detail, ST/DispatchMe ids, full
+          history) is OFFICE-side at /customers/[id] — not surfaced to the tech here. */}
       <div className="card" style={{ borderLeft: '3px solid var(--amber)' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-          {cid
-            ? <Link href={`/customers/${cid}`} style={{ fontWeight: 800, fontSize: 15, textDecoration: 'none', color: 'var(--fg-1)' }} title="Open full customer history">🧠 {customer.name || 'Customer'}</Link>
-            : <span style={{ fontWeight: 800, fontSize: 15 }}>🧠 {customer.name || 'Customer'}</span>}
+          <span style={{ fontWeight: 800, fontSize: 15 }}>{customer.name || 'Customer'}</span>
           {job.job_number ? <span className="muted" style={{ fontSize: 12 }}>#{job.job_number}</span> : null}
-          {cid && <Link href={`/customers/${cid}`} className="pill" style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--amber)' }}>360 view →</Link>}
+          <Link href={`/job/${job.id}/invoice`} className="pill" style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--amber)' }}>🧾 Invoice · warranty + photos →</Link>
         </div>
         {customer.address && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {customer.address}</div>}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          {Number(customer.lifetime_revenue) > 0 && <span className="pill" style={{ fontSize: 11, color: 'var(--green)' }}>💰 {money(customer.lifetime_revenue)} lifetime</span>}
           {mem.membership && <span className="pill" style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)' }}>★ Member · {mem.membership}</span>}
           {(job.warranty_provider || /warranty|insurance/i.test(String(job.job_class || ''))) && <span className="pill" style={{ fontSize: 11, color: '#a78bfa' }}>🛡 Warranty</span>}
           {mem.openBalance > 0 && <span className="pill pill-red" style={{ fontSize: 11 }}>💸 Past due {money(mem.openBalance)}</span>}
-          {badge('📷', mem.photoCount ? `${mem.photoCount}` : null, 'var(--fg-2)')}
-          {mem.lastServiced && <span className="pill" style={{ fontSize: 11 }}>last serviced {fmt(mem.lastServiced)}</span>}
-          {badge('ST', mem.stId, 'var(--fg-3)')}
-          {badge('DispatchMe', job.dispatchme_job_id, 'var(--fg-3)')}
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          {customer.phone && <a href={`tel:${String(customer.phone).replace(/[^0-9+]/g, '')}`} className="pill" style={{ color: 'var(--amber)' }}>📞 Call</a>}
-          {customer.phone && <a href={`sms:${String(customer.phone).replace(/[^0-9+]/g, '')}`} className="pill">💬 Text</a>}
-          {customer.email && <span className="muted" style={{ fontSize: 11 }}>{customer.email}</span>}
         </div>
       </div>
 
