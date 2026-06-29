@@ -23,6 +23,21 @@ export default function JobHeader({ job, customer = {}, tab = 'Overview' }) {
   const mapHref = addr ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}` : null;
   const cid = customer.id || job.customer_id || null; // → the customer's full 360 (all past jobs)
 
+  // Sub-tabs (Pricebook / Estimate / Photos / …) get a SLIM context line — the full briefing (contact bar,
+  // address, customer warnings) lives on Overview only, so you're not re-reading the whole customer header on
+  // every tab. The name links back to the Overview briefing; Directions stays handy.
+  if (tab !== 'Overview') {
+    return (
+      <div className="card card-amber" style={{ position: 'sticky', top: 0, zIndex: 5, padding: '8px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <Link href={`/job/${job.id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13, color: 'var(--fg-1)', textDecoration: 'none', fontWeight: 800 }} title="Back to the job briefing"><ArrowLeft size={15} style={{ color: 'var(--amber)' }} /> {customer.name || 'Customer'}</Link>
+          <span className="muted" style={{ fontSize: 12 }}>{job.job_number ? `#${job.job_number} · ` : ''}{statusLabel(job.status)}</span>
+          {mapHref && <a href={mapHref} target="_blank" rel="noreferrer" className="pill" style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}><Navigation size={12} /> Directions</a>}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="card card-amber" style={{ position: 'sticky', top: 0, zIndex: 5 }}>
       <Link href="/my-day" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--amber)', textDecoration: 'none' }}><ArrowLeft size={14} /> My Day</Link>

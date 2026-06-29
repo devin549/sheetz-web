@@ -17,7 +17,7 @@ const PRIMARY = [
 ];
 // In a job, the thumb bar becomes the TICKET sections (Devin: "on this screen we need this rail") — the
 // most-used job tabs up front, the rest in "More". These labels match the in-job rail TechShell builds.
-const PRIMARY_JOB = ['My Day', 'Overview', 'Photos', 'Estimate', 'Pricebook'];
+const PRIMARY_JOB = ['My Day', 'Overview', 'Photos', 'Pricebook', 'Estimate'];
 
 export default function BottomBar({ rail = [] }) {
   const path = usePathname() || '';
