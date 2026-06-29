@@ -193,6 +193,10 @@ export default async function MyDay({ searchParams }) {
   const activeJob = activeIdx >= 0 ? list[activeIdx] : null;
   const flowCurrent = activeJob ? { id: activeJob.id, name: (activeJob.customers || {}).name || 'Your job', status: activeJob.status, time: activeJob.scheduled_at } : null;
   const flowNext = activeNextJob ? { id: activeNextJob.id, customer: (activeNextJob.customers || {}).name || 'next stop', time: activeNextJob.scheduled_at, driveMin: activeNext ? activeNext.driveMin : null } : null;
+  // Does the active job already have an OPEN (unacked) ETA update? If so the late-risk nudge is already
+  // handled — don't re-nag the tech after a reload. Best-effort.
+  let activeEtaOpen = false;
+  if (activeJobId) { try { const { data: oe } = await supabase.from('job_eta_updates').select('id').eq('job_id', activeJobId).is('ack_at', null).limit(1).maybeSingle(); activeEtaOpen = !!oe; } catch (_) {} }
 
   // ── Tabs (HTML My Day): 🔥 Today · 📜 My Jobs (30d) · 💰 Today $ ──
   const tab = ['jobs', 'money'].includes(searchParams?.tab) ? searchParams.tab : 'today';
@@ -312,7 +316,7 @@ export default async function MyDay({ searchParams }) {
     const leg = legByJobId[j.id];
     return (
       <Fragment key={j.id}>
-        <JobCard job={j} seeAll={seeAll} canAct={can(role, 'changeStatus')} variant={variant} tags={tags} pastDue={pastDueByCust[j.customer_id] || 0} next={variant === 'active' ? activeNext : null} />
+        <JobCard job={j} seeAll={seeAll} canAct={can(role, 'changeStatus')} variant={variant} tags={tags} pastDue={pastDueByCust[j.customer_id] || 0} next={variant === 'active' ? activeNext : null} etaSent={variant === 'active' ? activeEtaOpen : false} />
         {variant !== 'done' && leg && <DriveLeg min={leg.min} miles={leg.miles} fromName={leg.fromName} long={leg.long} />}
       </Fragment>
     );

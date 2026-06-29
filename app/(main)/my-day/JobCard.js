@@ -75,7 +75,7 @@ function TagRow({ tags = [] }) {
   );
 }
 
-export default function JobCard({ job, seeAll, canAct, variant = 'active', tags = [], pastDue = 0, next = null }) {
+export default function JobCard({ job, seeAll, canAct, variant = 'active', tags = [], pastDue = 0, next = null, etaSent = false }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [busyKey, setBusyKey] = useState(null);
@@ -84,6 +84,7 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
   const [etaMins, setEtaMins] = useState(30);
   const [etaNote, setEtaNote] = useState('');
   const [lateMsg, setLateMsg] = useState(null);
+  const [lateAck, setLateAck] = useState(etaSent); // late-risk handled: an open ETA update already exists, or the tech just acted
   const [payOpen, setPayOpen] = useState(false);
   const [payAmt, setPayAmt] = useState(job.amount ? String(job.amount) : '');
   const [payLink, setPayLink] = useState(null);
@@ -176,13 +177,25 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
   };
   // 🚨 Late risk (next job will be late) — office relay only (never auto-texts the customer). "Text ETA" asks
   // the office to text the NEXT customer a heads-up; "Office" just flags dispatch.
+  const lateMins = () => (nextLine ? Math.max(1, -nextLine.slack) : 15);
   const lateRisk = (needsHelp) => {
     setLateMsg(null);
-    const mins = nextLine ? Math.max(1, -nextLine.slack) : 15;
+    const mins = lateMins();
     start(async () => {
       const note = needsHelp ? `Late risk — next job (${nextLine?.customer} ${nextLine?.at}) will be late` : `Heads-up: running into ${nextLine?.customer}'s ${nextLine?.at} — office, text them an updated ETA`;
       const r = await reportEta(job.id, mins, note, needsHelp, needsHelp ? null : new Date(Date.now() + mins * 60000).toISOString());
-      setLateMsg(r); if (r?.ok && !needsHelp) router.refresh();
+      setLateMsg(r); if (r?.ok) { setLateAck(true); router.refresh(); }
+    });
+  };
+  // 📞 Call the customer about the delay — opens the dialer AND logs it to the office (a verbal heads-up
+  // still counts as handling the late risk). Clears the nudge like the other two actions.
+  const callCust = () => {
+    if (tel && typeof window !== 'undefined') window.location.href = `tel:${tel}`;
+    setLateMsg(null);
+    const mins = lateMins();
+    start(async () => {
+      const r = await reportEta(job.id, mins, `Calling ${cust.name || 'the customer'} about the late arrival`, false, new Date(Date.now() + mins * 60000).toISOString());
+      setLateMsg(r); if (r?.ok) { setLateAck(true); router.refresh(); }
     });
   };
   const qa = (bg, fg) => ({ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '12px 8px', borderRadius: 10, border: 'none', background: bg, color: fg, fontWeight: 800, fontSize: 13, textDecoration: 'none', cursor: 'pointer', whiteSpace: 'nowrap' });
@@ -258,10 +271,19 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
           <div data-no-nav style={{ marginTop: 8, border: '1px solid var(--red)', background: 'rgba(239,83,80,.10)', borderRadius: 10, padding: '10px 12px' }}>
             <div style={{ fontWeight: 800, fontSize: 12, color: 'var(--red)' }}>🚨 LATE RISK: NEXT JOB WILL BE LATE</div>
             <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>Finish est {nextLine.finishBy} · {nextLine.driveMin} min drive → arrive {nextLine.at} · {nextLine.customer} needs a heads-up.</div>
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              <button onClick={() => lateRisk(false)} disabled={pending} style={{ flex: 1, padding: '9px', borderRadius: 8, border: 'none', background: 'var(--red)', color: '#fff', fontWeight: 800, fontSize: 12, cursor: 'pointer', opacity: pending ? 0.6 : 1 }}>💬 Text ETA</button>
-              <button onClick={() => lateRisk(true)} disabled={pending} style={{ flex: 1, padding: '9px', borderRadius: 8, border: '1px solid var(--border-strong)', background: 'var(--surface-2)', color: 'var(--fg-1)', fontWeight: 700, fontSize: 12, cursor: 'pointer', opacity: pending ? 0.6 : 1 }}>🏢 Office</button>
-            </div>
+            {lateAck ? (
+              <div style={{ fontSize: 11.5, marginTop: 8, color: 'var(--green)', fontWeight: 700 }}>✓ Heads-up handled — {nextLine.customer} won&apos;t be left guessing.</div>
+            ) : (
+              <>
+                {/* Forced choice — the box stays until the tech does ONE of these three (no dismiss). */}
+                <div style={{ fontWeight: 800, fontSize: 10.5, marginTop: 8, color: 'var(--red)' }}>Pick one before you keep going:</div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  <button onClick={() => lateRisk(false)} disabled={pending} style={{ flex: 1, padding: '9px 6px', borderRadius: 8, border: 'none', background: 'var(--red)', color: '#fff', fontWeight: 800, fontSize: 12, cursor: 'pointer', opacity: pending ? 0.6 : 1 }}>💬 Text ETA</button>
+                  <button onClick={callCust} disabled={pending || !tel} style={{ flex: 1, padding: '9px 6px', borderRadius: 8, border: '1px solid var(--red)', background: 'var(--surface-2)', color: 'var(--fg-1)', fontWeight: 800, fontSize: 12, cursor: (pending || !tel) ? 'default' : 'pointer', opacity: (pending || !tel) ? 0.6 : 1 }}>📞 Call</button>
+                  <button onClick={() => lateRisk(true)} disabled={pending} style={{ flex: 1, padding: '9px 6px', borderRadius: 8, border: '1px solid var(--border-strong)', background: 'var(--surface-2)', color: 'var(--fg-1)', fontWeight: 700, fontSize: 12, cursor: 'pointer', opacity: pending ? 0.6 : 1 }}>🏢 Office</button>
+                </div>
+              </>
+            )}
             {lateMsg && <div style={{ fontSize: 11, marginTop: 6, color: lateMsg.ok ? 'var(--green)' : 'var(--red)' }}>{lateMsg.msg}</div>}
           </div>
         )
