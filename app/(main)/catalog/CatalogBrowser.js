@@ -26,7 +26,7 @@ function htmlToText(s) {
 //  • standalone /catalog (browse + "Add to ticket" → job picker) — pass myJobs, no onAddItem.
 //  • embedded in the work-order pricebook (browse + "Add to estimate" → the job's cart) — pass embedded,
 //    onAddItem(item), cartIds (Set of ids in the cart), and topSlot (scan + custom-item, rendered on top).
-export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}, showCost, canEdit, total, myJobs = [], embedded = false, onAddItem = null, cartIds = null, topSlot = null }) {
+export default function CatalogBrowser({ roots = [], related = {}, upgrades = {}, showCost, canEdit, total, myJobs = [], embedded = false, onAddItem = null, cartIds = null, topSlot = null, recFor = '' }) {
   const [stack, setStack] = useState([]);   // array of nodes (the drill path)
   const [sel, setSel] = useState(null);
   const [q, setQ] = useState('');
@@ -256,7 +256,7 @@ function ItemSheet({ it, showCost, canEdit, learnedCross = [], upgradeItems = []
         {/* 🧠 Commonly added — ONLY what the engine learned from real jobs for this item's code. */}
         {learnedCross.length > 0 && (
           <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>🧠 Commonly added with this</div>
+            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>✨ Recommended {recFor ? `for ${recFor}’s home` : 'for you'}</div>
             <div style={{ display: 'grid', gap: 6 }}>
               {learnedCross.map((r) => <CrossRow key={r.id} r={r} onPick={onPick} />)}
             </div>

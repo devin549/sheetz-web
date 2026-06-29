@@ -196,7 +196,7 @@ export default function PricebookClient({ job, customer, roots = [], related = {
             and Custom-item ride on top of the browse. Cost/margin shows to managers only. */}
         <CatalogBrowser
           embedded roots={shownRoots} related={related} upgrades={upgrades} total={total}
-          showCost={showMargin} canEdit={false}
+          showCost={showMargin} canEdit={false} recFor={(customer?.name || '').trim().split(/\s+/)[0] || ''}
           onAddItem={add} cartIds={cartIds}
           topSlot={<div style={{ marginBottom: 10 }}>
             {roots && roots.length > 1 && (
