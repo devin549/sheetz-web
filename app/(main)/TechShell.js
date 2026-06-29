@@ -106,7 +106,11 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
   // (geofence; no key needed — the job's lat/lng is geocoded at booking). Tech can briefly "peek".
   // Hand-to-Customer is the stronger manual lock.
   const onSite = !!(activeJob && activeJob.onSite);
-  const quiet = (onSite || atHouse) && !peek && !cust;
+  // In the job cockpit the tech is working the ticket in front of the customer — auto-quiet the money/rank
+  // ribbon there too, not just on an ON-SITE status or GPS hit (En route + standing in the house still needs
+  // to be quiet; status/GPS can lag or be denied). Being on a /job/ screen is the reliable signal.
+  const inJob = /^\/job\/[^/]+/.test(path);
+  const quiet = (onSite || atHouse || inJob) && !peek && !cust;
   // Hide the global office "Sheetz" topbar — the cockpit owns its own chrome (no office clutter).
   useEffect(() => {
     // Add the cockpit chrome class but DON'T pin the theme — the field app defaults to LIGHT (matches the
@@ -140,7 +144,6 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
   const wmLabel = `${name || 'Tech'} · ${wmId} · ${today} · CB CONFIDENTIAL`;
   // In-job context: when viewing a job, the rail becomes job-contextual (Job·Photos·Tools·Pay·Notes·History).
   const jobMatch = path.match(/^\/job\/([^/]+)/);
-  const inJob = !!jobMatch;
   const curId = jobMatch ? jobMatch[1] : (activeJob ? activeJob.id : null);
   // Global rail's Job/Photos/Tools → the active job's screens, or "pick a job first".
   const pick = (sub) => (activeJob ? `/job/${activeJob.id}${sub}` : '/pick-a-job');
@@ -206,9 +209,9 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
       {!cust && quiet && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', fontSize: 12, color: '#a5d6a7', fontWeight: 700, background: 'linear-gradient(90deg, #1a3a2a 0%, #0f2a1a 100%)', borderTop: '1px solid #4caf50', borderBottom: '1px solid #4caf50', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 14 }}>🏠</span>
-          <span style={{ color: '#fff', fontWeight: 800 }}>{activeJob.customer}</span>
-          {activeJob.number ? <span style={{ color: '#a5d6a7', fontWeight: 600 }}>· {activeJob.number}</span> : null}
-          {activeJob.address ? <span style={{ color: '#7fbf9a', fontWeight: 500, fontSize: 11 }}>· 📍 {activeJob.address}</span> : null}
+          <span style={{ color: '#fff', fontWeight: 800 }}>{activeJob?.customer || 'On a job'}</span>
+          {activeJob?.number ? <span style={{ color: '#a5d6a7', fontWeight: 600 }}>· {activeJob.number}</span> : null}
+          {activeJob?.address ? <span style={{ color: '#7fbf9a', fontWeight: 500, fontSize: 11 }}>· 📍 {activeJob.address}</span> : null}
           <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ opacity: 0.85, fontSize: 11 }}>🤫 Quiet — pay/rank hidden from the customer</span>
             <button onClick={() => setPeek(true)} style={{ background: 'transparent', border: '1px solid #4caf50', color: '#a5d6a7', borderRadius: 12, padding: '3px 9px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>👁 Peek stats</button>
@@ -220,8 +223,8 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
       {!cust && !quiet && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '8px 16px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'var(--fg-2)', overflowX: 'auto',
           background: 'linear-gradient(90deg, #3a1d00 0%, #0e3a5c 28%, #0c402e 52%, #3a124a 76%, #3a1d00 100%)', borderTop: '2px solid #ffc400', borderBottom: '2px solid #ff8f00' }}>
-          {onSite && peek && (
-            <button onClick={() => setPeek(false)} title="Hide again (you're on-site)" style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(76,175,80,0.18)', border: '1px solid #4caf50', color: '#a5d6a7', borderRadius: 12, padding: '3px 9px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>🤫 Hide</button>
+          {peek && (onSite || atHouse || inJob) && (
+            <button onClick={() => setPeek(false)} title="Hide again (customer could be looking)" style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(76,175,80,0.18)', border: '1px solid #4caf50', color: '#a5d6a7', borderRadius: 12, padding: '3px 9px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>🤫 Hide</button>
           )}
           <Link href="/my-day?tab=money" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(105,240,174,0.12)', border: '1px solid #2ee6a0', borderRadius: 14, padding: '4px 11px' }}>
             💰 <span style={{ color: '#69f0ae', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 800 }}>My Day $</span><span style={{ color: '#a5d6a7', fontWeight: 800 }}>›</span>
