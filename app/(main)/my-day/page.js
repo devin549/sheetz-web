@@ -13,6 +13,7 @@ import DriveLeg from './DriveLeg';
 import JobSearch from './JobSearch';
 import MyJobs from './MyJobs';
 import DoneTray from './DoneTray';
+import TodayFlow from './TodayFlow';
 
 const DAILY_REVENUE_GOAL = 1500; // default tech daily revenue goal for "vs goal" until per-tech goals land
 
@@ -188,6 +189,10 @@ export default async function MyDay({ searchParams }) {
   const activeNext = (activeNextJob && legByJobId[activeJobId])
     ? { customer: (activeNextJob.customers || {}).name || 'next stop', time: activeNextJob.scheduled_at, driveMin: legByJobId[activeJobId].min, miles: legByJobId[activeJobId].miles }
     : null;
+  // 🧭 Today Flow strip — shape the active ("now") job + the next stop for the glance row at the top.
+  const activeJob = activeIdx >= 0 ? list[activeIdx] : null;
+  const flowCurrent = activeJob ? { id: activeJob.id, name: (activeJob.customers || {}).name || 'Your job', status: activeJob.status, time: activeJob.scheduled_at } : null;
+  const flowNext = activeNextJob ? { id: activeNextJob.id, customer: (activeNextJob.customers || {}).name || 'next stop', time: activeNextJob.scheduled_at, driveMin: activeNext ? activeNext.driveMin : null } : null;
 
   // ── Tabs (HTML My Day): 🔥 Today · 📜 My Jobs (30d) · 💰 Today $ ──
   const tab = ['jobs', 'money'].includes(searchParams?.tab) ? searchParams.tab : 'today';
@@ -371,6 +376,9 @@ export default async function MyDay({ searchParams }) {
             {!isToday && (
               <div style={{ marginTop: 8 }}><Link href="/my-day" className="pill" style={{ textDecoration: 'none', background: 'var(--amber)', color: '#1a1206', fontWeight: 800 }}>↩ Back to Today</Link></div>
             )}
+
+            {/* 🧭 Today Flow — Current → Next → Tool-nearby glance strip (own jobs, today, with a route) */}
+            {isToday && !seeAll && routeJobs.length > 0 && <TodayFlow current={flowCurrent} next={flowNext} />}
 
             {/* 🚗 Drive time today — running job-to-job total + % of shift on the road (HTML drive card) */}
             {driveTotMin > 0 && (
