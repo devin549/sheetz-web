@@ -76,8 +76,13 @@ export default function InAppCamera({ label, onCapture, onClose, video = false, 
   };
   const retakePhoto = () => { setShot(null); setQa(null); setChecking(false); };
   const usePhoto = async () => {
-    try { const blob = await (await fetch(shot)).blob(); stopStream(); onCapture(new File([blob], 'proof.jpg', { type: 'image/jpeg' })); }
-    catch { setErr('unavailable'); }
+    try {
+      const blob = await (await fetch(shot)).blob(); stopStream();
+      // If the AI flagged it and they're keeping it anyway, tag the override so the office reviews it.
+      const failed = qa && (qa.verdict === 'retake' || qa.quality === 'poor');
+      const meta = failed ? { aiFlagged: true, aiReason: qa.suggestion || (qa.quality ? `${qa.quality} quality` : 'flagged by AI') } : null;
+      onCapture(new File([blob], 'proof.jpg', { type: 'image/jpeg' }), meta);
+    } catch { setErr('unavailable'); }
   };
 
   // ── Video (walkthrough) ──

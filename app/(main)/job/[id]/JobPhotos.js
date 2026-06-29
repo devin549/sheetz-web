@@ -159,6 +159,11 @@ export default function JobPhotos({ jobId, photos, reviewByPhoto = {}, closeout,
                   <span className="pill" style={{ color: photo.customer_visible ? 'var(--green)' : 'var(--fg-2)' }}>{photo.kind || 'job_photo'}{photo.customer_visible ? ' · customer' : ''}</span>
                   <span className="muted" style={{ fontSize: 11 }}>{bytes(photo.size_bytes)}</span>
                 </div>
+                {photo.ai_flagged && (
+                  <div style={{ marginTop: 8, padding: '6px 9px', borderRadius: 8, background: 'rgba(255,179,0,.12)', border: '1px solid var(--amber)', fontSize: 11.5, color: 'var(--amber)', fontWeight: 700 }}>
+                    🚩 AI flagged — tech used it anyway{photo.ai_flag_reason ? <span style={{ color: 'var(--fg-2)', fontWeight: 400 }}> · {photo.ai_flag_reason}</span> : ''}
+                  </div>
+                )}
                 {photo.caption && <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.4 }}>{photo.caption}</div>}
                 {photo.tags?.length > 0 && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>{photo.tags.map((t) => <span key={t} className="pill" style={{ fontSize: 10 }}>{t}</span>)}</div>

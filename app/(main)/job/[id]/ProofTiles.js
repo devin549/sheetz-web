@@ -49,7 +49,7 @@ export default function ProofTiles({ jobId, photos = [], segments = [], required
   const countOf = (kind) => photos.filter((p) => (p.kind || '') === kind || (kind === 'walkthrough' && /^video\//.test(p.mime_type || ''))).length;
   const required = new Set(requiredKinds);
 
-  async function shoot(file, kind, source) {
+  async function shoot(file, kind, source, meta) {
     if (!file) return;
     setMsg(null); setBusyKind(kind);
     try {
@@ -60,6 +60,7 @@ export default function ProofTiles({ jobId, photos = [], segments = [], required
       fd.set('jobId', jobId); fd.set('photo', small); fd.set('kind', kind); fd.set('source', source);
       if (segId) fd.set('segmentId', segId);
       if (gps) { fd.set('lat', String(gps.lat)); fd.set('lng', String(gps.lng)); }
+      if (meta && meta.aiFlagged) { fd.set('aiFlagged', 'true'); fd.set('aiReason', meta.aiReason || ''); }
       const r = await uploadJobPhoto(fd);
       setMsg(r); if (r.ok) router.refresh();
     } catch (e) { setMsg({ ok: false, msg: String(e?.message || e) }); }
@@ -130,7 +131,7 @@ export default function ProofTiles({ jobId, photos = [], segments = [], required
           video={camKind === 'walkthrough'}
           onPrecheck={camKind === 'walkthrough' ? null : (url) => prescanPhoto(url, jobType, requiredKinds)}
           onClose={() => setCamKind(null)}
-          onCapture={(file) => { const k = camKind; setCamKind(null); start(() => shoot(file, k, 'camera')); }}
+          onCapture={(file, meta) => { const k = camKind; setCamKind(null); start(() => shoot(file, k, 'camera', meta)); }}
         />
       )}
     </div>

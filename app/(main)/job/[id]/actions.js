@@ -87,6 +87,10 @@ export async function uploadJobPhoto(formData) {
   const segmentId = cleanText(formData.get('segmentId'), 60) || null;
   const source = formData.get('source') === 'camera' ? 'camera' : 'upload';
   const lat = Number(formData.get('lat')); const lng = Number(formData.get('lng'));
+  // Override logging: the tech pushed past the on-capture AI clarity check ("Use it anyway"). Tag the photo
+  // + reason so a supervisor reviews it, and audit-log it (a tech overriding every shot is a coaching signal).
+  const aiFlagged = formData.get('aiFlagged') === 'true';
+  const aiReason = cleanText(formData.get('aiReason'), 200) || null;
 
   const ctx = await getActionContext(jobId);
   if (!ctx.ok) return ctx;
@@ -125,8 +129,8 @@ export async function uploadJobPhoto(formData) {
     uploaded_by_email: ctx.user.email,
     uploaded_by_name: ctx.user.user_metadata?.name || ctx.user.email,
   };
-  // Proof-flow columns (migrations 87 + 88). Insert with them; on a missing-column DB, retry with base.
-  const extra = { segment_id: segmentId, source, qa_status: 'pending', lat: Number.isFinite(lat) ? lat : null, lng: Number.isFinite(lng) ? lng : null };
+  // Proof-flow columns (migrations 87 + 88; ai_flag = 131). Insert with them; on a missing-column DB, retry with base.
+  const extra = { segment_id: segmentId, source, qa_status: 'pending', lat: Number.isFinite(lat) ? lat : null, lng: Number.isFinite(lng) ? lng : null, ai_flagged: aiFlagged, ai_flag_reason: aiFlagged ? aiReason : null };
   let { error: insertError } = await ctx.sb.from('job_photos').insert({ ...base, ...extra });
   if (insertError && /column|schema cache|does not exist/i.test(insertError.message || '')) {
     ({ error: insertError } = await ctx.sb.from('job_photos').insert(base));
@@ -137,6 +141,7 @@ export async function uploadJobPhoto(formData) {
     return { ok: false, msg: insertError.message };
   }
 
+  if (aiFlagged) { try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'photo.ai_override', entity: 'job_photo', entity_id: id, detail: { kind, reason: aiReason } }); } catch (_) {} }
   revalidatePath(`/job/${jobId}`);
   revalidatePath('/board');
   revalidatePath('/my-day');
