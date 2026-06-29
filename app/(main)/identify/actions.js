@@ -30,6 +30,21 @@ const FIXTURE_TERMS = {
 };
 const REPLACE_RE = /\b(replace|replacement|install|installation|new|upgrade|swap)\b/i;
 const REPAIR_RE = /\b(repair|rebuild|service|reseat|reset|seal|tune|clear|snake|cable|auger|jet|descal|fix|adjust|kit|cartridge|flush|unclog)\b/i;
+// Special / apartment / contract pricing — named "… Contract Rate" in the book. NEVER surface it in the
+// standard camera scan (it's negotiated pricing for specific accounts, quoted by the office).
+const CONTRACT_RE = /\bcontract\b|contract rate|account rate|special rate/i;
+
+// Turn a price-sorted list into a Good / Better / Best ladder (cheapest = Good, priciest = Best, middle =
+// Better) + the rest as "more". Cheapest repair (flapper/fill valve) → Good; biggest (major rebuild) → Best.
+function gbbLadder(list) {
+  const s = [...(list || [])].sort((a, b) => (a.price || 0) - (b.price || 0));
+  if (!s.length) return null;
+  if (s.length === 1) return { best: s[0], more: [] };
+  if (s.length === 2) return { good: s[0], best: s[1], more: [] };
+  const mid = Math.floor((s.length - 1) / 2);
+  const used = new Set([0, mid, s.length - 1]);
+  return { good: s[0], better: s[mid], best: s[s.length - 1], more: s.filter((_, i) => !used.has(i)) };
+}
 
 const BUCKET = 'pricebook-photos';
 const STOP = new Set(['the', 'and', 'for', 'with', 'inch', 'new', 'set', 'kit', 'pack', 'genuine', 'oem', 'replacement', 'parts', 'part', 'home', 'depot', 'lowes', 'amazon', 'ebay', 'walmart', 'menards', 'ferguson', 'supply']);
@@ -118,17 +133,18 @@ export async function scanFixtureRepairs(dataUrl) {
 
   const showCost = canAny(c.profile.role, ['seeFinancials']);
   const toLine = (it) => ({ id: it.id, name: it.customer_name || it.name, price: Number(it.retail_price) || 0, ...(showCost ? { marginPct: marginPct(it), marginHealth: marginHealth(it) } : {}) });
-  const repairs = [], replacements = [];
+  const repairsAll = [], replacementsAll = [];
   for (const { it, hay } of scored) {
+    if (CONTRACT_RE.test(hay)) continue; // special/apartment "Contract Rate" pricing — never leak into the scan
     const isReplace = REPLACE_RE.test(hay) && !/repair|rebuild/i.test(hay);
-    if (isReplace) { if (replacements.length < 5) replacements.push(toLine(it)); }
-    else if (repairs.length < 6) repairs.push(toLine(it)); // repair-tagged OR default → repairs
-    if (repairs.length >= 6 && replacements.length >= 5) break;
+    if (isReplace) { if (replacementsAll.length < 10) replacementsAll.push(toLine(it)); }
+    else if (repairsAll.length < 12) repairsAll.push(toLine(it)); // repair-tagged OR default → repairs
   }
-  // Best = the top replacement (the upgrade play) → else the top repair. The UI glows it.
-  const best = replacements[0] || repairs[0] || null;
-  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'fixture.scan', entity: 'pricebook', entity_id: '', detail: { fixture: fx.fixture, repairs: repairs.length, replacements: replacements.length } }); } catch (_) {}
-  return { ok: true, fixture: fx.fixture, label: fx.label, problem: fx.problem, confidence: fx.confidence, repairs, replacements, bestId: best ? best.id : null };
+  // Each bucket becomes a Good/Better/Best ladder (the Best glows in the UI) + "more" options.
+  const repairs = gbbLadder(repairsAll);
+  const replacements = gbbLadder(replacementsAll);
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'fixture.scan', entity: 'pricebook', entity_id: '', detail: { fixture: fx.fixture, repairs: repairsAll.length, replacements: replacementsAll.length } }); } catch (_) {}
+  return { ok: true, fixture: fx.fixture, label: fx.label, problem: fx.problem, confidence: fx.confidence, repairs, replacements };
 }
 
 // 🧠 Teach the library: this Lens guess → this pricebook fix. Stored as a learned alias so next time the

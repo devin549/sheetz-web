@@ -15,15 +15,38 @@ const EQUIP_FIXTURES = new Set(['water_heater', 'tankless', 'water_softener', 's
 const money = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 const fileToDataUrl = (file) => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); });
 
-function Row({ f, best, added, onPick }) {
+const TIER_C = { Good: 'var(--fg-3)', Better: '#c79141', Best: 'var(--amber)' };
+
+function TierRow({ f, tier, added, onPick }) {
+  const best = tier === 'Best';
   return (
     <button onClick={() => onPick(f)} disabled={added} className={best ? 'cb-recommend' : ''}
       style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 11px', borderRadius: 9, width: '100%', textAlign: 'left', cursor: added ? 'default' : 'pointer', border: `1px solid ${best ? 'var(--amber)' : 'var(--border)'}`, background: added ? 'color-mix(in oklab, var(--green) 12%, var(--surface-1))' : best ? 'color-mix(in oklab, var(--amber) 8%, var(--surface-2))' : 'var(--surface-2)' }}>
-      {best && <span className="pill" style={{ fontSize: 9, fontWeight: 800, color: '#1a1206', background: 'var(--amber)' }}>★ BEST</span>}
+      {tier && <span className="pill" style={{ fontSize: 9, fontWeight: 800, whiteSpace: 'nowrap', color: best ? '#1a1206' : TIER_C[tier], background: best ? 'var(--amber)' : 'transparent', border: best ? 'none' : `1px solid ${TIER_C[tier]}` }}>{best ? '★ BEST' : tier.toUpperCase()}</span>}
       <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
       <span style={{ fontWeight: 700, color: 'var(--amber)' }}>{money(f.price)}</span>
       <span className="pill" style={{ fontSize: 10, color: added ? 'var(--green)' : 'var(--amber)' }}>{added ? '✓ added' : '➕ add'}</span>
     </button>
+  );
+}
+
+// A Good / Better / Best ladder (Best glows) + a "more options" reveal for the rest.
+function GbbLadder({ title, ladder, added, onPick }) {
+  const [more, setMore] = useState(false);
+  if (!ladder) return null;
+  const tiers = [['Good', ladder.good], ['Better', ladder.better], ['Best', ladder.best]].filter(([, f]) => f);
+  if (!tiers.length) return null;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--fg-2)', marginBottom: 5 }}>{title}</div>
+      <div style={{ display: 'grid', gap: 6 }}>{tiers.map(([tier, f]) => <TierRow key={f.id} f={f} tier={tier} added={!!added[f.id]} onPick={onPick} />)}</div>
+      {ladder.more?.length > 0 && (
+        <>
+          <button onClick={() => setMore((m) => !m)} className="pill" style={{ cursor: 'pointer', marginTop: 6, fontSize: 11, color: 'var(--fg-2)' }}>{more ? '▴ fewer' : `+ ${ladder.more.length} more option${ladder.more.length > 1 ? 's' : ''}`}</button>
+          {more && <div style={{ display: 'grid', gap: 6, marginTop: 6 }}>{ladder.more.map((f) => <TierRow key={f.id} f={f} added={!!added[f.id]} onPick={onPick} />)}</div>}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -66,7 +89,8 @@ export default function PartPhotoScan({ onAdd, jobId }) {
     if (r.ok) { setSavedBrand(r.msg); setPlate(null); } else setPlateMsg(r.msg);
   });
 
-  const hasResults = res && ((res.repairs && res.repairs.length) || (res.replacements && res.replacements.length));
+  const ladderHas = (l) => l && (l.good || l.better || l.best);
+  const hasResults = res && (ladderHas(res.repairs) || ladderHas(res.replacements));
 
   return (
     <div style={{ marginBottom: 10 }}>
@@ -85,18 +109,8 @@ export default function PartPhotoScan({ onAdd, jobId }) {
             <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>No matching items in your book yet — try the type-in search below, or browse the categories.</div>
           ) : (
             <>
-              {res.repairs?.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--fg-2)', marginBottom: 5 }}>🔧 Repairs</div>
-                  <div style={{ display: 'grid', gap: 6 }}>{res.repairs.map((f) => <Row key={f.id} f={f} best={f.id === res.bestId} added={!!added[f.id]} onPick={pick} />)}</div>
-                </div>
-              )}
-              {res.replacements?.length > 0 && (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--fg-2)', marginBottom: 5 }}>🔄 Replacements</div>
-                  <div style={{ display: 'grid', gap: 6 }}>{res.replacements.map((f) => <Row key={f.id} f={f} best={f.id === res.bestId} added={!!added[f.id]} onPick={pick} />)}</div>
-                </div>
-              )}
+              <GbbLadder title="🔧 Repairs — good · better · best" ladder={res.repairs} added={added} onPick={pick} />
+              <GbbLadder title="🔄 Replacements — good · better · best" ladder={res.replacements} added={added} onPick={pick} />
             </>
           )}
           {/* 📋 Equipment → capture + save the brand off the data plate (Rheem/AO Smith/Bradford White…). */}
