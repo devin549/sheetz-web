@@ -168,6 +168,25 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
     nextLine = { customer: String(next.customer || 'next stop').split(/\s+/)[0], at: fmtTime(next.time), driveMin, slack, finishBy };
   }
 
+  // 🧭 Navigate + Notify — opens GPS directions AND marks en route + pings the office to text the ETA (1 tap).
+  const navNotify = () => {
+    if (mapHref && typeof window !== 'undefined') window.open(mapHref, '_blank', 'noopener');
+    setEnrMsg(null);
+    start(async () => { const r = await notifyEnRoute(job.id); setEnrMsg(r); if (r?.ok) router.refresh(); });
+  };
+  // 🚨 Late risk (next job will be late) — office relay only (never auto-texts the customer). "Text ETA" asks
+  // the office to text the NEXT customer a heads-up; "Office" just flags dispatch.
+  const lateRisk = (needsHelp) => {
+    setLateMsg(null);
+    const mins = nextLine ? Math.max(1, -nextLine.slack) : 15;
+    start(async () => {
+      const note = needsHelp ? `Late risk — next job (${nextLine?.customer} ${nextLine?.at}) will be late` : `Heads-up: running into ${nextLine?.customer}'s ${nextLine?.at} — office, text them an updated ETA`;
+      const r = await reportEta(job.id, mins, note, needsHelp, needsHelp ? null : new Date(Date.now() + mins * 60000).toISOString());
+      setLateMsg(r); if (r?.ok && !needsHelp) router.refresh();
+    });
+  };
+  const qa = (bg, fg) => ({ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '12px 8px', borderRadius: 10, border: 'none', background: bg, color: fg, fontWeight: 800, fontSize: 13, textDecoration: 'none', cursor: 'pointer', whiteSpace: 'nowrap' });
+
   // Whole card is a tap-target into the job (HTML cbOpenJob) — but clicks on inner controls (Running late
   // button/form) must NOT navigate, so bail if the tap landed on an interactive element (cbOnsiteCardTap).
   const goJob = (e) => { if (e.target.closest && e.target.closest('button, a, input, textarea, select, [data-no-nav]')) return; router.push(`/job/${job.id}`); };
@@ -197,14 +216,6 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
           {variant === 'active' && !cancelled && !done && nextLine ? (
             <div style={{ marginTop: 5, fontSize: 11, color: 'var(--fg-2)', background: 'rgba(255,179,0,0.08)', border: '1px solid var(--amber-dim)', padding: '3px 7px', borderRadius: 6, display: 'inline-block' }}>🎯 {nextLine.driveMin}-min drive → <strong>{nextLine.customer}</strong> {nextLine.at} · <span style={{ color: nextLine.slack >= 0 ? 'var(--green)' : 'var(--red)' }}>{nextLine.slack >= 0 ? `+${nextLine.slack} slack` : `${-nextLine.slack} tight`}</span></div>
           ) : null}
-          {/* ⏳ finish-by nudge — only while ON-SITE: wrap up by X to keep the next job on time (red if over). */}
-          {variant === 'active' && !cancelled && !done && cur === 'on_site' && nextLine ? (
-            <div style={{ marginTop: 5, fontSize: 11, fontWeight: 700, color: nextLine.slack >= 0 ? 'var(--amber)' : 'var(--red)' }}>
-              {nextLine.slack >= 0
-                ? `⏳ Wrap up by ${nextLine.finishBy} to keep ${nextLine.customer} ${nextLine.at} on time`
-                : `🚨 Running into ${nextLine.customer}'s ${nextLine.at} — ${-nextLine.slack} min over · tap “Running late” to auto-text them`}
-            </div>
-          ) : null}
         </div>
         <span className={pill.cls} style={pill.color ? { color: pill.color } : undefined}>{cur === 'on_site' && elapsedMin > 0 ? `${pill.label} · ${elapsedMin}m` : pill.label}</span>
       </div>
@@ -220,15 +231,38 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
         </div>
       )}
 
-      {/* 🚐 On my way — the en-route notify lives HERE on the My Day card (with the customer), not the job. */}
-      {variant === 'active' && canAct && !cancelled && !done && cur !== 'on_site' && !atJob && (
+      {/* Quick actions — Call · Text · Navigate+Notify (one tap = opens GPS + en-route text + updates dispatch).
+          Navigate+Notify only while heading there (scheduled/enroute, before the arrive prompt). */}
+      {variant === 'active' && canAct && !cancelled && !done && (
         <div data-no-nav style={{ marginTop: 8 }}>
-          <button onClick={notify} disabled={pending}
-            style={{ width: '100%', padding: '11px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#0d47a1 0%,#1565c0 100%)', color: '#fff', fontWeight: 800, fontSize: 13, cursor: pending ? 'default' : 'pointer', opacity: pending ? 0.6 : 1 }}>
-            🚐 {cur === 'enroute' ? `Notify ${(cust.name || 'the customer').split(/\s+/)[0]} — I'm on my way` : `On my way — text ${(cust.name || 'the customer').split(/\s+/)[0]} my ETA`}
-          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: (cur !== 'on_site' && !atJob) ? '1fr 1fr 1.5fr' : '1fr 1fr', gap: 6 }}>
+            <a href={tel ? `tel:${tel}` : undefined} style={{ ...qa('#7a1f1f', '#fff'), opacity: tel ? 1 : 0.5, pointerEvents: tel ? 'auto' : 'none' }}>📞 Call</a>
+            <a href={tel ? `sms:${tel}` : undefined} style={{ ...qa('#1565c0', '#fff'), opacity: tel ? 1 : 0.5, pointerEvents: tel ? 'auto' : 'none' }}>💬 Text</a>
+            {cur !== 'on_site' && !atJob && (
+              <button onClick={navNotify} disabled={pending} style={{ ...qa('#1b5e20', '#fff'), opacity: pending ? 0.6 : 1 }}>🧭 Navigate + Notify</button>
+            )}
+          </div>
+          {cur !== 'on_site' && !atJob && <div className="muted" style={{ fontSize: 10, marginTop: 4 }}>Navigate + Notify · opens GPS · sends en-route text · updates dispatch</div>}
           {enrMsg && <div style={{ fontSize: 11.5, marginTop: 6, color: enrMsg.ok ? 'var(--green)' : 'var(--red)' }}>{enrMsg.msg}</div>}
         </div>
+      )}
+
+      {/* ⏳ Finish-by / 🚨 LATE RISK — on-site with a next job. Green "wrap up by X" on pace; red box w/
+          Text-ETA (office texts the next customer) + Office when running over. */}
+      {variant === 'active' && canAct && !cancelled && !done && cur === 'on_site' && nextLine && (
+        nextLine.slack >= 0 ? (
+          <div data-no-nav style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: 'var(--amber)' }}>⏳ Wrap up by {nextLine.finishBy} to keep {nextLine.customer} {nextLine.at} on time</div>
+        ) : (
+          <div data-no-nav style={{ marginTop: 8, border: '1px solid var(--red)', background: 'rgba(239,83,80,.10)', borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ fontWeight: 800, fontSize: 12, color: 'var(--red)' }}>🚨 LATE RISK: NEXT JOB WILL BE LATE</div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 3 }}>Finish est {nextLine.finishBy} · {nextLine.driveMin} min drive → arrive {nextLine.at} · {nextLine.customer} needs a heads-up.</div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <button onClick={() => lateRisk(false)} disabled={pending} style={{ flex: 1, padding: '9px', borderRadius: 8, border: 'none', background: 'var(--red)', color: '#fff', fontWeight: 800, fontSize: 12, cursor: 'pointer', opacity: pending ? 0.6 : 1 }}>💬 Text ETA</button>
+              <button onClick={() => lateRisk(true)} disabled={pending} style={{ flex: 1, padding: '9px', borderRadius: 8, border: '1px solid var(--border-strong)', background: 'var(--surface-2)', color: 'var(--fg-1)', fontWeight: 700, fontSize: 12, cursor: 'pointer', opacity: pending ? 0.6 : 1 }}>🏢 Office</button>
+            </div>
+            {lateMsg && <div style={{ fontSize: 11, marginTop: 6, color: lateMsg.ok ? 'var(--green)' : 'var(--red)' }}>{lateMsg.msg}</div>}
+          </div>
+        )
       )}
 
       {/* Running late / how-much-longer relay — the ON-SITE ETA nudge. data-no-nav stops the card-tap. */}
