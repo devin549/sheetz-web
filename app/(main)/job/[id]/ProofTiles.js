@@ -105,16 +105,8 @@ export default function ProofTiles({ jobId, photos = [], segments = [], required
             </>
           );
           const tileStyle = { position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 116, padding: 12, borderRadius: 14, cursor: 'pointer', textAlign: 'center', background: done ? 'color-mix(in oklab, var(--green) 10%, var(--surface-1))' : 'var(--surface-1)', border: `2px solid ${border}`, font: 'inherit', color: 'var(--fg-1)' };
-          // Video tile → native capture input (records straight from the camera). Photo tiles → in-app live camera.
-          return t.video ? (
-            <label key={t.kind} style={tileStyle}>
-              <input type="file" accept="video/*" capture="environment" style={{ display: 'none' }}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) start(() => shoot(f, t.kind, 'camera')); e.target.value = ''; }} />
-              {tileInner}
-            </label>
-          ) : (
-            <button type="button" key={t.kind} onClick={() => setCamKind(t.kind)} style={tileStyle}>{tileInner}</button>
-          );
+          // Every tile — photo AND walkthrough video — opens the in-app camera (same flow for all four).
+          return <button type="button" key={t.kind} onClick={() => setCamKind(t.kind)} style={tileStyle}>{tileInner}</button>;
         })}
       </div>
 
@@ -134,6 +126,7 @@ export default function ProofTiles({ jobId, photos = [], segments = [], required
       {camKind && (
         <InAppCamera
           label={(TILES.find((t) => t.kind === camKind) || {}).label || 'Proof'}
+          video={camKind === 'walkthrough'}
           onClose={() => setCamKind(null)}
           onCapture={(file) => { const k = camKind; setCamKind(null); start(() => shoot(file, k, 'camera')); }}
         />
