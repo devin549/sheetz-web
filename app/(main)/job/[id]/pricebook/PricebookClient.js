@@ -79,6 +79,7 @@ export default function PricebookClient({ job, customer, roots = [], related = {
   }, [roots, jobIsFlood]);
   const [bookId, setBookId] = useState(defaultBookId);
   const shownRoots = bookId === 'all' ? roots : (roots || []).filter((r) => r.id === bookId);
+  const [cartOpen, setCartOpen] = useState(false); // slim cart footer expand
 
   const cartIds = useMemo(() => new Set(cart.map((l) => l.id)), [cart]);
 
@@ -166,8 +167,8 @@ export default function PricebookClient({ job, customer, roots = [], related = {
         )}
       </div>
 
-      {/* GOOD / BETTER / BEST ladder — the clean checkout. */}
-      {tiers.length > 0 && (
+      {/* GOOD / BETTER / BEST ladder — appears ONLY once a fix is scanned/picked (cart has items), never upfront. */}
+      {tiers.length > 0 && cart.length > 0 && (
         <div style={{ marginBottom: 14 }}>
           {bundle?.customerDescription && <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>{bundle.customerDescription}</p>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
@@ -191,93 +192,57 @@ export default function PricebookClient({ job, customer, roots = [], related = {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
-        {/* The full pricebook, drill-down. Tap an item → "Add to estimate" drops it in the cart. Scan-a-part
-            and Custom-item ride on top of the browse. Cost/margin shows to managers only. */}
-        <CatalogBrowser
-          embedded roots={shownRoots} related={related} upgrades={upgrades} total={total}
-          showCost={showMargin} canEdit={false} recFor={(customer?.name || '').trim().split(/\s+/)[0] || ''}
-          onAddItem={add} cartIds={cartIds}
-          topSlot={<div style={{ marginBottom: 10 }}>
-            {roots && roots.length > 1 && (
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-                {roots.map((r) => {
-                  const on = bookId === r.id;
-                  return <button key={r.id} type="button" onClick={() => setBookId(r.id)} className="pill" style={{ cursor: 'pointer', fontWeight: on ? 800 : 600, background: on ? 'var(--amber)' : 'var(--surface-2)', color: on ? '#1a1206' : 'var(--fg-2)', border: '1px solid var(--border)' }}>{r.icon} {r.label}</button>;
-                })}
-                <button type="button" onClick={() => setBookId('all')} className="pill" style={{ cursor: 'pointer', fontWeight: bookId === 'all' ? 800 : 600, background: bookId === 'all' ? 'var(--amber)' : 'var(--surface-2)', color: bookId === 'all' ? '#1a1206' : 'var(--fg-2)', border: '1px solid var(--border)' }}>All books</button>
-              </div>
-            )}
-            {/* 3 ways to add: 📸 scan the part (match to the book) · 🔢 barcode · ➕ not in the book */}
-            <PartPhotoScan onAdd={add} />
-            <BarcodeScan onAdd={addScanned} />
-            <CustomEntry jobId={job.id} onAdd={addCustom} />
-          </div>}
-        />
-
-        {/* Estimate cart */}
-        <div style={{ position: 'sticky', top: 8 }}>
-          <div className="card card-amber">
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{ fontWeight: 800 }}>🧾 Estimate</span>
-              {job.number && <span className="pill" style={{ fontSize: 9.5, marginLeft: 'auto' }}>{job.number}</span>}
+      {/* The book — full width: 📸 Scan · 🔍 search · 📖 browse. Tap an item → adds to the estimate. */}
+      <CatalogBrowser
+        embedded roots={shownRoots} related={related} upgrades={upgrades} total={total}
+        showCost={showMargin} canEdit={false} recFor={(customer?.name || '').trim().split(/\s+/)[0] || ''}
+        onAddItem={add} cartIds={cartIds}
+        topSlot={<div style={{ marginBottom: 10 }}>
+          {roots && roots.length > 1 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+              {roots.map((r) => {
+                const on = bookId === r.id;
+                return <button key={r.id} type="button" onClick={() => setBookId(r.id)} className="pill" style={{ cursor: 'pointer', fontWeight: on ? 800 : 600, background: on ? 'var(--amber)' : 'var(--surface-2)', color: on ? '#1a1206' : 'var(--fg-2)', border: '1px solid var(--border)' }}>{r.icon} {r.label}</button>;
+              })}
+              <button type="button" onClick={() => setBookId('all')} className="pill" style={{ cursor: 'pointer', fontWeight: bookId === 'all' ? 800 : 600, background: bookId === 'all' ? 'var(--amber)' : 'var(--surface-2)', color: bookId === 'all' ? '#1a1206' : 'var(--fg-2)', border: '1px solid var(--border)' }}>All books</button>
             </div>
-            <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{customer.name}{customer.address ? ` · ${customer.address}` : ''}</div>
+          )}
+          {/* Step 1: scan the part. (Search + browse render right below, inside the book.) */}
+          <PartPhotoScan onAdd={add} />
+        </div>}
+      />
 
-            <div style={{ display: 'grid', gap: 5, margin: '10px 0' }}>
-              {cart.length === 0 && <div className="muted" style={{ fontSize: 12 }}>Pick a Good/Better/Best option or add items.</div>}
+      {/* ➕ Not in the book — last, after the browse. Barcode is a quiet fallback alongside. */}
+      <div style={{ marginTop: 12 }}>
+        <CustomEntry jobId={job.id} onAdd={addCustom} />
+        <BarcodeScan onAdd={addScanned} />
+      </div>
+
+      {/* Slim cart — items collect here; the ESTIMATE itself is built + presented on the Estimate tab. Tap to expand. */}
+      {cart.length > 0 && (
+        <div style={{ position: 'sticky', bottom: 8, marginTop: 14, zIndex: 6, borderRadius: 12, background: 'var(--surface-1)', border: '1px solid var(--amber)', boxShadow: '0 4px 16px rgba(0,0,0,.25)', overflow: 'hidden' }}>
+          {cartOpen && (
+            <div style={{ padding: '10px 14px 0', display: 'grid', gap: 5 }}>
               {cart.map((l) => (
-                <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid var(--border)' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</div>
-                    {showMargin && l.min != null && Number(l.soldPrice) < l.min && <div style={{ fontSize: 10, color: 'var(--red)' }}>below min {money(l.min)}</div>}
-                  </div>
+                <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
                   {showMargin
-                    ? <input value={l.soldPrice} onChange={(e) => setPrice(l.id, e.target.value)} inputMode="decimal" style={{ ...input, width: 78, padding: '5px 7px', textAlign: 'right', fontSize: 12.5 }} />
-                    : <span style={{ fontWeight: 700 }}>{money(l.soldPrice)}</span>}
+                    ? <input value={l.soldPrice} onChange={(e) => setPrice(l.id, e.target.value)} inputMode="decimal" style={{ ...input, width: 72, padding: '4px 6px', textAlign: 'right', fontSize: 12 }} />
+                    : <span style={{ fontWeight: 700, fontSize: 12.5 }}>{money(l.soldPrice)}</span>}
                   <button onClick={() => remove(l.id)} style={{ background: 'none', border: 'none', color: 'var(--fg-3)', cursor: 'pointer', fontSize: 15 }}>×</button>
                 </div>
               ))}
             </div>
-
-            {cart.length > 0 && (
-              <div style={{ borderTop: '2px solid var(--amber-dim)', paddingTop: 8 }}>
-                {memberDisc > 0 && (
-                  <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}><span className="muted">Regular price</span><span className="muted" style={{ textDecoration: 'line-through' }}>{money(listSubtotal)}</span></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: 'var(--green)', fontWeight: 700 }}><span>⭐ {plan?.name} saves</span><span>−{money(memberSavings)}</span></div>
-                  </>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span className="muted">{memberDisc > 0 ? 'Member subtotal' : 'Subtotal'}</span><strong>{money(subtotal)}</strong></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5 }}><span className="muted">Card fee if paid online</span><span className="muted">{money(cardFee)}</span></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, marginTop: 4 }}><strong>Customer pays</strong><strong style={{ color: 'var(--amber)' }}>{money(subtotal + cardFee)}</strong></div>
-              </div>
-            )}
-
-            {approval && <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(239,83,80,.1)', border: '1px solid var(--red)', fontSize: 11.5, color: 'var(--red)' }}>🚦 {approval}</div>}
-            {showMargin && anyBelowMin && !approval && <div className="muted" style={{ fontSize: 10.5, marginTop: 6, color: 'var(--amber)' }}>A line is below minimum — a manager must approve the discount.</div>}
-
-            {/* ONE handoff — build here, present on the Estimate tab. */}
-            <div style={{ marginTop: 12 }}>
-              <button onClick={present} disabled={pending || cart.length === 0} className="btn" style={{ width: '100%', background: 'var(--amber)', borderColor: 'var(--amber)', color: '#1a1a1a', fontSize: 14, padding: '12px' }}>{pending ? 'Building…' : '🧾 Build estimate → present →'}</button>
-              <div className="muted" style={{ fontSize: 10.5, marginTop: 6, textAlign: 'center' }}>Lands on the Estimate tab to send + close with the customer.</div>
-            </div>
-            {msg && <div style={{ fontSize: 11.5, marginTop: 8, color: 'var(--red)' }}>⚠ {msg}</div>}
-
-            {/* Objection helpers — quick reframes when the customer hesitates (customer-safe). */}
-            {cart.length > 0 && (
-              <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
-                <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>If they hesitate</div>
-                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                  <span className="pill" style={{ fontSize: 10 }}>💸 Financing available</span>
-                  <span className="pill" style={{ fontSize: 10 }}>🗓 Hold today's price</span>
-                  <span className="pill" style={{ fontSize: 10 }}>🛡 Warranty included</span>
-                </div>
-              </div>
-            )}
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+            <button onClick={() => setCartOpen((o) => !o)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 800, fontSize: 13, color: 'var(--fg-1)' }}>🧾 {cart.length} item{cart.length > 1 ? 's' : ''} {cartOpen ? '▾' : '▸'}</button>
+            <span style={{ color: 'var(--amber)', fontWeight: 800 }}>{money(subtotal)}</span>
+            <button onClick={present} disabled={pending} className="btn" style={{ marginLeft: 'auto', background: 'var(--amber)', borderColor: 'var(--amber)', color: '#1a1a1a', fontWeight: 800 }}>{pending ? 'Building…' : 'Build estimate → present →'}</button>
           </div>
         </div>
-      </div>
+      )}
+      {approval && <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(239,83,80,.1)', border: '1px solid var(--red)', fontSize: 11.5, color: 'var(--red)' }}>🚦 {approval}</div>}
+      {msg && <div style={{ fontSize: 11.5, marginTop: 8, color: 'var(--red)' }}>⚠ {msg}</div>}
     </div>
   );
 }
