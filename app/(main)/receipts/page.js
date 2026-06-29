@@ -3,6 +3,7 @@ import { requireHref } from '@/lib/guard';
 import { isAiConfigured } from '@/lib/anthropic';
 import { can } from '@/lib/roles';
 import ReceiptInboxClient from './ReceiptInboxClient';
+import ReceiptFlags from './ReceiptFlags';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,12 +60,18 @@ export default async function Receipts() {
     job: jobById[p.job_id] || {}, entry: entryByPhoto[p.id] || null,
   }));
 
+  // Work-order receipt flags (the one-warning ledger) — accounting only, fail-soft pre-138.
+  const canVerify = can(role, 'seeFinancials');
+  let flags = [];
+  if (canVerify) { try { const { data } = await sb.from('receipt_flags').select('id, job_id, job_number, tech_id, tech_name, kind, level, detail, created_at').eq('status', 'open').order('created_at', { ascending: false }).limit(100); flags = data || []; } catch (_) { /* pre-138 */ } }
+
   return (
     <div className="wrap" style={{ maxWidth: 980 }}>
       <div className="h1">Receipt Inbox</div>
       <p className="muted">Receipt photos techs tag on jobs — enter vendor + amount, then verify or flag.</p>
       {!entriesReady && <div className="notice">Saving needs the entries table — run <code>supabase/29_receipts.sql</code>. You can still view receipts below.</div>}
-      <ReceiptInboxClient receipts={receipts} canSave={entriesReady} canVerify={can(role, 'seeFinancials')} aiReady={isAiConfigured(role)} />
+      {canVerify && <ReceiptFlags flags={flags} />}
+      <ReceiptInboxClient receipts={receipts} canSave={entriesReady} canVerify={canVerify} aiReady={isAiConfigured(role)} />
     </div>
   );
 }
