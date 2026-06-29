@@ -106,6 +106,7 @@ export async function approveEstimate(token, opts = {}) {
   if (!name) return { ok: false, msg: 'Please type your name to approve.' };
   if (opts.consent !== true) return { ok: false, msg: 'Please check the box to authorize the work.' };
   const { ip, ua } = clientMeta();
+  const sig = (typeof opts.signature === 'string' && /^data:image\//.test(opts.signature)) ? opts.signature.slice(0, 300000) : null;
 
   // Lock in the chosen tier (if a ladder was sent). Approving from a specific tier card carries its key, so
   // we sell exactly what the customer tapped even if `chooseTier` didn't run first. No prices move — we only
@@ -139,6 +140,8 @@ export async function approveEstimate(token, opts = {}) {
     approver_ip: ip, approver_user_agent: ua, consent_text: consentText, ...tierWrite,
   });
   if (!lock.won) { revalidatePath(`/e/${est.token}`); return { ok: true, msg: 'Already approved — thank you!' }; }
+  // Store the drawn signature SEPARATELY + best-effort, so a pre-migration-139 DB can't break the approval.
+  if (sig) { try { await sb.from('pricebook_estimates').update({ signature_data: sig, signed_at: nowISO }).eq('id', est.id); } catch (_) {} }
   // We won the race — NOW write the usage rows (so a losing channel never double-converts the sale).
   if (usage.length) { try { await sb.from('job_pricebook_usage').insert(usage); } catch (_) {} }
   // 🧾→💳 Bridge: the approval becomes an INVOICE (open, due now or Net-30). Best-effort; never blocks approval.

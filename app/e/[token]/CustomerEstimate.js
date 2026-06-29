@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { approveEstimate, askQuestion, requestDeposit, declineEstimate, chooseTier, joinClogClub } from './actions';
+import SignaturePad from './SignaturePad';
 import { memberOffer } from '@/lib/memberSavings';
 import { financingOffer } from '@/lib/financing';
 
@@ -42,6 +43,7 @@ export default function CustomerEstimate({ est }) {
   const [done, setDone] = useState(null);
   const [name, setName] = useState(est.customerName || '');
   const [consent, setConsent] = useState(false);
+  const [sig, setSig] = useState(null);   // drawn signature (PNG data URL) — stand-in for text-to-sign until A2P
   const [err, setErr] = useState(null);
 
   // The customer-facing ladder (empty on old single-tier links → flat fallback below).
@@ -70,7 +72,8 @@ export default function CustomerEstimate({ est }) {
   const approve = () => {
     if (!name.trim()) { setErr('Please type your name to approve.'); return; }
     if (!consent) { setErr('Please check the box to authorize the work.'); return; }
-    act(approveEstimate, { name: name.trim(), consent: true, tierKey: hasLadder ? picked : undefined });
+    if (!sig) { setErr('Please sign in the box to approve.'); return; }
+    act(approveEstimate, { name: name.trim(), consent: true, signature: sig, tierKey: hasLadder ? picked : undefined });
   };
   // Choosing a tier records the choice server-side (re-points the active snapshot), then opens approve.
   const chooseAndApprove = (key) => start(async () => {
@@ -357,6 +360,10 @@ export default function CustomerEstimate({ est }) {
             <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }} />
             <span>I, <strong>{name.trim() || 'the customer'}</strong>, approve this {money(approveTotal)} estimate from Clog Busterz Plumbing and authorize the work described.</span>
           </label>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: FAINT, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Sign to approve</div>
+            <SignaturePad onChange={setSig} />
+          </div>
           {err && <div style={{ color: '#ff8a8a', fontSize: 13, marginBottom: 10 }}>{err}</div>}
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => { setView(null); setErr(null); }} style={btn(SURF2, INK)}>Back</button>
