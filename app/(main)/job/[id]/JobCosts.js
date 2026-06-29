@@ -55,7 +55,7 @@ export default function JobCosts({ jobId, materialCents, dispatchCents, subCents
         </div>
       )}
 
-      <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>Material cost drives the markup tier (2× ≤$399 · 1.5× &gt;$399) + your premium. Dispatch fee is capped at $125/job.</div>
+      <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>Material cost drives the markup tier (2× ≤$399 · 1.5× &gt;$399) + your premium. The dispatch fee comes off the job total (capped at $125/job) before commission — same as the tech sheet.</div>
 
       {/* 👷 SUBCONTRACTOR — passed at cost, no markup; pending until Accounting verifies */}
       <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>

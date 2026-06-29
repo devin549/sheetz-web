@@ -8,12 +8,12 @@ import { useRouter } from 'next/navigation';
 import { uploadJobPhoto, createVideoUploadUrl, recordVideoUpload } from './actions';
 import InAppCamera from './InAppCamera';
 
+// Equipment plate lives on the Equipment tab (AI plate scanner → make/model/year); Receipt lives on the
+// Parts/PO tab (AI receipt scan → vendor + cost). So they're NOT proof tiles here — Photos = job proof only.
 const TILES = [
   { kind: 'before',      label: 'Before',           icon: '📷' },
   { kind: 'during',      label: 'Issue / During',   icon: '🔧' },
   { kind: 'after',       label: 'After',            icon: '✨' },
-  { kind: 'equipment',   label: 'Equipment plate',  icon: '🏷️' },
-  { kind: 'receipt',     label: 'Receipt',          icon: '🧾' },
   { kind: 'walkthrough', label: 'Walkthrough video', icon: '🎬', video: true },
 ];
 

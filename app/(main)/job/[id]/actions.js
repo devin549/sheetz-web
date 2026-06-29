@@ -10,6 +10,7 @@ import { can } from '@/lib/roles';
 import { canArchivePhoto, canUploadPhotos, canViewJob, loadJob } from './jobAccess';
 import { closeoutReason } from '@/lib/qa';
 import { postToDiscord } from '@/lib/discord';
+import { readReceipt } from '@/lib/aiVision';
 
 const STATUS_STEPS = ['scheduled', 'enroute', 'on_site', 'done'];
 
@@ -346,6 +347,21 @@ export async function notifyArrived(jobId) {
   if (!can(ctx.role, 'changeStatus')) return { ok: false, msg: 'Your role can’t update status.' };
   await pingOffice(ctx, 'job.arrived_gps', `📍 **GPS — ${ctx.profile?.name || 'Tech'} arrived** at ${custName(ctx.job)}${ctx.job.job_number ? ` · job ${ctx.job.job_number}` : ''} (within ~150m).`, { job_number: ctx.job.job_number, via: 'gps' });
   return { ok: true };
+}
+
+// 🧾 Scan a parts receipt → vendor + total + date via Claude Vision, and flag whether it's a vendor we know.
+// READ-ONLY (writes nothing) — the tech reviews the read and taps "Use" to fill the material cost. Gated like
+// cost edits. The data URL is the in-browser-scaled receipt photo (never stored by this call).
+export async function scanReceipt(jobId, dataUrl) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'changeStatus') || can(ctx.role, 'collectPayment') || can(ctx.role, 'seeFinancials') || canUploadPhotos(ctx.role))) return { ok: false, msg: 'Not allowed.' };
+  const r = await readReceipt(String(dataUrl || ''), ctx.role);
+  if (!r) return { ok: false, msg: 'Couldn’t read that receipt — try a clearer photo, or type the cost in.' };
+  // Known vendor? Best-effort match against the vendors book (table may be absent → treated as new, no crash).
+  let knownVendor = false;
+  if (r.vendor) { try { const { data } = await ctx.sb.from('vendors').select('id').ilike('name', `%${r.vendor.slice(0, 40)}%`).limit(1); knownVendor = !!(data && data.length); } catch (_) {} }
+  return { ok: true, ...r, knownVendor };
 }
 
 // "Need a hand?" + step-away (Parts run / Lunch / Personal). The job STAYS OPEN; the office is told why
