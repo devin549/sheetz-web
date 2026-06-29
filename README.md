@@ -1,3 +1,13 @@
+<!--
+  PROPRIETARY & CONFIDENTIAL — (c) 2026 Clog Busterz Plumbing, LLC. All rights reserved.
+  NOT open source. Do not copy, fork, redistribute, or reverse-engineer. Keep this repo PRIVATE.
+  Access is limited to authorized personnel under a signed NDA. See LICENSE.
+-->
+
+> **Proprietary & confidential — (c) 2026 Clog Busterz Plumbing, LLC. All rights reserved.**
+> Not open source. No copying, forking, or reverse-engineering. Keep this repository **private**;
+> access is limited to authorized personnel under a signed NDA. See [`LICENSE`](LICENSE).
+
 # Sheetz web app (CB)
 
 The new Clog Busterz stack — **Next.js on Vercel + Supabase** — replacing the Apps Script board +

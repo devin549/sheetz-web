@@ -1,0 +1,28 @@
+Copyright (c) 2026 Clog Busterz Plumbing, LLC. All rights reserved.
+
+PROPRIETARY AND CONFIDENTIAL — NOT OPEN SOURCE.
+
+This repository and everything in it — the source code, database schemas and migrations,
+workflows, business logic, pricing and estimate logic, UI/UX flows, prompts, documentation,
+and design — is the proprietary and confidential property of Clog Busterz Plumbing, LLC
+("the Company") and is protected by copyright and trade-secret law.
+
+No license is granted, by implication or otherwise. You MAY NOT, without the prior written
+permission of the Company:
+
+  - copy, clone, fork, mirror, or redistribute this code or any part of it;
+  - use it (in whole or in part) to build, train, or operate any product or service;
+  - reverse-engineer, decompile, or recreate its workflows, logic, or interfaces;
+  - disclose it to, or share it with, any third party.
+
+Access is granted only to the Company's authorized employees and contractors, solely to build
+and operate the Company's own software, and is governed by their signed confidentiality /
+non-disclosure agreement with the Company. Authorized personnel must keep this repository
+private and must not publish, post, or expose any portion of it.
+
+Unauthorized use, copying, or disclosure is a violation of the Company's rights and may be
+prosecuted to the fullest extent permitted by law. The Company reserves all rights not
+expressly granted in writing.
+
+For permissions or licensing inquiries: Dispatch@clogbusterzplumbing.com
+Clog Busterz Plumbing, LLC · 105 Moberly Rd, Richmond, KY 40475
