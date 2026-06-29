@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { loadCockpitMoney } from '../cockpit';
 import JobHeader from '../JobHeader';
+import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
+import EstimateProofPanel from '../pricebook/EstimateProofPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,20 +19,38 @@ export default async function EstimateTab({ params }) {
   if (!c.configured) return <div className="wrap"><div className="h1">Estimate</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code>.</div></div>;
   const sugg = suggestFor(c.job.job_type);
 
+  // Sent estimates for this job + their proof timeline — the record of what was sent + how the customer
+  // responded (moved here from the Pricebook tab; Pricebook builds, Estimate tracks). Best-effort.
+  let estimates = [];
+  if (isAdminConfigured) {
+    try {
+      const sb = getSupabaseAdmin();
+      const { data: rows } = await sb.from('pricebook_estimates').select('token, headline, subtotal, status, approved_name, approval_method, witnessed_by_name, responded_at, viewed_at, created_at').eq('job_id', c.job.id).order('created_at', { ascending: false }).limit(20);
+      const list = rows || [];
+      const tokens = list.map((e) => e.token);
+      const byTok = {};
+      if (tokens.length) { try { const { data: evs } = await sb.from('pricebook_estimate_events').select('token, event_type, method, actor, note, amount, created_at').in('token', tokens).order('created_at', { ascending: true }).limit(300); (evs || []).forEach((ev) => { (byTok[ev.token] = byTok[ev.token] || []).push(ev); }); } catch (_) {} }
+      estimates = list.map((e) => ({ ...e, events: byTok[e.token] || [] }));
+    } catch (_) {}
+  }
+
   return (
     <div className="wrap" style={{ maxWidth: 760 }}>
       <JobHeader job={c.job} customer={c.customer} tab="Estimate" />
       <div className="card card-amber" style={{ marginTop: 10 }}>
-        <div style={{ fontWeight: 800, marginBottom: 6 }}>🧾 Build estimate · {c.customer.name || 'customer'}</div>
-        <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>Good / better / best options for <strong>{c.job.job_type || 'this job'}</strong>. Present 3 tiers — approval drops fast after ~8 min post-diagnosis.</div>
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>🧾 Estimates · {c.customer.name || 'customer'}</div>
+        <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>Build &amp; present Good/Better/Best in the Pricebook; what you send shows below with full approval proof. Approval drops fast after ~8 min post-diagnosis.</div>
         <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6 }}>Suggested for this job type</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>{sugg.map((s) => <span key={s} className="pill">{s}</span>)}</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Link href="/estimate" className="btn" style={{ textDecoration: 'none' }}>Open Estimate Builder →</Link>
-          <Link href="/open-estimates" className="pill" style={{ display: 'inline-flex', alignItems: 'center' }}>Open estimates</Link>
+          <Link href={`/job/${params.id}/pricebook`} className="btn" style={{ textDecoration: 'none' }}>🛒 Build / present in Pricebook →</Link>
+          <Link href="/open-estimates" className="pill" style={{ display: 'inline-flex', alignItems: 'center' }}>All open estimates</Link>
         </div>
-        <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>⚠ Check margin before presenting: stop quoting parts at cost — 30% markup minimum keeps you in Crown territory.</div>
+        <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>⚠ Check margin before presenting: 30% markup minimum keeps you in Crown territory.</div>
       </div>
+
+      {/* Sent estimates & approval proof — moved here from the Pricebook tab. */}
+      <EstimateProofPanel estimates={estimates} />
     </div>
   );
 }

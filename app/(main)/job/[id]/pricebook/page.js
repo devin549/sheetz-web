@@ -3,7 +3,7 @@ import JobHeader from '../JobHeader';
 import { canSeeCost, buildTiers, marginPct, marginHealth } from '@/lib/pricebookEngine';
 import { buildCatalogRoots } from '@/lib/catalogTree';
 import PricebookClient from './PricebookClient';
-import EstimateProofPanel from './EstimateProofPanel';
+// (Sent-estimate proof panel moved to the Estimate tab — Pricebook stays the build/sell surface.)
 
 export const dynamic = 'force-dynamic';
 
@@ -106,17 +106,6 @@ export default async function JobPricebook({ params, searchParams }) {
   let plans = [];
   try { const { data } = await c.sb.from('membership_plans').select('slug, name, discount_pct').eq('active', true).order('sort_order'); plans = (data || []).map((p) => ({ slug: p.slug, name: p.name, discount_pct: Number(p.discount_pct) || 0 })); } catch (_) {}
 
-  // Sent estimates for this job + their proof timeline (best-effort; empty before migration 117).
-  let estimates = [];
-  try {
-    const { data: rows } = await c.sb.from('pricebook_estimates').select('token, headline, subtotal, status, approved_name, approval_method, witnessed_by_name, responded_at, viewed_at, created_at').eq('job_id', c.job.id).order('created_at', { ascending: false }).limit(20);
-    const list = rows || [];
-    const tokens = list.map((e) => e.token);
-    const byTok = {};
-    if (tokens.length) { try { const { data: evs } = await c.sb.from('pricebook_estimate_events').select('token, event_type, method, actor, note, amount, created_at').in('token', tokens).order('created_at', { ascending: true }).limit(300); (evs || []).forEach((ev) => { (byTok[ev.token] = byTok[ev.token] || []).push(ev); }); } catch (_) {} }
-    estimates = list.map((e) => ({ ...e, events: byTok[e.token] || [] }));
-  } catch (_) {}
-
   return (
     <div className="wrap" style={{ maxWidth: 980 }}>
       <JobHeader job={c.job} customer={c.customer} tab="Pricebook" />
@@ -132,7 +121,6 @@ export default async function JobPricebook({ params, searchParams }) {
             bundle={bundle ? { slug: bundle.slug, name: bundle.name, customerDescription: bundle.customer_description, warranty: bundle.warranty_text, approveText: bundle.approval_button_text } : null}
             showMargin={showCost} plans={plans} preAdd={preAdd}
           />
-          <EstimateProofPanel estimates={estimates} />
         </>
       )}
     </div>
