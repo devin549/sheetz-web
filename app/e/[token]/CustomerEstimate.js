@@ -103,7 +103,7 @@ export default function CustomerEstimate({ est }) {
         {hero && (
           /* Honest badge: "Most chosen" ONLY when real approvals back THIS tier (data-true). Otherwise the
              always-true "Recommended" — never a popularity claim that isn't in the numbers. */
-          <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', background: GOLD, color: '#2a1f00', fontSize: 11, fontWeight: 900, letterSpacing: '.04em', padding: '4px 12px', borderRadius: 20, boxShadow: '0 3px 10px rgba(0,0,0,.4)' }}>{t.mostChosen ? '★ MOST CHOSEN' : '★ RECOMMENDED'}</div>
+          <div className="cb-recommend" style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', background: GOLD, color: '#2a1f00', fontSize: 11, fontWeight: 900, letterSpacing: '.04em', padding: '4px 12px', borderRadius: 20 }}>{t.mostChosen ? '★ MOST CHOSEN' : '★ RECOMMENDED'}</div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: hero ? 26 : 22 }}>{t.icon}</span>
