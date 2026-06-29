@@ -28,6 +28,13 @@ export default async function InvoiceTab({ params }) {
   const stripeReady = isStripeConfigured();
   let hasReader = false;
   try { const { count } = await c.sb.from('terminal_readers').select('id', { count: 'exact', head: true }); hasReader = (count || 0) > 0; } catch (_) { /* pre-123 */ }
+  // Office-billed account → lead the pay menu with "don't collect; the office invoices." Best-effort.
+  let officeBilled = false, netDays = 0;
+  const custId = c.customer?.id || c.job?.customer_id;
+  if (custId) {
+    try { const { data: ct } = await c.sb.from('customers').select('net_terms_days, bill_from_office').eq('id', custId).maybeSingle(); netDays = Number(ct?.net_terms_days) || 0; officeBilled = !!ct?.bill_from_office || netDays > 0; }
+    catch (_) { try { const { data: ct } = await c.sb.from('customers').select('net_terms_days').eq('id', custId).maybeSingle(); netDays = Number(ct?.net_terms_days) || 0; officeBilled = netDays > 0; } catch (_2) { /* pre-132 */ } }
+  }
 
   return (
     <div className="wrap" style={{ maxWidth: 760 }}>
@@ -56,7 +63,7 @@ export default async function InvoiceTab({ params }) {
         )}
       </div>
 
-      {canCollect && <CloseoutCheckout jobId={params.id} suggested={amount} tel={dial(c.customer.phone)} hasReader={hasReader} stripeReady={stripeReady} />}
+      {canCollect && <CloseoutCheckout jobId={params.id} suggested={amount} tel={dial(c.customer.phone)} hasReader={hasReader} stripeReady={stripeReady} officeBilled={officeBilled} netDays={netDays} />}
     </div>
   );
 }

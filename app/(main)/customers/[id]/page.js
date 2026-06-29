@@ -23,9 +23,10 @@ export default async function CustomerProfile({ params }) {
   let creditHold = false, creditHoldReason = null, creditHoldBy = null;
   try { const { data: ch } = await sb.from('customers').select('credit_hold, credit_hold_reason, credit_hold_by').eq('id', c.id).maybeSingle(); if (ch) { creditHold = !!ch.credit_hold; creditHoldReason = ch.credit_hold_reason || null; creditHoldBy = ch.credit_hold_by || null; } } catch (_) { /* pre-130 */ }
   const canHold = canOverrideCreditHold(role);
-  // Net terms (migration 132) — separate best-effort fetch so it's independent of the credit-hold one.
-  let netTermsDays = 0, netTermsBy = null;
-  try { const { data: nt } = await sb.from('customers').select('net_terms_days, net_terms_by').eq('id', c.id).maybeSingle(); if (nt) { netTermsDays = Number(nt.net_terms_days) || 0; netTermsBy = nt.net_terms_by || null; } } catch (_) { /* pre-132 */ }
+  // Billing mode (migration 132 net terms + 135 bill-from-office) — best-effort, independent of credit-hold.
+  let netTermsDays = 0, netTermsBy = null, officeBills = false;
+  try { const { data: nt } = await sb.from('customers').select('net_terms_days, net_terms_by, bill_from_office').eq('id', c.id).maybeSingle(); if (nt) { netTermsDays = Number(nt.net_terms_days) || 0; netTermsBy = nt.net_terms_by || null; officeBills = !!nt.bill_from_office; } }
+  catch (_) { try { const { data: nt } = await sb.from('customers').select('net_terms_days, net_terms_by').eq('id', c.id).maybeSingle(); if (nt) { netTermsDays = Number(nt.net_terms_days) || 0; netTermsBy = nt.net_terms_by || null; officeBills = netTermsDays > 0; } } catch (_2) { /* pre-132 */ } }
 
   // Reuse the Customer Memory aggregator (timeline / photos / equipment / balance / membership / summary).
   const mem = await loadCustomerMemory(sb, { customer_id: c.id, id: '__profile__' });
@@ -56,7 +57,7 @@ export default async function CustomerProfile({ params }) {
           {netTermsDays > 0 && <span className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)', fontWeight: 800 }}>🗓 NET-{netTermsDays}</span>}
         </div>
         <CreditHoldToggle customerId={c.id} held={creditHold} reason={creditHoldReason} by={creditHoldBy} canEdit={canHold} />
-        <NetTermsToggle customerId={c.id} days={netTermsDays} by={netTermsBy} canEdit={canHold} />
+        <NetTermsToggle customerId={c.id} days={netTermsDays} officeBills={officeBills} by={netTermsBy} canEdit={canHold} />
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 8, fontSize: 13 }}>
           {tel && <a href={`tel:${tel}`}>📞 {c.phone}</a>}
           {c.email && <a href={`mailto:${c.email}`}>✉️ {c.email}</a>}

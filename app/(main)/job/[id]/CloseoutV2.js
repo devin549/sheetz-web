@@ -7,13 +7,15 @@ import { Check, Lock, CircleCheck } from 'lucide-react';
 
 const sel = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '8px 10px', fontSize: 14, fontFamily: 'inherit' };
 const label = { fontSize: 10.5, fontWeight: 700, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '.05em', display: 'block', marginBottom: 3 };
-const PAY = [['', '— how paid —'], ['paid_card', 'Paid · card'], ['paid_cash', 'Paid · cash'], ['check', 'Check'], ['invoiced', 'Invoiced'], ['warranty', 'Warranty'], ['cod', 'COD'], ['no_charge', 'No charge']];
+const PAY = [['', '— how paid —'], ['billed_office', '🏛 Billed by office'], ['paid_card', 'Paid · card'], ['paid_cash', 'Paid · cash'], ['check', 'Check'], ['invoiced', 'Invoiced'], ['warranty', 'Warranty'], ['cod', 'COD'], ['no_charge', 'No charge']];
 
-export default function CloseoutV2({ jobId, dispo, needWarranty }) {
+export default function CloseoutV2({ jobId, dispo, needWarranty, officeBilled = false, netDays = 0 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const r = (dispo && dispo.row) || {};
-  const [payment, setPayment] = useState(r.payment_disposition || '');
+  // Office-billed account → the tech collects nothing; pre-fill "Billed by office" so the payment gate is
+  // satisfied without an on-site charge. They can still override if the customer chose to pay now.
+  const [payment, setPayment] = useState(r.payment_disposition || (officeBilled ? 'billed_office' : ''));
   const [signed, setSigned] = useState(!!r.signed);
   const [signedBy, setSignedBy] = useState(r.signed_by || '');
   const [invoice, setInvoice] = useState(r.invoice_status || 'none');
@@ -52,6 +54,13 @@ export default function CloseoutV2({ jobId, dispo, needWarranty }) {
         <div style={{ fontWeight: 800 }}>Closeout checklist</div>
         <span className="pill" style={{ marginLeft: 'auto', fontWeight: 800, color: ready ? 'var(--green)' : 'var(--amber)' }}>{ready ? 'Disposition complete' : `${missing.length} left`}</span>
       </div>
+
+      {officeBilled && (
+        <div style={{ marginBottom: 10, padding: '9px 11px', borderRadius: 9, background: 'color-mix(in oklab, var(--amber) 12%, var(--surface-1))', border: '1px solid var(--amber-dim)' }}>
+          <div style={{ fontWeight: 800, fontSize: 13 }}>🏛 Office-billed account{netDays ? ` · Net-${netDays}` : ''}</div>
+          <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>Don&apos;t collect on site — the office invoices this customer{netDays ? `, due in ${netDays} days` : ''}. Payment is set to &ldquo;Billed by office&rdquo; for you; just finish the photos &amp; sign-off.</div>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
         <div><span style={label}>Payment</span><select value={payment} onChange={(e) => setPayment(e.target.value)} style={{ ...sel, width: '100%' }}>{PAY.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>

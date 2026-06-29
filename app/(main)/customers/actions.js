@@ -51,3 +51,35 @@ export async function setPaymentTerms(customerId, days) {
   revalidatePath(`/customers/${id}`);
   return { ok: true, msg: n ? `Set to Net-${n} — the close won't collect; the office invoices.` : 'Back to due-at-close.' };
 }
+
+// Set a customer's BILLING MODE in one shot: officeBills (the tech collects nothing; the office invoices) +
+// the terms days (0 = due on receipt, 15/30 = net-N). Owner / GM / accounting only — it's a credit decision.
+// "Tech collects at close" = officeBills:false + 0 days (residential default). Updates bill_from_office +
+// net_terms_days together so the close-out + estimate stay consistent.
+export async function setBilling(customerId, { officeBills, days } = {}) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Sign in required.' };
+  const profile = await loadProfile(user);
+  if (!canOverrideCreditHold(profile.role)) return { ok: false, msg: 'Only owner / GM / accounting can set billing.' };
+  const id = clean(customerId, 80);
+  if (!id) return { ok: false, msg: 'No customer.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const office = !!officeBills;
+  const n = office && [0, 15, 30].includes(Number(days)) ? Number(days) : 0;
+  const who = profile.name || user.email; const at = new Date().toISOString();
+  const patch = {
+    bill_from_office: office, bill_from_office_by: office ? who : null, bill_from_office_at: office ? at : null,
+    net_terms_days: n, net_terms_by: n ? who : null, net_terms_at: n ? at : null,
+  };
+  const { error } = await sb.from('customers').update(patch).eq('id', id);
+  if (error) {
+    if (/bill_from_office/i.test(error.message || '')) return { ok: false, msg: 'Run supabase/135_customer_bill_from_office.sql first.' };
+    if (/net_terms|column|schema cache/i.test(error.message || '')) return { ok: false, msg: 'Run supabase/132_customer_net_terms.sql first.' };
+    return { ok: false, msg: error.message };
+  }
+  try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: who, role: profile.role, action: office ? 'customer.bill_from_office_on' : 'customer.bill_from_office_off', entity: 'customer', entity_id: id, detail: { net_terms_days: n } }); } catch (_) {}
+  revalidatePath(`/customers/${id}`);
+  return { ok: true, msg: office ? `Billed by the office${n ? ` · Net-${n}` : ' · due on receipt'} — techs collect nothing on site.` : 'Tech collects at the close (residential default).' };
+}

@@ -14,9 +14,10 @@ import KeyInCard from './KeyInCard';
 
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, stripeReady }) {
+export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, stripeReady, officeBilled = false, netDays = 0 }) {
   const router = useRouter();
   const [amt, setAmt] = useState(suggested ? String(suggested) : '');
+  const [payNow, setPayNow] = useState(false); // office-billed: collection hidden until the customer chooses to pay now
   const [mode, setMode] = useState(null); // null | 'link' | 'reader' | 'keyed'
   const [link, setLink] = useState(null);
   const [reader, setReader] = useState(null);
@@ -113,9 +114,24 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
     );
   }
 
+  // OFFICE-BILLED — the tech collects nothing; the office invoices. Lead with that, and keep collection
+  // tucked behind a tap in case the customer chooses to pay on the spot anyway.
+  if (officeBilled && !payNow && !link) {
+    return (
+      <div className="card" style={{ ...card, borderLeftColor: 'var(--amber)' }}>
+        <div style={{ fontWeight: 800 }}>🏛 Billed by the office{netDays ? ` · Net-${netDays}` : ''}</div>
+        <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>Don’t collect on site — the office invoices this customer{netDays ? `, due in ${netDays} days` : ' (due on receipt)'}. Just finish the close-out.</div>
+        <button onClick={() => setPayNow(true)} className="btn btn-ghost" style={{ marginTop: 10, fontSize: 12.5 }}>Customer wants to pay now anyway? →</button>
+      </div>
+    );
+  }
+
   return (
     <div className="card" style={card}>
-      <div style={{ fontWeight: 800, marginBottom: 8 }}>💳 Collect payment</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontWeight: 800 }}>💳 Collect payment</span>
+        {officeBilled && <button onClick={() => setPayNow(false)} className="pill" style={{ marginLeft: 'auto', cursor: 'pointer', fontSize: 11, color: 'var(--amber)' }}>🏛 Office-billed — collect nothing</button>}
+      </div>
 
       {!stripeReady && <div className="muted" style={{ fontSize: 12, marginBottom: 8, color: 'var(--amber)' }}>⚠️ Stripe isn’t set up yet — add <code>STRIPE_SECRET_KEY</code> in Vercel to take payment.</div>}
 

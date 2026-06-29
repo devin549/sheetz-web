@@ -168,6 +168,13 @@ export default async function JobDetail({ params }) {
   const canDispatchSeg = can(role, 'assignJobs') || can(role, 'manageUsers') || can(role, 'seeCrew') || can(role, 'reassignJobs');
 
   const customer = job.customers || {};
+  // Office-billed account? (net terms 132 + bill-from-office 135) — tells the close-out the tech collects
+  // nothing; the office invoices. Best-effort; netDays = the office invoice due window.
+  let officeBilled = false, netDays = 0;
+  if (job.customer_id) {
+    try { const { data: ct } = await sb.from('customers').select('net_terms_days, bill_from_office').eq('id', job.customer_id).maybeSingle(); netDays = Number(ct?.net_terms_days) || 0; officeBilled = !!ct?.bill_from_office || netDays > 0; }
+    catch (_) { try { const { data: ct } = await sb.from('customers').select('net_terms_days').eq('id', job.customer_id).maybeSingle(); netDays = Number(ct?.net_terms_days) || 0; officeBilled = netDays > 0; } catch (_2) { /* pre-132 */ } }
+  }
   const techName = job.tech_name || job.techs?.name || 'Unassigned';
   const title = jobTitle(job);
   const canUpload = canUploadPhotos(role);
@@ -357,7 +364,7 @@ export default async function JobDetail({ params }) {
         );
       })()}
 
-      {!photoError && !isEstimate && <CloseoutV2 jobId={id} dispo={dispo} needWarranty={needWarranty} />}
+      {!photoError && !isEstimate && <CloseoutV2 jobId={id} dispo={dispo} needWarranty={needWarranty} officeBilled={officeBilled} netDays={netDays} />}
 
       <JobVideo jobId={id} videos={videos} canUpload={canUpload && !photoError} requireVideo={closeout.requireVideo} />
 
