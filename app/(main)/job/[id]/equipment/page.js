@@ -2,6 +2,7 @@ import { loadCockpit } from '../cockpit';
 import JobHeader from '../JobHeader';
 import EquipmentSnap from './EquipmentSnap';
 import PlateScanner from './PlateScanner';
+import EquipmentFinder from './EquipmentFinder';
 import { canUploadPhotos } from '../jobAccess';
 
 export const dynamic = 'force-dynamic';
@@ -50,6 +51,8 @@ export default async function EquipmentTab({ params }) {
         {canUploadPhotos(c.role) && <PlateScanner jobType={c.job.job_type || ''} jobId={params.id} />}
         {canUploadPhotos(c.role) && <EquipmentSnap jobId={params.id} />}
       </div>
+
+      {canUploadPhotos(c.role) && <EquipmentFinder />}
 
       {/* Structured registry — what's actually installed here, on file from prior plate scans. */}
       {registry.length > 0 && (

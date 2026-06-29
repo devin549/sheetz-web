@@ -209,7 +209,7 @@ export default function PricebookClient({ job, customer, roots = [], related = {
             </div>
           )}
           {/* Find the fix: 📸 scan the part, or describe the PROBLEM (symptom → our fixes). Search + browse below. */}
-          <PartPhotoScan onAdd={add} />
+          <PartPhotoScan onAdd={add} jobId={job.id} />
           <ProblemFinder jobType={job.job_type || ''} onAdd={add} />
         </div>}
       />

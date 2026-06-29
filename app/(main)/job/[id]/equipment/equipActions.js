@@ -10,6 +10,33 @@ const clean = (v, n = 120) => String(v == null ? '' : v).trim().slice(0, n);
 const intOrNull = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
 const missing = (e) => /relation|column|schema cache|does not exist/i.test(e?.message || '');
 
+// 🔎 Quick search saved equipment by BRAND (or model/serial) — "type Rheem, see every unit on file." Fast
+// recall for parts/warranty. Returns each unit + which customer it's at. Guarded; fail-soft pre-103.
+export async function searchEquipmentByBrand(query) {
+  const q = String(query || '').trim();
+  if (q.length < 2) return { ok: true, results: [] };
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Sign in required.' };
+  const profile = await loadProfile(user);
+  if (!canUploadPhotos(profile.role)) return { ok: false, msg: 'Not allowed.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const like = '%' + q.replace(/[%_,]/g, '') + '%';
+  try {
+    const { data, error } = await sb.from('customer_equipment')
+      .select('id, type, brand, model, serial, year, fuel_type, customer_id, created_at')
+      .or(`brand.ilike.${like},model.ilike.${like},serial.ilike.${like}`)
+      .order('created_at', { ascending: false }).limit(25);
+    if (error) return { ok: false, msg: missing(error) ? 'Run supabase/103_customer_equipment.sql first.' : error.message };
+    const custIds = [...new Set((data || []).map((e) => e.customer_id).filter(Boolean))];
+    const cname = {};
+    if (custIds.length) { const { data: cs } = await sb.from('customers').select('id, name').in('id', custIds); (cs || []).forEach((c) => { cname[c.id] = c.name; }); }
+    const results = (data || []).map((e) => ({ id: e.id, type: e.type || 'Equipment', brand: e.brand || '', model: e.model || '', year: e.year || null, fuel: e.fuel_type || '', customerId: e.customer_id || null, customer: cname[e.customer_id] || '' }));
+    return { ok: true, results };
+  } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+}
+
 // Save a scanned data plate to the location's equipment registry (so it's on file for next time).
 export async function saveEquipment(jobId, plate = {}, type = '') {
   const supabase = createClient();
