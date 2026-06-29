@@ -5,20 +5,35 @@
 // one to drop it on the estimate. Low-confidence shows the top few so the tech picks — never a wrong guess.
 import { useState, useTransition } from 'react';
 import { identifyPart, learnPartFix } from '@/app/(main)/identify/actions';
+import { scanDataPlate } from '../equipment/visionActions';
 import InAppCamera from '../InAppCamera';
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const fileToDataUrl = (file) => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); });
 
 export default function PartPhotoScan({ onAdd }) {
   const [pending, start] = useTransition();
   const [cam, setCam] = useState(false);
   const [res, setRes] = useState(null);
+  const [plate, setPlate] = useState(null);
   const [msg, setMsg] = useState(null);
   const [added, setAdded] = useState({});
 
   const onPhoto = (file) => {
-    setCam(false); setRes(null); setMsg('🔎 Matching it to your book…');
-    start(async () => { const fd = new FormData(); fd.set('photo', file); const r = await identifyPart(fd); if (r.ok) { setRes(r); setMsg(null); } else setMsg(r.msg); });
+    setCam(false); setRes(null); setPlate(null); setMsg('🔎 Matching it to your book…');
+    start(async () => {
+      const fd = new FormData(); fd.set('photo', file);
+      let dataUrl = null; try { dataUrl = await fileToDataUrl(file); } catch (_) {}
+      // Same shot, two reads: Lens → our-book fix match, AND a data-plate read (brand/model/year). Branded gear
+      // (disposals, water heaters) that Lens fumbles still gets ID'd off the plate, and an old unit nudges a
+      // replacement quote alongside the repair. Plate read is best-effort — null on a clog with no plate.
+      const [r, p] = await Promise.all([
+        identifyPart(fd),
+        dataUrl ? scanDataPlate(dataUrl).catch(() => null) : Promise.resolve(null),
+      ]);
+      if (r.ok) { setRes(r); setMsg(null); } else setMsg(r.msg);
+      if (p && p.ok && (p.plate?.brand || p.plate?.model)) setPlate(p.plate);
+    });
   };
   const pick = (f) => {
     if (onAdd) onAdd({ id: f.id, name: f.name, price: f.price, minimum: f.minimum ?? null });
@@ -34,6 +49,22 @@ export default function PartPhotoScan({ onAdd }) {
         📸 Scan the Pricebook <span className="muted" style={{ fontWeight: 400, fontSize: 11 }}>— snap a part, match the book</span>
       </button>
       {msg && <div style={{ fontSize: 12, marginTop: 6, color: msg.startsWith('🔎') ? 'var(--fg-2)' : 'var(--amber)' }}>{msg}</div>}
+
+      {plate && (() => {
+        const yr = /^\d{4}$/.test(String(plate.year)) ? Number(plate.year) : null;
+        const age = yr ? new Date().getFullYear() - yr : null;
+        const spec = [yr, plate.fuelType && plate.fuelType !== 'UNKNOWN' ? plate.fuelType : null, plate.capacityGallons ? `${plate.capacityGallons} gal` : null].filter(Boolean).join(' · ');
+        return (
+          <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 10, background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 10, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>📋 Data plate</div>
+            <div style={{ fontWeight: 800, fontSize: 14 }}>{[plate.brand, plate.model].filter(Boolean).join(' · ') || 'Unit'}</div>
+            {spec && <div className="muted" style={{ fontSize: 11.5 }}>{spec}</div>}
+            {age != null && age >= 10 && (
+              <div style={{ marginTop: 6, fontSize: 12, color: 'var(--amber)', fontWeight: 700 }}>⚠ ~{age} yrs old — worth quoting a replacement alongside the repair.</div>
+            )}
+          </div>
+        );
+      })()}
 
       {res && (
         <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 10, background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
