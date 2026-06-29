@@ -4,6 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
+import { normalizeEta } from '@/lib/eta';
 import { closeoutReason } from '@/lib/qa';
 import { createInvoiceCheckout, isStripeConfigured } from '@/lib/stripe';
 import { revalidatePath } from 'next/cache';
@@ -126,8 +127,12 @@ export async function reportEta(jobId, minutes, note, needsHelp, newEtaISO) {
   const { data: { user } } = await supabase.auth.getUser();
   const profile = await loadProfile(user);
   if (!user || !can(profile.role, 'changeStatus')) return { ok: false, msg: 'Your role can’t report ETA.' };
-  const mins = Math.max(0, Math.min(480, Math.round(Number(minutes) || 0)));
-  if (!jobId || (!mins && !needsHelp)) return { ok: false, msg: 'Pick how late (or ask for office help).' };
+  if (!jobId) return { ok: false, msg: 'No job specified.' };
+  // No zero-minute noise, require a reason (see lib/eta rules — the bad case was a needs_help with no note
+  // + no minutes the office couldn't act on).
+  const v = normalizeEta({ minutes, note, needsHelp });
+  if (!v.ok) return v;
+  const mins = v.mins, reason = v.reason;
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Server not configured.' };
 
@@ -139,10 +144,21 @@ export async function reportEta(jobId, minutes, note, needsHelp, newEtaISO) {
   }
 
   const newEta = newEtaISO && !Number.isNaN(Date.parse(newEtaISO)) ? new Date(newEtaISO).toISOString() : null;
-  const { error } = await sb.from('job_eta_updates').insert({
-    job_id: String(jobId), minutes: mins, note: String(note || '').slice(0, 400) || null,
-    needs_help: !!needsHelp, new_eta: newEta, created_by: user.id, created_by_name: profile.name || user.email,
-  });
+  const fields = { minutes: mins, note: reason, needs_help: !!needsHelp, new_eta: newEta, created_by: user.id, created_by_name: profile.name || user.email };
+  // No duplicate spam: keep ONE OPEN (unacked) update per job. If the tech already has an open update on
+  // this job, REVISE it (latest minutes/reason wins) instead of stacking another row the office has to
+  // wade through and the customer gets re-pinged for. A fresh report only starts once the office acks.
+  let existingId = null;
+  try {
+    const { data: open } = await sb.from('job_eta_updates').select('id').eq('job_id', String(jobId)).is('ack_at', null).order('created_at', { ascending: false }).limit(1).maybeSingle();
+    existingId = open?.id || null;
+  } catch (_) {}
+  let error;
+  if (existingId) {
+    ({ error } = await sb.from('job_eta_updates').update({ ...fields, created_at: new Date().toISOString() }).eq('id', existingId));
+  } else {
+    ({ error } = await sb.from('job_eta_updates').insert({ job_id: String(jobId), ...fields }));
+  }
   if (error) return { ok: false, msg: error.message };
   try {
     await sb.from('audit_log').insert({

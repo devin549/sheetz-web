@@ -285,12 +285,12 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
                   <button key={m} onClick={() => setEtaMins(m)} style={{ flex: '1 1 60px', padding: '10px', borderRadius: 9, fontWeight: 800, fontSize: 14, cursor: 'pointer', border: '1px solid ' + (etaMins === m ? 'var(--amber)' : 'var(--border-strong)'), background: etaMins === m ? 'var(--amber)' : 'var(--surface-2)', color: etaMins === m ? '#1a1206' : 'var(--fg-2)' }}>+{m}m</button>
                 ))}
               </div>
-              <input value={etaNote} onChange={(e) => setEtaNote(e.target.value)} placeholder="Note (optional) — e.g. cable stuck, need 30 more min"
-                style={{ width: '100%', marginTop: 8, padding: '9px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface-2)', color: 'var(--fg-1)', fontSize: 13 }} />
-              <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>New ETA ≈ <strong style={{ color: 'var(--fg-1)' }}>{newEtaLabel}</strong> · the office tells the customer.</div>
+              <input value={etaNote} onChange={(e) => setEtaNote(e.target.value)} placeholder="Reason (required) — e.g. cable stuck, need 30 more min"
+                style={{ width: '100%', marginTop: 8, padding: '9px 10px', borderRadius: 8, border: '1px solid ' + (etaNote.trim() ? 'var(--border)' : 'var(--amber-dim)'), background: 'var(--surface-2)', color: 'var(--fg-1)', fontSize: 13 }} />
+              <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>{etaNote.trim() ? <>New ETA ≈ <strong style={{ color: 'var(--fg-1)' }}>{newEtaLabel}</strong> · the office relays your reason to the customer.</> : 'Add a reason first — the office relays it to the customer.'}</div>
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button disabled={pending} onClick={() => sendEta(false)} style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none', background: 'var(--amber)', color: '#1a1206', fontWeight: 800, fontSize: 13, cursor: 'pointer', opacity: pending ? 0.6 : 1 }}>Send update</button>
-                <button disabled={pending} onClick={() => sendEta(true)} title="Ping dispatch for help" style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid var(--border-strong)', background: 'var(--surface-2)', color: 'var(--fg-1)', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Need office help</button>
+                <button disabled={pending || !etaNote.trim()} onClick={() => sendEta(false)} style={{ flex: 2, padding: '11px', borderRadius: 10, border: 'none', background: 'var(--amber)', color: '#1a1206', fontWeight: 800, fontSize: 13, cursor: (pending || !etaNote.trim()) ? 'default' : 'pointer', opacity: (pending || !etaNote.trim()) ? 0.6 : 1 }}>Send update</button>
+                <button disabled={pending || !etaNote.trim()} onClick={() => sendEta(true)} title="Ping dispatch for help" style={{ flex: 1, padding: '11px', borderRadius: 10, border: '1px solid var(--border-strong)', background: 'var(--surface-2)', color: 'var(--fg-1)', fontWeight: 700, fontSize: 12, cursor: (pending || !etaNote.trim()) ? 'default' : 'pointer', opacity: (pending || !etaNote.trim()) ? 0.6 : 1 }}>Need office help</button>
                 <button onClick={() => { setLateOpen(false); setLateMsg(null); }} style={{ padding: '11px', borderRadius: 10, border: '1px solid var(--border-strong)', background: 'var(--surface-2)', color: 'var(--fg-3)', cursor: 'pointer' }}>✕</button>
               </div>
             </div>
