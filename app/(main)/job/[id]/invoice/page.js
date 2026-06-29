@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { loadCockpitMoney } from '../cockpit';
 import JobHeader from '../JobHeader';
 import CollectPay from './CollectPay';
+import WorkSummaryCoach from '../WorkSummaryCoach';
 import { can } from '@/lib/roles';
 
 export const dynamic = 'force-dynamic';
@@ -17,10 +18,16 @@ export default async function InvoiceTab({ params }) {
   const balance = invoices.reduce((s, v) => s + Math.max(0, Number(v.balance) || 0), 0);
   const amount = balance > 0 ? balance : (c.job.amount || 0);
   const canCollect = can(c.role, 'collectPayment') || can(c.role, 'changeStatus');
+  // Work summary (migration 134) — the AI-watched "what I did" that shows as DESCRIPTION OF WORK. Best-effort.
+  let workSummary = '';
+  try { const { data: ws } = await c.sb.from('jobs').select('work_summary').eq('id', String(params.id)).maybeSingle(); workSummary = ws?.work_summary || ''; } catch (_) { /* pre-134 */ }
+  const canEditSummary = can(c.role, 'changeStatus');
 
   return (
     <div className="wrap" style={{ maxWidth: 760 }}>
       <JobHeader job={c.job} customer={c.customer} tab="Invoice" />
+
+      {canEditSummary && <WorkSummaryCoach jobId={params.id} jobType={c.job.job_type || ''} initial={workSummary} />}
 
       <div className="card" style={{ marginTop: 10 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>

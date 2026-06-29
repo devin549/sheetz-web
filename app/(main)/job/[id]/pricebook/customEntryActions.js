@@ -140,3 +140,51 @@ export async function recordCustomEntry(payload = {}) {
   try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'pricebook.custom_entry', entity: 'pricebook_custom_entry', entity_id: payload.jobId || '', detail: { name, price: row.price } }); } catch (_) {}
   return { ok: true, recorded: true, msg: 'Custom line added and recorded for the catalog to learn from.' };
 }
+
+// ── 3. AI work-summary watcher ─────────────────────────────────────────────────────────────────────────
+// The tech types what they did. Claude (owner key) reads it and does TWO things, suggest-only:
+//   • RECOMMEND the right fix from plumbing best practice (e.g. grease clog only cabled → hydro-jet).
+//   • COACH completeness — vague "repaired toilet" → asks which fixture + which part (Fluidmaster fill valve?),
+//     so the invoice / warranty / catalog all capture the real work. Plus a clean customer-grade rewrite.
+// Suggest-only; never auto-applies, never prices. Fails soft (no key → caller just keeps the raw note).
+const WORK_SUMMARY_SYSTEM = [
+  "You are a job-notes coach for Clog Busterz, a plumbing company. A field tech wrote what they did on a job.",
+  "Do THREE things and return STRICT JSON only — no preamble.",
+  "1) clear: true if the note already names the FIXTURE and the PART/work specifically; false if vague.",
+  "2) missing: 1-4 SHORT prompts for exactly what to add when vague — e.g. \"Which toilet (location/brand)?\",",
+  "   \"What part did you install — fill valve brand/model?\". Empty array when clear.",
+  "3) recommends: real next-step fixes from plumbing best practice based on what they describe. Each = {name, why}",
+  "   one short sentence why. Examples: a grease clog only CABLED → recommend a hydro-jet (cable punches a hole,",
+  "   jetting scours grease so it doesn't return); a recurring main-line clog → camera inspection. Honest only —",
+  "   never invent urgency, never recommend something the notes don't support. [] if nothing fits.",
+  "4) rewrite: a clean, customer-grade description of the work (outcome-first, plain English). NEVER mention price,",
+  "   cost, margin, or our material cost.",
+  'Return ONLY: {"clear":bool,"missing":["…"],"recommends":[{"name":"…","why":"…"}],"rewrite":"…"}',
+].join('\n');
+
+export async function reviewWorkSummary(notes, jobType) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  const text = clean(notes, 1200);
+  if (!text) return { ok: false, msg: 'Type what you did first.' };
+  if (!isAiConfigured(COACH_ROLE)) return { ok: false, msg: 'Add ANTHROPIC_KEY_OWNER in Vercel to turn on the notes coach.' };
+  const anthropic = getAnthropic(COACH_ROLE);
+  let res;
+  try {
+    res = await anthropic.messages.create({
+      model: AI_MODEL, max_tokens: 500, output_config: { effort: 'low' },
+      system: WORK_SUMMARY_SYSTEM,
+      messages: [{ role: 'user', content: `Job type: ${clean(jobType, 80) || '(unknown)'}\nTech's notes: ${text}\n\nCoach it. JSON only.` }],
+    });
+  } catch (e) { return { ok: false, msg: 'AI error: ' + String((e && e.message) || e).slice(0, 140) }; }
+  await logAiUsage(c, 'work-summary-coach', res);
+  let j; try { j = JSON.parse((aiText(res).match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch (_) { j = {}; }
+  return {
+    ok: true,
+    review: {
+      clear: j.clear !== false,
+      missing: Array.isArray(j.missing) ? j.missing.map((s) => clean(s, 120)).filter(Boolean).slice(0, 4) : [],
+      recommends: Array.isArray(j.recommends) ? j.recommends.map((r) => ({ name: clean(r.name, 80), why: clean(r.why, 160) })).filter((r) => r.name).slice(0, 4) : [],
+      rewrite: clean(j.rewrite, 600),
+    },
+  };
+}

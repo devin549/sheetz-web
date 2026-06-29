@@ -622,6 +622,19 @@ export async function setJobCosts(jobId, materialDollars, dispatchDollars) {
   return { ok: true, msg: 'Job costs saved — feeds pay.' };
 }
 
+// 📝 Save the tech's work-summary ("what I did") — the AI-watched narrative that shows as DESCRIPTION OF WORK
+// on the invoice. Best-effort column (migration 134).
+export async function setWorkSummary(jobId, text) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!can(ctx.role, 'changeStatus')) return { ok: false, msg: 'Your role can’t edit the work summary.' };
+  const summary = cleanText(text, 2000);
+  const { error } = await ctx.sb.from('jobs').update({ work_summary: summary || null }).eq('id', ctx.job.id);
+  if (error) return { ok: false, msg: /work_summary|column|schema cache/i.test(error.message || '') ? 'Run supabase/134_job_work_summary.sql first.' : error.message };
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath(`/job/${ctx.job.id}/invoice`);
+  return { ok: true, msg: 'Work summary saved.' };
+}
+
 // Set a SUBCONTRACTOR cost on a job — passed AT COST (no markup). Setting/changing it resets verification,
 // so it stays "pending" until Accounting confirms it again.
 export async function setJobSub(jobId, subDollars, vendor) {
