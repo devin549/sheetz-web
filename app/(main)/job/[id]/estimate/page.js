@@ -35,13 +35,16 @@ export default async function EstimateTab({ params }) {
     } catch (_) {}
   }
   const latest = estimates[0] || null; // the one the tech just built in the Pricebook → present it here
+  // Net terms (migration 132) — if this account is Net-30/15 the close shouldn't collect. Best-effort.
+  let net30Days = 0;
+  if (isAdminConfigured && c.job.customer_id) { try { const sb = getSupabaseAdmin(); const { data: ct } = await sb.from('customers').select('net_terms_days').eq('id', c.job.customer_id).maybeSingle(); net30Days = Number(ct?.net_terms_days) || 0; } catch (_) { /* pre-132 */ } }
 
   return (
     <div className="wrap" style={{ maxWidth: 760 }}>
       <JobHeader job={c.job} customer={c.customer} tab="Estimate" />
       {/* Present surface — the estimate built in the Pricebook lands here to send + close. */}
       {latest ? (
-        <EstimatePresent jobId={params.id} estimate={latest} />
+        <EstimatePresent jobId={params.id} estimate={latest} net30Days={net30Days} />
       ) : (
         <div className="card card-amber" style={{ marginTop: 10 }}>
           <div style={{ fontWeight: 800, marginBottom: 6 }}>🧾 No estimate yet</div>

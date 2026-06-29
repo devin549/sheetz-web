@@ -30,3 +30,24 @@ export async function setCreditHold(customerId, on, reason) {
   revalidatePath(`/customers/${id}`);
   return { ok: true, msg: hold ? 'Credit hold placed — new bookings now need owner/GM/accounting approval.' : 'Credit hold lifted.' };
 }
+
+// Set a customer's payment terms (Net-30/Net-15 for trusted/commercial accounts; 0 = due at close). Owner /
+// GM / accounting only — it's a credit decision. When > 0 the close doesn't collect; the office invoices.
+export async function setPaymentTerms(customerId, days) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Sign in required.' };
+  const profile = await loadProfile(user);
+  if (!canOverrideCreditHold(profile.role)) return { ok: false, msg: 'Only owner / GM / accounting can set payment terms.' };
+  const id = clean(customerId, 80);
+  if (!id) return { ok: false, msg: 'No customer.' };
+  const n = [0, 15, 30].includes(Number(days)) ? Number(days) : 0;
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const patch = { net_terms_days: n, net_terms_by: n ? (profile.name || user.email) : null, net_terms_at: n ? new Date().toISOString() : null };
+  const { error } = await sb.from('customers').update(patch).eq('id', id);
+  if (error) return { ok: false, msg: /net_terms|column|schema cache/i.test(error.message || '') ? 'Run supabase/132_customer_net_terms.sql first.' : error.message };
+  try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'customer.net_terms', entity: 'customer', entity_id: id, detail: { net_terms_days: n } }); } catch (_) {}
+  revalidatePath(`/customers/${id}`);
+  return { ok: true, msg: n ? `Set to Net-${n} — the close won't collect; the office invoices.` : 'Back to due-at-close.' };
+}

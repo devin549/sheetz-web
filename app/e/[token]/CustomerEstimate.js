@@ -162,12 +162,15 @@ export default function CustomerEstimate({ est }) {
         {t.key !== 'good' && (() => {
           const f = financingOffer(t.subtotal, est.financing || null);
           if (!f.available) return null;
+          if (f.hasQuote && f.applyUrl) return (
+            // Bold tappable CTA → straight to the lender's application. Monthly framing closes the big ticket.
+            <a href={f.applyUrl} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8, padding: '10px 12px', borderRadius: 10, background: 'rgba(105,240,174,.12)', border: `1px solid ${GREEN}`, textDecoration: 'none' }}>
+              <span style={{ color: GREEN, fontWeight: 800, fontSize: 12.5 }}>💳 Pay monthly — as low as <span style={{ fontSize: 15, fontWeight: 900 }}>{money(f.monthly)}/mo</span><span style={{ color: MUTE, fontWeight: 600 }}> · {f.months} mo</span></span>
+              <span style={{ color: GOLD, fontWeight: 900, whiteSpace: 'nowrap' }}>Apply →</span>
+            </a>
+          );
           if (f.hasQuote) return (
-            <div style={{ marginTop: 8, fontSize: 12.5, color: GREEN, fontWeight: 700 }}>
-              💳 As low as <span style={{ fontSize: 14, fontWeight: 900 }}>{money(f.monthly)}/mo</span>
-              <span style={{ color: MUTE, fontWeight: 600 }}> · {f.months} mo{f.partner ? ` · ${f.partner}` : ''}</span>
-              {f.applyUrl && <a href={f.applyUrl} target="_blank" rel="noreferrer" style={{ color: GOLD, fontWeight: 800, textDecoration: 'none', marginLeft: 6 }}>Apply →</a>}
-            </div>
+            <div style={{ marginTop: 8, fontSize: 12.5, color: GREEN, fontWeight: 700 }}>💳 As low as <span style={{ fontSize: 14, fontWeight: 900 }}>{money(f.monthly)}/mo</span><span style={{ color: MUTE, fontWeight: 600 }}> · {f.months} mo{f.partner ? ` · ${f.partner}` : ''}</span></div>
           );
           return <div style={{ marginTop: 8, fontSize: 12.5, color: MUTE, fontWeight: 600 }}>💳 Financing available — ask about low monthly payments</div>;
         })()}

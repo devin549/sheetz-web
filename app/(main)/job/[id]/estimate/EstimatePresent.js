@@ -15,7 +15,7 @@ const STATUS = {
   declined: { label: '🙅 Declined', color: 'var(--red)' },
 };
 
-export default function EstimatePresent({ jobId, estimate }) {
+export default function EstimatePresent({ jobId, estimate, net30Days = 0 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [sendMsg, setSendMsg] = useState(null);
@@ -23,9 +23,11 @@ export default function EstimatePresent({ jobId, estimate }) {
   const [copied, setCopied] = useState(false);
   const [soldOpen, setSoldOpen] = useState(false);
   const [soldName, setSoldName] = useState('');
+  const [origin, setOrigin] = useState(''); // set client-side post-mount → no hydration mismatch
+  useEffect(() => { if (typeof window !== 'undefined') setOrigin(window.location.origin); }, []);
 
   const token = estimate?.token || null;
-  const link = token && typeof window !== 'undefined' ? `${window.location.origin}/e/${token}` : '';
+  const link = token ? `${origin}/e/${token}` : ''; // origin '' on server + first client render → matches
   const status = (live?.status) || estimate?.status || 'sent';
   const terminal = ['approved', 'declined'].includes(status);
   const st = STATUS[status] || STATUS.sent;
@@ -60,6 +62,11 @@ export default function EstimatePresent({ jobId, estimate }) {
         <span className="pill" style={{ marginLeft: 'auto', color: st.color, border: `1px solid ${st.color}`, fontWeight: 800, fontSize: 11 }}>{st.label}{status === 'approved' && (live?.approvedName || estimate.approved_name) ? ` · ${live?.approvedName || estimate.approved_name}` : ''}</span>
       </div>
 
+      {net30Days > 0 && (
+        <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(255,179,0,.1)', border: '1px solid var(--amber-dim)', fontSize: 11.5, color: 'var(--amber)', fontWeight: 700 }}>
+          🗓 Net-{net30Days} account — don&apos;t collect at the close. The office invoices it, due in {net30Days} days.
+        </div>
+      )}
       {!terminal ? (
         <>
           <div className="muted" style={{ fontSize: 12, margin: '8px 0 6px' }}>Send it to the customer — they see the Good/Better/Best and pick:</div>
