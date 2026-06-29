@@ -110,14 +110,16 @@ export default function PricebookClient({ job, customer, roots = [], related = {
 
   // Build a customer-safe estimate and get a shareable link (text it OR present on this iPad). When a ladder
   // exists we send all three tiers; `tierKey`/cart still seed the active/flat snapshot for backward-compat.
+  // Build the customer-safe estimate, then HAND OFF to the Estimate tab — that's where the tech sends it,
+  // watches the customer respond, and closes. The pricebook only builds; estimates finalize on Estimate.
   const present = () => start(async () => {
-    setMsg(null); setLink(null); setToken(null); setLive(null); setSendMsg(null);
+    setMsg(null);
     const r = await createEstimate(job.id, soldLines(), {
       tierKey, bundleSlug: bundle?.slug,
       tiers: tiers.length ? ladderForSend() : undefined,
       headline: (memberDisc && plan ? `${plan.name} member · ` : '') + (bundle ? bundle.name : (tierKey ? tierKey : '')),
     });
-    if (r.ok) { setLink(r.url); setToken(r.token); setLive({ status: 'sent', terminal: false }); } else setMsg(r.msg);
+    if (r.ok) router.push(`/job/${job.id}/estimate`); else setMsg(r.msg);
   });
   const fullLink = link && typeof window !== 'undefined' ? window.location.origin + link : link;
   const copyLink = () => { try { navigator.clipboard.writeText(fullLink); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) {} };
@@ -252,35 +254,12 @@ export default function PricebookClient({ job, customer, roots = [], related = {
             {approval && <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(239,83,80,.1)', border: '1px solid var(--red)', fontSize: 11.5, color: 'var(--red)' }}>🚦 {approval}</div>}
             {showMargin && anyBelowMin && !approval && <div className="muted" style={{ fontSize: 10.5, marginTop: 6, color: 'var(--amber)' }}>A line is below minimum — a manager must approve the discount.</div>}
 
-            <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-              <button onClick={present} disabled={pending || cart.length === 0} className="btn" style={{ background: 'var(--amber)', borderColor: 'var(--amber)', color: '#1a1a1a' }}>{pending ? 'Building…' : '📲 Present / send to customer'}</button>
-              <button onClick={sell} disabled={pending || cart.length === 0} className="pill" style={{ cursor: 'pointer', justifyContent: 'center', display: 'flex', color: 'var(--green)' }}>✓ Or record sold now</button>
+            {/* ONE handoff — build here, present on the Estimate tab. */}
+            <div style={{ marginTop: 12 }}>
+              <button onClick={present} disabled={pending || cart.length === 0} className="btn" style={{ width: '100%', background: 'var(--amber)', borderColor: 'var(--amber)', color: '#1a1a1a', fontSize: 14, padding: '12px' }}>{pending ? 'Building…' : '🧾 Build estimate → present →'}</button>
+              <div className="muted" style={{ fontSize: 10.5, marginTop: 6, textAlign: 'center' }}>Lands on the Estimate tab to send + close with the customer.</div>
             </div>
-
-            {link && (
-              <div style={{ marginTop: 10, padding: 10, borderRadius: 10, background: 'var(--surface-1)', border: '1px solid var(--green)' }}>
-                <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6, color: 'var(--green)' }}>✓ Customer page ready — send it any way</div>
-
-                {/* SEND PICKER — Text (consent-gated server-side) · Email · Present on this iPad. Same token. */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
-                  <button onClick={sendText} disabled={pending} className="btn" style={{ background: 'var(--green)', borderColor: 'var(--green)', color: '#06210f', fontSize: 12.5, padding: '9px' }}>💬 Text the link</button>
-                  <button onClick={sendEmail} disabled={pending} className="btn" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--fg-1)', fontSize: 12.5, padding: '9px' }}>📧 Email it</button>
-                </div>
-                <button onClick={presentHere} disabled={pending} className="btn" style={{ width: '100%', background: 'var(--amber)', borderColor: 'var(--amber)', color: '#1a1a1a', fontSize: 12.5, padding: '9px', marginBottom: 8 }}>📱 View on this iPad (turn it around)</button>
-
-                {sendMsg && <div style={{ fontSize: 11.5, marginBottom: 8, color: sendMsg.ok ? 'var(--green)' : 'var(--red)' }}>{sendMsg.ok ? '✓ ' : '⚠ '}{sendMsg.text}</div>}
-
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, color: 'var(--amber)', wordBreak: 'break-all', marginBottom: 6 }}>{fullLink}</div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <button onClick={copyLink} className="pill" style={{ cursor: 'pointer' }}>{copied ? '✓ Copied' : '🔗 Copy link'}</button>
-                  <a href={link} target="_blank" rel="noreferrer" className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>↗ Open page</a>
-                </div>
-
-                {/* ── iPad LIVE MIRROR — reflects what the customer does on ANY channel, polled every 10s. ── */}
-                {live && <LiveStatus live={live} tiers={tiers} />}
-              </div>
-            )}
-            {msg && <div style={{ fontSize: 11.5, marginTop: 8, color: 'var(--green)' }}>{msg}</div>}
+            {msg && <div style={{ fontSize: 11.5, marginTop: 8, color: 'var(--red)' }}>⚠ {msg}</div>}
 
             {/* Objection helpers — quick reframes when the customer hesitates (customer-safe). */}
             {cart.length > 0 && (

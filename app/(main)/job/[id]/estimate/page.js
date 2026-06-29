@@ -3,6 +3,7 @@ import { loadCockpitMoney } from '../cockpit';
 import JobHeader from '../JobHeader';
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import EstimateProofPanel from '../pricebook/EstimateProofPanel';
+import EstimatePresent from './EstimatePresent';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,23 +34,28 @@ export default async function EstimateTab({ params }) {
       estimates = list.map((e) => ({ ...e, events: byTok[e.token] || [] }));
     } catch (_) {}
   }
+  const latest = estimates[0] || null; // the one the tech just built in the Pricebook → present it here
 
   return (
     <div className="wrap" style={{ maxWidth: 760 }}>
       <JobHeader job={c.job} customer={c.customer} tab="Estimate" />
-      <div className="card card-amber" style={{ marginTop: 10 }}>
-        <div style={{ fontWeight: 800, marginBottom: 6 }}>🧾 Estimates · {c.customer.name || 'customer'}</div>
-        <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>Build &amp; present Good/Better/Best in the Pricebook; what you send shows below with full approval proof. Approval drops fast after ~8 min post-diagnosis.</div>
-        <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6 }}>Suggested for this job type</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>{sugg.map((s) => <span key={s} className="pill">{s}</span>)}</div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Link href={`/job/${params.id}/pricebook`} className="btn" style={{ textDecoration: 'none' }}>🛒 Build / present in Pricebook →</Link>
-          <Link href="/open-estimates" className="pill" style={{ display: 'inline-flex', alignItems: 'center' }}>All open estimates</Link>
+      {/* Present surface — the estimate built in the Pricebook lands here to send + close. */}
+      {latest ? (
+        <EstimatePresent jobId={params.id} estimate={latest} />
+      ) : (
+        <div className="card card-amber" style={{ marginTop: 10 }}>
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>🧾 No estimate yet</div>
+          <div className="muted" style={{ fontSize: 12.5, marginBottom: 8 }}>Build the job in the Pricebook — pick items / Good·Better·Best — then it lands here to present &amp; send. Approval drops fast after ~8 min post-diagnosis, so build it on site.</div>
+          <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6 }}>Likely for this job type</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>{sugg.map((s) => <span key={s} className="pill">{s}</span>)}</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Link href={`/job/${params.id}/pricebook`} className="btn" style={{ textDecoration: 'none' }}>🛒 Build it in the Pricebook →</Link>
+            <Link href="/open-estimates" className="pill" style={{ display: 'inline-flex', alignItems: 'center' }}>All open estimates</Link>
+          </div>
         </div>
-        <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>⚠ Check margin before presenting: 30% markup minimum keeps you in Crown territory.</div>
-      </div>
+      )}
 
-      {/* Sent estimates & approval proof — moved here from the Pricebook tab. */}
+      {/* Sent estimates & approval proof — the record of what was sent + how the customer responded. */}
       <EstimateProofPanel estimates={estimates} />
     </div>
   );
