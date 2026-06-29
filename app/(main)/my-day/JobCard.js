@@ -13,6 +13,8 @@ const ETA_CHIPS = [15, 30, 45, 60];
 function fmtTime(iso) { if (!iso) return '—'; try { return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch { return '—'; } }
 function money(n) { return '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
 function dial(raw) { const d = String(raw || '').replace(/[^\d]/g, ''); if (d.length === 10) return '+1' + d; if (d.length === 11 && d[0] === '1') return '+' + d; return d ? '+' + d : ''; }
+// Display the real number — pre-A2P the tech calls/texts from their own phone, so show it, don't hide it.
+function fmtPhone(raw) { const d = String(raw || '').replace(/\D/g, ''); const n = d.length === 11 && d[0] === '1' ? d.slice(1) : d; return n.length === 10 ? `(${n.slice(0, 3)}) ${n.slice(3, 6)}-${n.slice(6)}` : String(raw || ''); }
 function metersBetween(aLat, aLng, bLat, bLng) { const R = 6371000, rad = (d) => (d * Math.PI) / 180; const dLat = rad(bLat - aLat), dLng = rad(bLng - aLng); const x = Math.sin(dLat / 2) ** 2 + Math.cos(rad(aLat)) * Math.cos(rad(bLat)) * Math.sin(dLng / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); }
 const ARRIVE_RADIUS_M = 150; // same geofence the shell uses to auto-quiet the ribbon at the house
 function statusPill(status) {
@@ -220,6 +222,7 @@ export default function JobCard({ job, seeAll, canAct, variant = 'active', tags 
             {urgent && <span className="pill pill-red pill-blink" style={{ marginLeft: 8 }}>RUNNING LATE</span>}
           </div>
           {cust.address && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>📍 {cust.address}</div>}
+          {tel && <a href={`tel:${tel}`} data-no-nav style={{ fontSize: 12, marginTop: 2, display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--amber)', textDecoration: 'none', fontWeight: 600 }}>📞 {fmtPhone(cust.phone)}</a>}
           {typeBits && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>🔧 {typeBits}</div>}
           {seeAll && t.name && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}><PersonCard name={t.name}><span style={{ cursor: 'pointer' }}>👷 {t.name}</span></PersonCard></div>}
           <TagRow tags={tags} />

@@ -3,6 +3,9 @@ import { ArrowLeft, Phone, MessageSquare, Mic, Navigation, History } from 'lucid
 import JobContext from './JobContext';
 
 const dial = (p) => String(p || '').replace(/[^0-9+]/g, '');
+// Pretty-print for DISPLAY. Until Twilio A2P/10DLC clears we can't text through the platform, so the tech
+// needs to SEE the real number and call/text from their own phone — show it, don't just hide it behind a button.
+const fmtPhone = (p) => { const d = String(p || '').replace(/\D/g, ''); const n = d.length === 11 && d[0] === '1' ? d.slice(1) : d; return n.length === 10 ? `(${n.slice(0, 3)}) ${n.slice(3, 6)}-${n.slice(6)}` : String(p || ''); };
 function statusLabel(v) {
   const s = String(v || 'scheduled').toLowerCase();
   if (/done|complete|closed/.test(s)) return 'Complete';
@@ -38,8 +41,8 @@ export default function JobHeader({ job, customer = {}, tab = 'Overview' }) {
 
       {/* quick contact bar */}
       <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        {tel && <a href={`tel:${tel}`} className="pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}><Phone size={13} /> Call <span style={{ fontSize: 8.5, color: 'var(--red)', fontWeight: 800 }}>● REC</span></a>}
-        {tel && <a href={`sms:${tel}`} className="pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><MessageSquare size={13} /> Text <span className="muted" style={{ fontSize: 8.5 }}>saved 7yr</span></a>}
+        {tel && <a href={`tel:${tel}`} className="pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--amber)', border: '1px solid var(--amber-dim)', fontWeight: 700 }}><Phone size={13} /> {fmtPhone(customer.phone)}</a>}
+        {tel && <a href={`sms:${tel}`} className="pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><MessageSquare size={13} /> Text</a>}
         <span className="pill" title="CSR call recording (links when call-intel is wired)" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, opacity: 0.6 }}><Mic size={13} /> CSR call</span>
         {mapHref && <a href={mapHref} target="_blank" rel="noreferrer" className="pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Navigation size={13} /> Directions</a>}
         {cid && <Link href={`/customers/${cid}`} className="pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}><History size={13} /> Full history</Link>}
