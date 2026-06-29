@@ -27,6 +27,7 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
   const [err, setErr] = useState(null);
   const [pending, start] = useTransition();
   const pollRef = useRef(null);
+  const pollingRef = useRef(false); // a tick is in flight — skip overlapping ticks so we never double-record a paid charge
 
   const amtNum = Number(amt);
   const valid = amtNum > 0;
@@ -50,10 +51,14 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
       if (!r.ok) { setErr(r.msg); setMode(null); return; }
       setReader(r); setReaderState('waiting');
       pollRef.current = setInterval(async () => {
-        const p = await pollReaderCharge(jobId, r.paymentIntentId);
-        if (!p.ok) return;
-        if (p.paid) { clearInterval(pollRef.current); setReaderState('paid'); router.refresh(); }
-        else if (p.done) { clearInterval(pollRef.current); setReaderState('failed'); setErr(p.lastError || 'Charge was canceled or declined.'); }
+        if (pollingRef.current) return; // prior tick still awaiting — don't fire a second pollReaderCharge
+        pollingRef.current = true;
+        try {
+          const p = await pollReaderCharge(jobId, r.paymentIntentId);
+          if (!p.ok) return;
+          if (p.paid) { clearInterval(pollRef.current); setReaderState('paid'); router.refresh(); }
+          else if (p.done) { clearInterval(pollRef.current); setReaderState('failed'); setErr(p.lastError || 'Charge was canceled or declined.'); }
+        } finally { pollingRef.current = false; }
       }, 2200);
     });
   }

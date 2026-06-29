@@ -40,6 +40,12 @@ export async function POST(request) {
   catch (e) { return new Response('bad signature: ' + String((e && e.message) || e).slice(0, 80), { status: 400 }); }
 
   const sb = getSupabaseAdmin();
+  // Idempotency: Stripe delivers at-least-once and retries when it doesn't get a prompt 2xx. If we've already
+  // processed this event id, skip — otherwise a retried checkout.session.completed double-writes the AR ledger.
+  // Fail-soft: pre-migration 136 (table missing) the select throws → we proceed and behave exactly as before.
+  if (sb) {
+    try { const { data: seen } = await sb.from('stripe_events').select('id').eq('id', event.id).maybeSingle(); if (seen) return Response.json({ received: true, deduped: true }); } catch (_) {}
+  }
   const s = event.data && event.data.object || {};
   const md = s.metadata || {};
   if (sb) {
@@ -52,6 +58,9 @@ export async function POST(request) {
     } else if (event.type === 'checkout.session.async_payment_failed') {
       await note(sb, `⚠️ Bank payment FAILED${md.customer_name ? ` from ${md.customer_name}` : ''}${md.invoice_number ? ` on invoice ${md.invoice_number}` : ''} — invoice stays open, follow up.`);
     }
+    // Record AFTER processing (best-effort) so a delivery that errored before completing isn't marked done —
+    // Stripe's retry will then re-run it. A retry AFTER success is what gets deduped above.
+    try { await sb.from('stripe_events').insert({ id: event.id, type: event.type }); } catch (_) {}
   }
   return Response.json({ received: true });
 }

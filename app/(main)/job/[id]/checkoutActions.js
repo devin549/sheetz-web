@@ -32,7 +32,7 @@ async function recordPaidOnce(sb, jobId, profile, paymentIntentId, action) {
         if (u.error && /paid_at/.test(u.error.message || '')) await sb.from('invoices').update({ status: 'paid', balance: 0 }).eq('id', inv.id);
         try { await sb.from('ar_activity').insert({ action: 'customer_paid', invoice_id: inv.id, invoice_number: inv.invoice_number || null, customer_id: inv.customer_id || null, amount: paid, by_email: 'field-collect' }); } catch (_) {}
       }
-    } catch (_) {}
+    } catch (e) { console.error(`[checkout] invoice reconcile FAILED for job ${jobId} (charge cleared, invoice may still show open):`, (e && e.message) || e); }
     revalidatePath(`/job/${jobId}`);
   } catch (_) {}
 }
@@ -69,6 +69,12 @@ async function resolveReader(sb, profile) {
 
 // Suggested total for a job = accepted proposal total → else the job's amount (same logic as the pay-link).
 async function suggestedDollars(sb, jobId, job) {
+  // Prefer the OPEN invoice balance — it reflects partial payments already taken, so a blank amount field can't
+  // re-charge a stale proposal/job total over what's actually still owed. Falls back to accepted proposal → job.
+  try {
+    const { data: inv } = await sb.from('invoices').select('balance').eq('job_id', String(jobId)).gt('balance', 0).order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (inv && Number(inv.balance) > 0) return Number(inv.balance);
+  } catch (_) {}
   let suggested = Number(job.amount) || 0;
   try {
     const { data: props } = await sb.from('proposals').select('accepted_total, created_at').eq('job_id', jobId).order('created_at', { ascending: false }).limit(3);
