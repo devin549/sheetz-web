@@ -1,11 +1,13 @@
 'use client';
 
-// 🧾 Scan a parts receipt on the Parts/PO tab — Claude Vision reads the vendor + total, flags whether it's a
-// vendor we already know, and one tap fills the job's Material cost (which feeds the pay margin). Read →
-// review → "Use" (the tech confirms; nothing auto-saves off a blurry read).
+// 🧾 Scan a parts receipt on the Parts/PO tab — tapping it opens the CAMERA (live viewfinder, same as the
+// proof tiles), Claude Vision reads vendor + total, flags a known vendor, and one tap fills the job's
+// material cost. Read → review → "Use" (the tech confirms; nothing auto-saves off a blurry read). A small
+// "upload a saved photo" fallback covers the rare no-camera case.
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { scanReceipt, setJobCosts } from './actions';
+import InAppCamera from './InAppCamera';
 
 function fileToScaledDataUrl(file, max = 1400) {
   return new Promise((resolve) => {
@@ -24,25 +26,25 @@ function fileToScaledDataUrl(file, max = 1400) {
 const money = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 export default function ScanReceipt({ jobId, dispatchCents = 0 }) {
-  const inputRef = useRef();
+  const uploadRef = useRef();
   const router = useRouter();
   const [pending, start] = useTransition();
+  const [camOpen, setCamOpen] = useState(false);
   const [res, setRes] = useState(null);
   const [err, setErr] = useState(null);
   const [savedMsg, setSavedMsg] = useState(null);
 
-  const onFile = (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
+  // Shared: take a File (from the camera or an upload), scale it, read it.
+  const scan = (file) => {
     setErr(null); setRes(null); setSavedMsg(null);
     start(async () => {
-      const url = await fileToScaledDataUrl(f);
+      const url = await fileToScaledDataUrl(file);
       if (!url) { setErr('Could not read that image.'); return; }
       const r = await scanReceipt(jobId, url);
       if (r.ok) setRes(r); else setErr(r.msg);
     });
-    e.target.value = '';
   };
+  const onUpload = (e) => { const f = e.target.files?.[0]; if (f) scan(f); e.target.value = ''; };
 
   // "Use" → set the material cost to the scanned total (keep the existing dispatch fee untouched).
   const use = () => start(async () => {
@@ -55,14 +57,19 @@ export default function ScanReceipt({ jobId, dispatchCents = 0 }) {
     <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--purple, #9c64f4)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span style={{ fontSize: 16 }}>🧾</span>
-        <div style={{ fontWeight: 800 }}>Scan a receipt <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>— reads the vendor + cost</span></div>
+        <div style={{ fontWeight: 800 }}>Scan a receipt <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>— camera reads the vendor + cost</span></div>
       </div>
-      <input ref={inputRef} type="file" accept="image/*" capture="environment" onChange={onFile} style={{ display: 'none' }} />
-      <button onClick={() => inputRef.current && inputRef.current.click()} disabled={pending}
+      <button onClick={() => setCamOpen(true)} disabled={pending}
         style={{ width: '100%', padding: '12px', borderRadius: 10, border: '1px solid var(--purple, #9c64f4)', background: 'color-mix(in oklab, var(--purple, #9c64f4) 10%, var(--surface-1))', color: 'var(--purple, #9c64f4)', fontWeight: 800, fontSize: 13, cursor: pending ? 'default' : 'pointer', opacity: pending ? 0.6 : 1 }}>
-        {pending ? '✨ Reading the receipt…' : '📷 Scan receipt (AI)'}
+        {pending ? '✨ Reading the receipt…' : '📷 Scan receipt (opens camera)'}
       </button>
+      <div style={{ marginTop: 6 }}>
+        <button type="button" onClick={() => uploadRef.current?.click()} className="muted" style={{ background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', fontSize: 11 }}>or upload a saved photo</button>
+        <input ref={uploadRef} type="file" accept="image/*" onChange={onUpload} style={{ display: 'none' }} />
+      </div>
       {err && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{err}</div>}
+
+      {camOpen && <InAppCamera label="Receipt" onClose={() => setCamOpen(false)} onCapture={(file) => { setCamOpen(false); scan(file); }} />}
 
       {res && (
         <div className="card" style={{ marginTop: 10, background: 'var(--surface-2)' }}>
