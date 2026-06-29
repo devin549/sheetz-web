@@ -160,7 +160,7 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
         { icon: '🔧', label: 'Equipment', href: `/job/${curId}/equipment` },
         { icon: '🕑', label: 'History', href: `/job/${curId}/history` },
       ] }]
-    : [...RAIL, ...(canOffice ? [{ group: 'Owner', items: [{ icon: '🔐', label: 'Command Center', href: '/?cc=1' }] }] : [])];
+    : [...RAIL, ...(canOffice ? [{ group: 'Owner', items: [{ icon: '🔐', label: 'Command Center', href: '/?cc=1' }, { icon: '⚖️', label: 'Legal terms', href: '/legal-terms' }] }] : [])];
   // global rail — Job/Proof removed (reach jobs via My Day; proof photos live inside the job).
   // Command Center is an owner-only PIN-gated side tab (no longer the default landing).
 

@@ -1,4 +1,5 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
+import { getLegalTerms } from '@/lib/estimateTerms';
 import CustomerEstimate from './CustomerEstimate';
 
 export const dynamic = 'force-dynamic';
@@ -61,5 +62,6 @@ export default async function PublicEstimate({ params }) {
     member, financing,
   };
 
+  try { safe.authTerms = (await getLegalTerms(sb, 'work_authorization')).content; } catch (_) {}
   return wrap(<CustomerEstimate est={safe} />);
 }

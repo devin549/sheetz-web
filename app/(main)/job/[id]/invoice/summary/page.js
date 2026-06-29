@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { loadCockpitMoney } from '../../cockpit';
-import { WORK_AUTHORIZATION_TERMS } from '@/lib/estimateTerms';
+import { getLegalTerms } from '@/lib/estimateTerms';
 
 export const dynamic = 'force-dynamic';
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -22,6 +22,7 @@ export default async function InvoiceSummary({ params }) {
   } catch (_) {}
   try { const { data } = await c.sb.from('invoices').select('invoice_number, total, balance, status, invoice_date, due_date').eq('job_id', String(params.id)).order('created_at', { ascending: false }).limit(1).maybeSingle(); inv = data || null; } catch (_) {}
   try { const { data } = await c.sb.from('jobs').select('work_summary').eq('id', String(params.id)).maybeSingle(); workSummary = data?.work_summary || ''; } catch (_) {}
+  const authTerms = await getLegalTerms(c.sb, 'work_authorization');
 
   const lines = Array.isArray(est?.lines) ? est.lines : [];
   const sub = Number(est?.subtotal) || lines.reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.quantity) || 1), 0) || Number(inv?.total) || 0;
@@ -118,7 +119,7 @@ export default async function InvoiceSummary({ params }) {
         )}
 
         {/* Terms — verbatim Work Authorization & Terms and Conditions (drafted by counsel). */}
-        <div style={{ marginTop: 14, fontSize: 9.5, color: '#666', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{WORK_AUTHORIZATION_TERMS}</div>
+        <div style={{ marginTop: 14, fontSize: 9.5, color: '#666', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{authTerms.content}</div>
         <div style={{ marginTop: 8, fontSize: 10, color: '#999', textAlign: 'center' }}>Thank you for choosing Clog Busterz Plumbing!</div>
       </div>
     </div>

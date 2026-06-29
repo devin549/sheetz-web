@@ -7,6 +7,7 @@ import { computeCloseout, getDispo, getParts, getForms, isEstimateJob, ruleForJo
 import JobPhotos from './JobPhotos';
 import CloseoutV2 from './CloseoutV2';
 import CompletionSignature from './CompletionSignature';
+import { getLegalTerms } from '@/lib/estimateTerms';
 import JobParts from './JobParts';
 import JobForms from './JobForms';
 import JobFlow from './JobFlow';
@@ -177,6 +178,7 @@ export default async function JobDetail({ params }) {
     catch (_) { try { const { data: ct } = await sb.from('customers').select('net_terms_days').eq('id', job.customer_id).maybeSingle(); netDays = Number(ct?.net_terms_days) || 0; officeBilled = netDays > 0; } catch (_2) { /* pre-132 */ } }
   }
   const techName = job.tech_name || job.techs?.name || 'Unassigned';
+  let completionTerms = ''; try { completionTerms = (await getLegalTerms(sb, 'completion_acceptance')).content; } catch (_) {}
   const title = jobTitle(job);
   const canUpload = canUploadPhotos(role);
   const canArchiveAny = can(role, 'deleteJobs') || can(role, 'manageUsers') || can(role, 'assignJobs');
@@ -366,7 +368,7 @@ export default async function JobDetail({ params }) {
       })()}
 
       {!photoError && !isEstimate && <CloseoutV2 jobId={id} dispo={dispo} needWarranty={needWarranty} officeBilled={officeBilled} netDays={netDays} />}
-      {!photoError && !isEstimate && <CompletionSignature jobId={id} signedName={dispo.row?.completion_signed_name} signedAt={dispo.row?.completion_signed_at} />}
+      {!photoError && !isEstimate && <CompletionSignature jobId={id} terms={completionTerms} signedName={dispo.row?.completion_signed_name} signedAt={dispo.row?.completion_signed_at} />}
 
       <JobVideo jobId={id} videos={videos} canUpload={canUpload && !photoError} requireVideo={closeout.requireVideo} />
 

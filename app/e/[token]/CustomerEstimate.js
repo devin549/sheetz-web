@@ -355,7 +355,7 @@ export default function CustomerEstimate({ est }) {
             Approve {money(approveTotal)}{hasLadder && pickedTier ? <span style={{ color: GOLD }}> · {pickedTier.name}</span> : ''}
           </div>
           <p style={{ color: MUTE, fontSize: 13, margin: '0 0 10px' }}>Please read the terms, type your name, and sign to authorize the work.</p>
-          <div style={{ maxHeight: 200, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: SURF2, border: `1px solid ${LINE}`, borderRadius: 10, padding: 12, marginBottom: 12, fontSize: 11.5, lineHeight: 1.55, color: MUTE, whiteSpace: 'pre-wrap' }}>{WORK_AUTHORIZATION_TERMS}</div>
+          <div style={{ maxHeight: 200, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: SURF2, border: `1px solid ${LINE}`, borderRadius: 10, padding: 12, marginBottom: 12, fontSize: 11.5, lineHeight: 1.55, color: MUTE, whiteSpace: 'pre-wrap' }}>{est.authTerms || WORK_AUTHORIZATION_TERMS}</div>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your full name" autoFocus
             style={{ width: '100%', boxSizing: 'border-box', background: SURF2, border: `1px solid ${LINE}`, color: INK, borderRadius: 10, padding: 13, fontSize: 16, marginBottom: 12 }} />
           <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, lineHeight: 1.5, color: INK, cursor: 'pointer', marginBottom: 14 }}>

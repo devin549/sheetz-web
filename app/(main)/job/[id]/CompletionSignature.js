@@ -8,7 +8,7 @@ import SignaturePad from '@/components/SignaturePad';
 import { COMPLETION_ACCEPTANCE } from '@/lib/estimateTerms';
 import { saveCompletionSignature } from './actions';
 
-export default function CompletionSignature({ jobId, signedName, signedAt }) {
+export default function CompletionSignature({ jobId, terms, signedName, signedAt }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [open, setOpen] = useState(false);
@@ -33,7 +33,7 @@ export default function CompletionSignature({ jobId, signedName, signedAt }) {
   return (
     <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--amber)' }}>
       <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>✍️ Final acceptance — sign when work is complete</div>
-      <div style={{ maxHeight: 160, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, fontSize: 11.5, lineHeight: 1.55, color: 'var(--fg-2)', whiteSpace: 'pre-wrap', marginBottom: 10 }}>{COMPLETION_ACCEPTANCE}</div>
+      <div style={{ maxHeight: 160, overflowY: 'auto', WebkitOverflowScrolling: 'touch', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, fontSize: 11.5, lineHeight: 1.55, color: 'var(--fg-2)', whiteSpace: 'pre-wrap', marginBottom: 10 }}>{terms || COMPLETION_ACCEPTANCE}</div>
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Customer name" style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 14, marginBottom: 10 }} />
       <SignaturePad onChange={setSig} />
       {msg && <div style={{ fontSize: 12, marginTop: 6, color: msg.includes('signed') ? 'var(--green)' : 'var(--amber)' }}>{msg}</div>}
