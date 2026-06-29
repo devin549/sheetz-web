@@ -7,6 +7,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { weeklyLeaderboard, onTimeStreak, techXp } from '@/lib/leaderboard';
 import { can } from '@/lib/roles';
 import { loadOnboarding, onboardingComplete } from '@/lib/onboarding';
+import { loadOnCallWindows, pendingOnCall } from '@/lib/onCall';
 import { verifyUnlock, IPAD_COOKIE } from '@/lib/ccPin';
 import Sidebar from './Sidebar';
 import TechShell from './TechShell';
@@ -114,7 +115,11 @@ export default async function MainLayout({ children }) {
       }).length;
     } catch (_) {}
 
-    return <TechShell name={name} photoUrl={profile.photoUrl} shells={shells} activeJob={activeJob} wmId={wmId} game={game} chatUnread={chatUnread}>{children}</TechShell>;
+    // On-call windows this tech hasn't acknowledged yet → the purple Cal nav badge ("go acknowledge").
+    let onCallPending = 0;
+    try { const w = await loadOnCallWindows(getSupabaseAdmin(), name); onCallPending = pendingOnCall(w, profile.prefs?.oncall_acked || []); } catch (_) {}
+
+    return <TechShell name={name} photoUrl={profile.photoUrl} shells={shells} activeJob={activeJob} wmId={wmId} game={game} chatUnread={chatUnread} onCallPending={onCallPending}>{children}</TechShell>;
   }
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', minHeight: 'calc(100vh - 58px)' }}>

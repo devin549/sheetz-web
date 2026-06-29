@@ -1,15 +1,16 @@
 'use client';
 
-// On-call acknowledge banners (ported from pane-cal cbRenderOnCall_). Blink until the tech taps
-// "I'm ready — acknowledge"; the live app then writes a confirmation timestamp to the office + auto-adds
-// a Google Calendar reminder, and escalates to Tracey+Ronnie if not acked by the deadline.
-// NOTE: on_call_schedule (mig 65) has NO per-tech ack fields yet, so v1 acknowledges LOCALLY and labels
-// it honestly — the timestamp-recording + escalation wires when the on-call ack store is added.
-import { useState } from 'react';
+// On-call acknowledge banners. Blink until the tech taps "I'm ready — acknowledge"; that now PERSISTS to
+// their profile (prefs.oncall_acked) so it survives a refresh, clears the Cal nav badge, and the office sees
+// it confirmed. Each window carries its initial acked state from the server.
+import { useState, useTransition } from 'react';
+import { acknowledgeOnCall } from './onCallActions';
 
 export default function OnCallBanners({ windows = [] }) {
-  const [acked, setAcked] = useState({});
+  const [acked, setAcked] = useState(() => Object.fromEntries((windows || []).filter((w) => w.acked).map((w) => [w.id, true])));
+  const [pending, start] = useTransition();
   if (!windows.length) return null;
+  const ack = (id) => { setAcked((a) => ({ ...a, [id]: true })); start(() => { acknowledgeOnCall(id).catch(() => setAcked((a) => ({ ...a, [id]: false }))); }); };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 14 }}>
       {windows.map((w) => {
@@ -26,8 +27,8 @@ export default function OnCallBanners({ windows = [] }) {
             {done ? (
               <span style={{ background: 'rgba(76,175,80,0.15)', color: 'var(--green-bright)', border: '1px solid #4caf50', borderRadius: 10, padding: '8px 14px', fontSize: 12, fontWeight: 800 }}>✓ Acknowledged</span>
             ) : (
-              <button onClick={() => setAcked((a) => ({ ...a, [w.id]: true }))}
-                style={{ background: 'linear-gradient(135deg, #9c64f4 0%, #5e35b1 100%)', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 13, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              <button onClick={() => ack(w.id)} disabled={pending}
+                style={{ background: 'linear-gradient(135deg, #9c64f4 0%, #5e35b1 100%)', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 13, fontWeight: 800, cursor: pending ? 'default' : 'pointer', whiteSpace: 'nowrap', opacity: pending ? 0.7 : 1 }}>
                 ✓ I’m ready — acknowledge
               </button>
             )}

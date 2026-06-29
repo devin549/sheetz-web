@@ -5,6 +5,8 @@ import RequestVacation from './RequestVacation';
 import PtoApprovals from './PtoApprovals';
 import AbsenceReport from './AbsenceReport';
 import AbsenceOverride from './AbsenceOverride';
+import OnCallBanners from '../cal/OnCallBanners';
+import { loadOnCallWindows } from '@/lib/onCall';
 
 const fmtD = (s) => { if (!s) return ''; try { return new Date(s + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }); } catch { return s; } };
 const KIND_ICON = { vacation: '🏖', sick: '🤒', personal: '🙋', unpaid: '💸' };
@@ -95,7 +97,8 @@ export default async function Pto() {
   const isApprover = can(role, 'manageUsers') || can(role, 'assignJobs') || can(role, 'seeCrew');
   let myReqs = [], pendingReqs = [], myUnexcused = 0, recentAbsences = [];
   // Calendar side (merged Cal+PTO): on-call status this week + today's job count.
-  let onCall = '', todayJobs = 0;
+  let onCall = '', todayJobs = 0, onCallWindows = [];
+  const ackedIds = Array.isArray(profile.prefs?.oncall_acked) ? profile.prefs.oncall_acked : [];
   const yearStart = new Date().getFullYear() + '-01-01';
   if (isAdminConfigured) {
     const sb = getSupabaseAdmin();
@@ -103,6 +106,8 @@ export default async function Pto() {
       const { data: oc } = await sb.from('on_call_schedule').select('*').eq('slot', 'current').maybeSingle();
       if (oc && name) { const n = String(name).toLowerCase().split(/\s+/)[0]; const hit = ['mon', 'tue', 'wed', 'thu', 'weekend', 'helper_week', 'supervisor'].find((k) => String(oc[k] || '').toLowerCase().includes(n)); if (hit) onCall = hit === 'weekend' ? 'on-call this weekend' : hit === 'helper_week' ? 'helper on-call this week' : 'on-call this week'; }
     } catch (_) {}
+    // The full acknowledge banners (restored) — windows this tech is on-call for, each tagged acked from prefs.
+    try { onCallWindows = (await loadOnCallWindows(sb, name)).map((w) => ({ ...w, acked: ackedIds.includes(w.id) })); } catch (_) {}
     try { if (profile?.tech_id) { const s = new Date(); s.setHours(0, 0, 0, 0); const e = new Date(); e.setHours(23, 59, 59, 999); const { count } = await sb.from('jobs').select('id', { count: 'exact', head: true }).eq('tech_id', profile.tech_id).gte('scheduled_at', s.toISOString()).lte('scheduled_at', e.toISOString()); todayJobs = count || 0; } } catch (_) {}
     try { const { data } = await sb.from('time_off_requests').select('id, kind, start_date, end_date, status, reason, decided_by_name, decision_note').eq('user_id', user.id).order('created_at', { ascending: false }).limit(12); myReqs = data || []; } catch (_) {}
     if (isApprover) { try { const { data } = await sb.from('time_off_requests').select('id, tech_name, kind, start_date, end_date, reason').eq('status', 'pending').order('start_date', { ascending: true }).limit(40); pendingReqs = data || []; } catch (_) {} }
@@ -116,6 +121,9 @@ export default async function Pto() {
     <div className="wrap" style={{ maxWidth: 760 }}>
       <div className="h1" style={{ marginBottom: 2 }}>📆 Calendar &amp; Time Off</div>
       <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>Your schedule, on-call, and time off in one place.</div>
+
+      {/* ☎️ ON-CALL — acknowledge banners (blink until you tap; the ack persists + clears the Cal badge). */}
+      <OnCallBanners windows={onCallWindows} />
 
       {/* ── 📅 CALENDAR ── */}
       <div className="card card-amber" style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
