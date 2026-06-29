@@ -32,9 +32,13 @@ export async function createJobPayLink(jobId, amountDollars) {
   const cents = Math.round(dollars * 100);
   if (cents < 50) return { ok: false, msg: 'Enter an amount to collect.' };
   const name = (job.customers && job.customers.name) || '';
-  const r = await createInvoiceCheckout({ amountCents: cents, invoiceNumber: job.job_number || null, customerName: name, invoiceId: null, customerId: job.customer_id });
+  // Tie the pay-link to the job's OPEN invoice (auto-created from the approved estimate) so the Stripe webhook
+  // marks THAT invoice paid → balance 0. Best-effort; falls back to a job-number link if no invoice row yet.
+  let invId = null, invNo = job.job_number || null;
+  try { const { data: inv } = await sb.from('invoices').select('id, invoice_number').eq('job_id', String(jobId)).gt('balance', 0).order('created_at', { ascending: false }).limit(1).maybeSingle(); if (inv) { invId = inv.id; invNo = inv.invoice_number || invNo; } } catch (_) {}
+  const r = await createInvoiceCheckout({ amountCents: cents, invoiceNumber: invNo, customerName: name, invoiceId: invId, customerId: job.customer_id });
   if (!r.ok) return { ok: false, msg: 'Stripe: ' + r.error };
-  try { await sb.from('ar_activity').insert({ action: 'pay_link_created', customer_id: job.customer_id || null, customer_name: name || null, invoice_number: job.job_number || null, amount: cents / 100, by_email: 'field-paylink' }); } catch (_) {}
+  try { await sb.from('ar_activity').insert({ action: 'pay_link_created', customer_id: job.customer_id || null, customer_name: name || null, invoice_number: invNo, amount: cents / 100, by_email: 'field-paylink' }); } catch (_) {}
   return { ok: true, url: r.url, baseDollars: (r.baseCents || cents) / 100, feeDollars: (r.feeCents || 0) / 100, totalDollars: (r.totalCents || cents) / 100 };
 }
 
