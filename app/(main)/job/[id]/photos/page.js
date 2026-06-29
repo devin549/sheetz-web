@@ -6,7 +6,6 @@ import { can } from '@/lib/roles';
 import { computeCloseout, ruleForJob } from '@/lib/qa';
 import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob, worksThisCustomer } from '../jobAccess';
 import JobPhotos from '../JobPhotos';
-import JobVideo from '../JobVideo';
 import ProofTiles from '../ProofTiles';
 import PhotoQACheck from './PhotoQACheck';
 import { CircleCheck, CircleAlert, ArrowLeft } from 'lucide-react';
@@ -52,9 +51,6 @@ export default async function JobPhotosScreen({ params }) {
     if (!an.error) { const byPhoto = {}; (an.data || []).forEach((a) => { (byPhoto[a.photo_id] = byPhoto[a.photo_id] || []).push(a); }); Object.values(reviewByPhoto).forEach((r) => { r.annotations = byPhoto[r.photo_id] || []; }); }
   }
 
-  const isVid = (p) => /^video\//.test(p.mime_type || '') || p.kind === 'walkthrough';
-  const videos = photos.filter(isVid);
-  const stillPhotos = photos.filter((p) => !isVid(p));
   const closeout = computeCloseout({ photos, reviews, rule: ruleForJob(job) });
   const customer = job.customers || {};
   const canUpload = canUploadPhotos(role) && !readOnly;
@@ -97,10 +93,9 @@ export default async function JobPhotosScreen({ params }) {
 
       {canUpload && !photoError && <PhotoQACheck jobType={job.job_type || ''} requiredKinds={closeout.requiredKinds || []} />}
 
-      <JobVideo jobId={id} videos={videos} canUpload={canUpload && !photoError} requireVideo={closeout.requireVideo} />
-
+      {/* Photos + walkthrough videos in ONE gallery — videos render inline with a 🎬 badge (no separate section). */}
       <div style={{ marginTop: 10 }}>
-        <JobPhotos jobId={id} photos={stillPhotos} reviewByPhoto={reviewByPhoto} closeout={closeout}
+        <JobPhotos jobId={id} photos={photos} reviewByPhoto={reviewByPhoto} closeout={closeout}
           canUpload={canUpload && !photoError} hideAddForm canArchive={!readOnly && (can(role, 'deleteJobs') || can(role, 'manageUsers') || can(role, 'assignJobs'))}
           canReview={!readOnly && can(role, 'qaReview') && !photoError} canOverride={!readOnly && can(role, 'qaOverride') && !photoError} isDone={isDone} currentUserId={user.id} />
       </div>

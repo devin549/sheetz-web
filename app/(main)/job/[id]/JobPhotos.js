@@ -130,12 +130,15 @@ export default function JobPhotos({ jobId, photos, reviewByPhoto = {}, closeout,
           const failed = rev?.result === 'fail';
           const failing = failFor === photo.id;
           const annos = failed ? (rev.annotations || []) : [];
+          const isVideo = /^video\//.test(photo.mime_type || '') || photo.kind === 'walkthrough';
           return (
             <article key={photo.id} className="card" style={{ padding: 0, overflow: 'hidden', borderColor: failed ? 'var(--red)' : rev?.result === 'pass' ? 'var(--green)' : 'var(--border)' }}>
-              {/* image: shows fail circles; while failing, click to drop the circle */}
+              {/* image: shows fail circles; while failing, click to drop the circle. Walkthrough videos play inline. */}
               <div style={{ position: 'relative', background: 'var(--surface-2)' }}>
                 {photo.signedUrl ? (
-                  failing ? (
+                  isVideo ? (
+                    <video src={photo.signedUrl} controls playsInline preload="metadata" style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', display: 'block', background: '#000' }} />
+                  ) : failing ? (
                     <img src={photo.signedUrl} alt="" onClick={placeCircle} style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', display: 'block', cursor: 'crosshair' }} />
                   ) : (
                     <a href={photo.signedUrl} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
@@ -145,6 +148,7 @@ export default function JobPhotos({ jobId, photos, reviewByPhoto = {}, closeout,
                 ) : (
                   <div className="muted" style={{ aspectRatio: '4 / 3', display: 'grid', placeItems: 'center' }}>Preview unavailable</div>
                 )}
+                {isVideo && <span style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(0,0,0,.7)', color: '#fff', fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 7 }}>🎬 Video</span>}
                 {annos.map((a) => <Circle key={a.id} a={a} />)}
                 {failing && annoPt && <Circle a={annoPt} />}
                 {failed && <span style={{ position: 'absolute', top: 6, left: 6, background: '#ff5252', color: '#fff', fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 7 }}>NEEDS REDO</span>}
