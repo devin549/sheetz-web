@@ -15,6 +15,7 @@ const FIXTURE_TERMS = {
   faucet: ['faucet', 'spigot', 'cartridge', 'aerator', 'tap', 'mixer', 'stem'],
   sink: ['sink', 'basin', 'strainer', 'pop-up', 'drain assembly', 'disposal'],
   drain: ['drain', 'clog', 'snake', 'cable', 'auger', 'jet', 'stoppage', 'clear', 'rooter'],
+  floor_drain: ['drain', 'floor drain', 'area drain', 'main', 'main line', 'cleanout', 'snake', 'cable', 'auger', 'jet', 'rooter', 'stoppage', 'clear', 'camera', 'sewer'],
   garbage_disposal: ['disposal', 'disposer', 'insinkerator', 'badger', 'garbage'],
   water_heater: ['water heater', 'heater', 'anode', 'element', 'thermostat', 't&p', 'expansion tank', 'flush'],
   tankless: ['tankless', 'water heater', 'navien', 'rinnai', 'descal', 'flush'],
@@ -40,8 +41,11 @@ const SPECIALTY_RE = /saniflo|sani-?flo|macerat|up-?flush\b|upflush|sewage eject
 // Drain-clearing words — when the AI says a fixture is CLOGGED, the fix is clearing it (auger/snake), so we
 // pull these in even on a toilet/sink scan (whose part-words don't include them).
 const CLEAR_TERMS = ['auger', 'snake', 'cable', 'clear', 'stoppage', 'unclog', 'rooter', 'jet', 'closet auger'];
-const CLEAR_RE = /auger|snake|cable|stoppage|unclog|rooter|\bclear\b|\bjet\b|rodding/i;
-const CLOG_RE = /clog|stoppage|backed?\s*up|back-?up|overflow|won'?t flush|wont flush|not flush|plug|stopped up|won'?t drain|slow drain|rooter/i;
+const CLEAR_RE = /auger|snake|cable|stoppage|unclog|rooter|\bclear\b|\bjet\b|rodding|main ?line|cleanout|camera/i;
+const CLOG_RE = /clog|stoppage|back(ed|ing)?\s*up|back-?up|overflow|won'?t flush|wont flush|not flush|plug|stopped up|won'?t drain|slow|standing water|holding water|full of water|gurgl|sewage|backing|rising|rooter/i;
+// A floor / area / basement drain or the main line — the LOW POINT. When one of these backs up it's usually
+// a MAIN-LINE blockage (water rises to the lowest opening), so the right call leans cable/jet + camera.
+const LOWPOINT_RE = /floor ?drain|area ?drain|basement drain|main ?line|sewer|cleanout/i;
 
 // Turn a price-sorted list into a Good / Better / Best ladder (cheapest = Good, priciest = Best, middle =
 // Better) + the rest as "more". Cheapest repair (flapper/fill valve) → Good; biggest (major rebuild) → Best.
@@ -162,8 +166,12 @@ export async function scanFixtureRepairs(dataUrl) {
   // Each bucket becomes a Good/Better/Best ladder (the Best glows in the UI) + "more" options.
   const repairs = gbbLadder(repairsForLadder);
   const replacements = gbbLadder(replacementsAll);
-  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'fixture.scan', entity: 'pricebook', entity_id: '', detail: { fixture: fx.fixture, clog: isClog, repairs: repairsAll.length, replacements: replacementsAll.length } }); } catch (_) {}
-  return { ok: true, fixture: fx.fixture, label: fx.label, problem: fx.problem, confidence: fx.confidence, isClog, repairs, replacements };
+  // Low point (floor/area/basement drain or main) + a backup → almost always a MAIN-LINE blockage, not a local
+  // clog. Nudge the tech to cable/jet the main + camera it, so they don't undersell a 6" snake on a main issue.
+  const isLowPoint = LOWPOINT_RE.test(`${fx.fixture} ${fx.label || ''}`);
+  const mainLineHint = (isClog && isLowPoint) ? 'Low point + standing water = usually a MAIN-LINE backup, not a local clog. Cable/jet the main line + run a camera — don’t stop at a small snake.' : null;
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'fixture.scan', entity: 'pricebook', entity_id: '', detail: { fixture: fx.fixture, clog: isClog, mainLine: !!mainLineHint, repairs: repairsAll.length, replacements: replacementsAll.length } }); } catch (_) {}
+  return { ok: true, fixture: fx.fixture, label: fx.label, problem: fx.problem, confidence: fx.confidence, isClog, mainLineHint, repairs, replacements };
 }
 
 // 🧠 Teach the library: this Lens guess → this pricebook fix. Stored as a learned alias so next time the

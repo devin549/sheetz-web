@@ -105,6 +105,7 @@ export default function PartPhotoScan({ onAdd, jobId, onFocus }) {
           <div style={{ fontSize: 10, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Looks like</div>
           <div style={{ fontWeight: 800, fontSize: 15 }}>{res.label || res.fixture || 'Fixture'}</div>
           {res.problem && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>💡 {res.problem}</div>}
+          {res.mainLineHint && <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(255,179,0,.12)', border: '1px solid var(--amber)', fontSize: 12, color: 'var(--amber)', fontWeight: 700, lineHeight: 1.4 }}>🚱 {res.mainLineHint}</div>}
 
           {!hasResults ? (
             <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>No matching items in your book yet — try the type-in search below, or browse the categories.</div>
