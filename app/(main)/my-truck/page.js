@@ -12,10 +12,13 @@ import ShopSelfCheckout from './ShopSelfCheckout';
 import StockVan from './StockVan';
 import TruckWideSearch from './TruckWideSearch';
 import UsePartBtn from './UsePartBtn';
+import { fleetSummary } from '@/lib/assetLearn';
 
 export const dynamic = 'force-dynamic';
 
 function money(n) { return '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 }); }
+function timeAgo(iso) { const ms = Date.now() - new Date(iso).getTime(); if (!Number.isFinite(ms)) return ''; const d = Math.floor(ms / 864e5); if (d > 0) return `${d}d ago`; const h = Math.floor(ms / 36e5); if (h > 0) return `${h}h ago`; const m = Math.floor(ms / 6e4); return m > 0 ? `${m}m ago` : 'just now'; }
+function mapsUrl(addr) { return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`; }
 function isLow(p) {
   const rp = p.reorder_point != null ? Number(p.reorder_point) : 3;
   return Number(p.qty || 0) <= rp;
@@ -112,11 +115,15 @@ export default async function MyTruck({ searchParams }) {
   const shopLabel = (k) => ({ richmond: 'Richmond', lexington: 'Lexington' }[k] || (k.charAt(0).toUpperCase() + k.slice(1)));
 
   // 🚐 My Truck sub-tabs (gold pane-tools: My Van · Truck-Wide Search · Shop Inventory · My Tools · Maintenance).
-  const sub = ['search', 'shop', 'tools', 'maint', 'id'].includes(searchParams?.sub) ? searchParams.sub : 'van';
+  const sub = ['search', 'shop', 'tools', 'maint', 'id', 'equip'].includes(searchParams?.sub) ? searchParams.sub : 'van';
   const techQ = role === 'tech' ? '' : `tech=${encodeURIComponent(detailTech)}&`;
   const subHref = (s) => `/my-truck?${techQ}sub=${s}`;
   const lowParts = parts.filter(isLow);
-  const SUBS = [['van', '🚐 My Van'], ['search', '🔦 Find a Part'], ['shop', '🏪 Shop'], ['tools', '🔧 My Tools'], ['id', '🔍 ID Part'], ['maint', '🛠 Maintenance']];
+  const SUBS = [['van', '🚐 My Van'], ['search', '🔦 Find a Part'], ['equip', '🚜 Equipment'], ['shop', '🏪 Shop'], ['tools', '🔧 My Tools'], ['id', '🔍 ID Part'], ['maint', '🛠 Maintenance']];
+
+  // 🚜 Equipment finder — company fleet + latest known spot per machine (chat-learned from #general; tag-ready).
+  let fleet = [];
+  if (sub === 'equip') { try { fleet = await fleetSummary(sb); } catch (_) {} }
 
   // 🔍 ID Part sub-tab needs the tech's active job (so a found fix drops onto it) + whether they see cost.
   let activeJob = null;
@@ -228,6 +235,42 @@ export default async function MyTruck({ searchParams }) {
           <div style={{ flex: 1 }}><div style={{ fontWeight: 800 }}>Open the full locator</div><div className="muted" style={{ fontSize: 12 }}>Map of every van, shop &amp; vendor — ranked by drive time, with route + reserve.</div></div>
           <span style={{ color: 'var(--amber)', fontWeight: 800 }}>›</span>
         </Link>
+      </>)}
+
+      {/* ───────── 🚜 EQUIPMENT (fleet locator — chat-learned from #general, tag-ready) ───────── */}
+      {sub === 'equip' && (<>
+        <div className="card" style={{ borderLeft: '3px solid var(--amber)' }}>
+          <div style={{ fontWeight: 800 }}>🚜 Find the equipment</div>
+          <div className="muted" style={{ fontSize: 12 }}>Latest known spot for each machine, learned from the #general channel. Once the tags are on, a scan pins the exact unit.</div>
+        </div>
+        {!fleet.length && <div className="card" style={{ marginTop: 8 }}><span className="muted">No fleet yet — run <code>supabase/146_equipment_fleet.sql</code>.</span></div>}
+        {fleet.map((m) => (
+          <div key={m.model} className="card" style={{ marginTop: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+              <strong style={{ fontSize: 14 }}>{m.model}</strong>
+              <span className="pill" style={{ fontSize: 10 }}>own {m.count}</span>
+              {m.tagged > 0 && <span className="pill" style={{ fontSize: 10 }}>🏷 {m.tagged}/{m.count} tagged</span>}
+              <span className="muted" style={{ marginLeft: 'auto', fontSize: 11 }}>{m.seen ? `${m.seen} location${m.seen === 1 ? '' : 's'} posted` : 'none posted lately'}</span>
+            </div>
+            {m.locations.length > 0 ? (
+              <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+                {m.locations.map((l, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, background: 'var(--surface-2)', padding: '7px 10px', borderRadius: 6 }}>
+                    <span style={{ fontSize: 14 }}>📍</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700 }}>{l.location || 'location not given'}</div>
+                      <div className="muted" style={{ fontSize: 11 }}>{[l.said, l.by && `posted by ${l.by}`, l.when && timeAgo(l.when)].filter(Boolean).join(' · ')}</div>
+                    </div>
+                    {l.location && <a href={mapsUrl(l.location)} target="_blank" rel="noreferrer" className="pill" style={{ fontSize: 10, color: 'var(--amber)', border: '1px solid var(--amber-dim)', textDecoration: 'none', whiteSpace: 'nowrap' }}>🗺 Map</a>}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Nobody&apos;s posted where these are lately — drop a line in #general when you move one.</div>
+            )}
+            {m.seen > 0 && m.seen < m.count && <div className="muted" style={{ marginTop: 6, fontSize: 11 }}>⚠ {m.count - m.seen} of {m.count} not posted recently.</div>}
+          </div>
+        ))}
       </>)}
 
       {/* ───────── SHOP INVENTORY + after-hours self-checkout ───────── */}
