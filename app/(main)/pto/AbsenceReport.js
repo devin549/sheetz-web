@@ -29,7 +29,9 @@ export default function AbsenceReport() {
   const [doc, setDoc] = useState(null);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
-  const autoExcused = category === 'bereavement' || category === 'jury_duty';
+  const autoExcused = category === 'bereavement'; // jury duty needs proof now — not auto-excused
+  const isJury = category === 'jury_duty';
+  const docNoun = isJury ? 'jury summons / court proof' : 'doctor’s note';
 
   const pickDoc = async (e) => { const f = e.target.files && e.target.files[0]; if (!f) return; const url = await fileToScaledDataUrl(f); setDoc(url); e.target.value = ''; };
   const submit = () => { setMsg(null); start(async () => { const r = await reportAbsence({ date, reason, category, relation, docPhoto: doc }); setMsg(r); if (r.ok) { setDate(''); setReason(''); setDoc(null); setCategory('sick'); setOpen(false); router.refresh(); } }); };
@@ -70,16 +72,18 @@ export default function AbsenceReport() {
 
       <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Quick note (optional — not medical details)" style={inp} />
 
-      {/* Doctor's note only matters for sick/other — bereavement & jury duty don't need one. */}
+      {/* Documentation: bereavement needs none. Sick/other = doctor's note. Jury duty = summons / court proof. */}
       {!autoExcused && (<>
         <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={pickDoc} style={{ display: 'none' }} />
-        <button onClick={() => fileRef.current && fileRef.current.click()} style={{ background: doc ? 'color-mix(in oklab, var(--green) 12%, var(--surface-1))' : 'var(--surface-2)', border: '1px solid ' + (doc ? 'var(--green)' : 'var(--purple)'), color: doc ? 'var(--green)' : 'var(--purple)', borderRadius: 8, padding: '10px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>{doc ? '✓ Doctor’s note attached — will excuse it' : '📷 Attach a doctor’s note (to excuse it)'}</button>
+        <button onClick={() => fileRef.current && fileRef.current.click()} style={{ background: doc ? 'color-mix(in oklab, var(--green) 12%, var(--surface-1))' : 'var(--surface-2)', border: '1px solid ' + (doc ? 'var(--green)' : 'var(--purple)'), color: doc ? 'var(--green)' : 'var(--purple)', borderRadius: 8, padding: '10px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>{doc ? `✓ ${docNoun} attached` : `📷 Attach your ${docNoun}`}</button>
       </>)}
 
       <div className="muted" style={{ fontSize: 10.5, lineHeight: 1.5 }}>
         {autoExcused
-          ? <>🕯️/⚖️ <strong style={{ color: 'var(--green)' }}>Excused</strong> — a funeral or jury duty doesn’t need a doctor’s note and is never a strike.</>
-          : <>A verified doctor’s note = <strong style={{ color: 'var(--green)' }}>excused</strong> (sent to records). No note = <strong style={{ color: 'var(--amber)' }}>unexcused</strong> (2 unexcused/yr forfeits your 5 holidays). The note is only confirmed real — the medical reason is never read or stored.</>}
+          ? <>🕯️ <strong style={{ color: 'var(--green)' }}>Excused</strong> — a funeral doesn’t need a note and is never a strike.</>
+          : isJury
+            ? <>⚖️ <strong>Jury duty needs proof</strong> — your summons or the court’s <strong>proof of service</strong>. Attach it and records verifies it (held <strong style={{ color: 'var(--amber)' }}>pending</strong> until confirmed, then excused — never a strike). No proof = it stays pending.</>
+            : <>A verified doctor’s note = <strong style={{ color: 'var(--green)' }}>excused</strong> (sent to records). No note = <strong style={{ color: 'var(--amber)' }}>unexcused</strong> (2 unexcused/yr forfeits your 5 holidays). The note is only confirmed real — the medical reason is never read or stored.</>}
       </div>
       {msg && !msg.ok && <div style={{ color: 'var(--red)', fontSize: 12 }}>{msg.msg}</div>}
       <div style={{ display: 'flex', gap: 8 }}>

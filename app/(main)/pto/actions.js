@@ -35,13 +35,15 @@ export async function requestTimeOff(form) {
 }
 
 // ── Excused / unexcused absences — POLICY decides (not a manager's gut), override is logged ──────────
-// Policy: bereavement or jury duty (their own categories) = auto-EXCUSED (no note needed); else a verified
-// doctor's note OR a pre-approved PTO covering the date = EXCUSED; otherwise UNEXCUSED. An image AI can't
-// confirm → 'pending' (human looks), never auto-excused.
+// Policy: bereavement = auto-EXCUSED (a funeral is sensitive + doesn't always have instant paperwork). JURY
+// DUTY is NOT auto-excused — a real juror always has proof (a summons + the court's proof of service), so it's
+// held 'pending' until the office verifies that proof. Otherwise: a verified doctor's note OR a pre-approved
+// PTO covering the date = EXCUSED; else UNEXCUSED. An image AI can't confirm → 'pending' (human looks).
 const ABSENCE_CATEGORIES = ['bereavement', 'jury_duty', 'sick', 'doctor', 'other'];
-const AUTO_EXCUSED_CATEGORIES = new Set(['bereavement', 'jury_duty']);
+const AUTO_EXCUSED_CATEGORIES = new Set(['bereavement']); // jury duty intentionally NOT here — needs proof
 async function pendingPolicy(sb, userId, dateStr, hasVerifiedDoc, category) {
-  if (AUTO_EXCUSED_CATEGORIES.has(category)) return 'excused'; // funeral / jury duty — excused without a note
+  if (AUTO_EXCUSED_CATEGORIES.has(category)) return 'excused'; // funeral — excused without a note
+  if (category === 'jury_duty') return 'pending';              // needs the summons / court proof — office verifies, never auto
   if (hasVerifiedDoc) return 'excused';
   try {
     const { data } = await sb.from('time_off_requests').select('id').eq('user_id', userId).eq('status', 'approved').lte('start_date', dateStr).or(`end_date.gte.${dateStr},and(end_date.is.null,start_date.eq.${dateStr})`).limit(1);
@@ -62,18 +64,23 @@ export async function reportAbsence(payload) {
   const bereavementRelation = category === 'bereavement' && ['immediate', 'extended'].includes(p.relation) ? p.relation : null;
   const sb = getSupabaseAdmin();
 
-  // If a doctor's note image was attached, AI-verify it's a real note (no medical content read), store it
-  // privately, and email it to records@ with ONLY the name in the subject.
+  // A documentation image may be attached. For sick/other it's a doctor's note → AI-verifies it's a real note
+  // (no medical content read). For JURY DUTY it's the summons / court proof of service → the office verifies it
+  // (the medical AI doesn't apply). Either way it's stored privately + emailed to records@ with only the name.
+  const isJury = category === 'jury_duty';
+  const docNoun = isJury ? 'jury summons / proof of service' : "doctor's note";
   let docPath = null, docOk = false, docEmailed = null, verify = null;
   if (typeof p.docPhoto === 'string' && /^data:image\//.test(p.docPhoto)) {
-    verify = await verifyDocNote(p.docPhoto, profile.role);
-    docOk = !!(verify && verify.isMedicalNote && verify.confidence !== 'low');
+    if (!isJury) { verify = await verifyDocNote(p.docPhoto, profile.role); docOk = !!(verify && verify.isMedicalNote && verify.confidence !== 'low'); }
     try {
       const b64 = p.docPhoto.split(',')[1];
       const path = `${user.id}/${date}-${Date.now()}.jpg`;
       const up = await sb.storage.from('excuse-docs').upload(path, Buffer.from(b64, 'base64'), { contentType: 'image/jpeg', upsert: true });
       if (!up.error) docPath = path;
-      const r = await sendOne({ to: RECORDS_EMAIL, subject: `Excuse documentation — ${profile.name || user.email}`, html: `<p><strong>${profile.name || user.email}</strong> submitted a doctor's note for an absence on <strong>${date}</strong>.</p><p>Attached for verification. This is absence documentation only — not a medical record; CB does not read or store the medical reason.</p>`, attachments: [{ filename: 'excuse.jpg', content: b64 }] });
+      const body = isJury
+        ? `<p><strong>${profile.name || user.email}</strong> submitted a <strong>jury summons / proof of service</strong> for an absence on <strong>${date}</strong>.</p><p>Attached for verification. Confirm it's a valid jury summons or the court's proof of service, then mark the absence <strong>excused</strong> on /pto.</p>`
+        : `<p><strong>${profile.name || user.email}</strong> submitted a doctor's note for an absence on <strong>${date}</strong>.</p><p>Attached for verification. This is absence documentation only — not a medical record; CB does not read or store the medical reason.</p>`;
+      const r = await sendOne({ to: RECORDS_EMAIL, subject: `Excuse documentation — ${profile.name || user.email}`, html: body, attachments: [{ filename: 'excuse.jpg', content: b64 }] });
       if (r.ok) docEmailed = new Date().toISOString();
     } catch (_) {}
   }
@@ -91,9 +98,11 @@ export async function reportAbsence(payload) {
   revalidatePath('/pto');
   const msg = finalStatus === 'excused'
     ? (category === 'bereavement' ? '✓ Excused — bereavement. Our condolences.'
-      : category === 'jury_duty' ? '✓ Excused — jury duty.'
       : '✓ Excused — documentation on file (sent to records).')
-    : finalStatus === 'pending' ? '⏳ Submitted — that image couldn’t be confirmed as a note; records will review.'
+    : finalStatus === 'pending'
+      ? (isJury
+        ? (docPath ? '⚖️ Submitted — records will verify your jury summons / proof of service and excuse it.' : '⚖️ Submitted as pending — upload your jury summons or the court’s proof of service so records can excuse it (jury duty needs proof).')
+        : '⏳ Submitted — that image couldn’t be confirmed as a note; records will review.')
       : 'Logged as unexcused (no documentation). Pick the right reason or submit a doctor’s note to excuse it.';
   return { ok: true, status: finalStatus, msg };
 }
