@@ -118,10 +118,10 @@ export async function overrideAbsence(id, status, reason) {
   return { ok: true };
 }
 
-// Office sets an employee's hire date — the input the vacation/holiday ledger hangs on (anniversary grant +
-// 90-day holiday eligibility). Keyed by tech_id (pay_profiles' PK); upsert leaves pay_type/rate at defaults
-// for a brand-new comp row. Approver-gated + audited.
-export async function setHireDate(techId, dateStr) {
+// Office sets an employee's PTO setup: hire date (anniversary grant + 90-day holiday eligibility) and how many
+// vacation DAYS they earn (5 = 1 wk, 10 = 2 wks; holidays stay a fixed 5/yr). Keyed by tech_id (pay_profiles'
+// PK); upsert leaves pay_type/rate at defaults for a brand-new comp row. Approver-gated + audited.
+export async function saveEmployeePto(techId, dateStr, vacationDays) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, msg: 'Sign in required.' };
@@ -130,12 +130,16 @@ export async function setHireDate(techId, dateStr) {
   if (!/^[0-9a-f-]{36}$/i.test(String(techId || ''))) return { ok: false, msg: 'Bad employee.' };
   const d = clean(dateStr, 10);
   if (d && !isDate(d)) return { ok: false, msg: 'Pick a valid date (YYYY-MM-DD).' };
+  const vd = Math.max(0, Math.min(60, parseInt(vacationDays, 10) || 0)); // 0–60 days sanity clamp
   const sb = getSupabaseAdmin();
-  const { error } = await sb.from('pay_profiles').upsert({ tech_id: techId, hire_date: d || null, updated_at: new Date().toISOString() }, { onConflict: 'tech_id' });
-  if (error) return { ok: false, msg: /hire_date|column|schema cache/i.test(error.message || '') ? 'Run supabase/153_hire_date.sql first.' : error.message };
-  try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'hiredate.set', entity: 'tech', entity_id: String(techId), detail: { hire_date: d || null } }); } catch (_) {}
+  const row = { tech_id: techId, hire_date: d || null, vacation_days: vd, updated_at: new Date().toISOString() };
+  let { error } = await sb.from('pay_profiles').upsert(row, { onConflict: 'tech_id' });
+  // Pre-154 (no vacation_days column) → retry with just the hire date so the office isn't blocked.
+  if (error && /vacation_days/i.test(error.message || '')) { const { vacation_days: _v, ...lite } = row; ({ error } = await sb.from('pay_profiles').upsert(lite, { onConflict: 'tech_id' })); }
+  if (error) return { ok: false, msg: /hire_date|column|schema cache/i.test(error.message || '') ? 'Run supabase/153_hire_date.sql + 154_vacation_days.sql first.' : error.message };
+  try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'employee_pto.set', entity: 'tech', entity_id: String(techId), detail: { hire_date: d || null, vacation_days: vd } }); } catch (_) {}
   revalidatePath('/pto');
-  return { ok: true, msg: d ? 'Hire date saved.' : 'Hire date cleared.' };
+  return { ok: true, msg: 'Saved.' };
 }
 
 // Manager approves/denies a request.
