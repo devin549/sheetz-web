@@ -5,7 +5,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { stepAway, backOnSite } from './actions';
+import { stepAway, backOnSite, messageOffice } from './actions';
 
 const firstName = (n) => String(n || 'the customer').trim().split(/\s+/)[0] || 'the customer';
 
@@ -15,6 +15,10 @@ export default function JobActionCards({ jobId, jobNumber, customerName = '', jo
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(null);
   const [away, setAway] = useState(null); // step-away active state: the reason label, or null
+  const [msgOpen, setMsgOpen] = useState(false);
+  const [msgText, setMsgText] = useState('');
+  const [msgSent, setMsgSent] = useState(false);
+  const sendMsg = () => { setMsg(null); start(async () => { const r = await messageOffice(jobId, msgText); if (r?.ok) { setMsgText(''); setMsgOpen(false); setMsgSent(true); } else setMsg(r); }); };
   const s = String(status || '').toLowerCase();
   const done = /done|complete|closed|cancel/.test(s);
   const fn = firstName(customerName);
@@ -41,6 +45,7 @@ export default function JobActionCards({ jobId, jobNumber, customerName = '', jo
                 {[['parts_run', 'Parts run', '🛒 Parts run'], ['lunch', 'Lunch', '🍔 Lunch'], ['personal', 'Personal', '🚶 Personal']].map(([k, label, txt]) => (
                   <button key={k} onClick={() => run(k, () => stepAway(jobId, k), () => setAway(label))} disabled={pending} style={chip}>{busy === k ? '…' : txt}</button>
                 ))}
+                <button onClick={() => setMsgOpen((v) => !v)} disabled={pending} style={{ ...chip, color: 'var(--blue)', borderColor: 'var(--blue)' }}>💬 Message office{msgSent ? ' ✓' : ''}</button>
               </div>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -51,6 +56,18 @@ export default function JobActionCards({ jobId, jobNumber, customerName = '', jo
               </div>
             )}
           </div>
+
+          {/* Message office — bunched with the step-away pings (an internal note to dispatch, not the customer). */}
+          {msgOpen && (
+            <div style={{ ...card, background: 'var(--surface-1)', border: '1px solid var(--blue)', display: 'grid', gap: 8 }}>
+              <div style={{ fontWeight: 800, fontSize: 13 }}>💬 Message the office <span className="muted" style={{ fontWeight: 400 }}>· internal, not the customer</span></div>
+              <textarea value={msgText} onChange={(e) => setMsgText(e.target.value)} rows={2} placeholder="e.g. Need a correction visit — customer left after the photo failed." style={{ width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 13, resize: 'vertical' }} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={sendMsg} disabled={pending || msgText.trim().length < 2} className="btn" style={{ opacity: (pending || msgText.trim().length < 2) ? 0.6 : 1 }}>{pending ? 'Sending…' : 'Send'}</button>
+                <button onClick={() => setMsgOpen(false)} className="pill" style={{ cursor: 'pointer' }}>Cancel</button>
+              </div>
+            </div>
+          )}
 
         </>
       )}

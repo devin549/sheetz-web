@@ -19,6 +19,7 @@ export default function JobSegments({ parentJobId, rollup, segments = [], canDis
   const [pending, start] = useTransition();
   const [adding, setAdding] = useState(null); // kind being added
   const [msg, setMsg] = useState(null);
+  const [open, setOpen] = useState((segments?.length || 0) > 0); // single-tech jobs start collapsed (no noise)
 
   const run = (fn) => { setMsg(null); start(async () => { const r = await fn(); if (r && r.msg) setMsg(r); if (!r || r.ok) router.refresh(); }); };
   const add = (form) => { setMsg(null); start(async () => { const r = await createSegment(form); setMsg(r); if (r.ok) { setAdding(null); router.refresh(); } }); };
@@ -27,16 +28,23 @@ export default function JobSegments({ parentJobId, rollup, segments = [], canDis
   return (
     <div className="card" style={{ marginTop: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <div style={{ fontWeight: 800, flex: 1 }}>👷 Crew &amp; Segments</div>
+        <button onClick={() => setOpen((o) => !o)} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 150 }}>
+          <span style={{ fontWeight: 800 }}>👷 Crew &amp; extra work</span>
+          <span className="pill" style={{ fontSize: 10 }}>{rollup?.techCount || 0} tech{rollup?.techCount === 1 ? '' : 's'}{(segments?.length || 0) ? ` · ${segments.length} added` : ''}</span>
+          <span style={{ color: 'var(--fg-3)', fontSize: 12 }}>{open ? '▲' : '▼'}</span>
+        </button>
         {canDispatch && (
           <div style={{ position: 'relative' }}>
-            <select value="" onChange={(e) => { if (e.target.value) setAdding(e.target.value); e.target.value = ''; }} style={{ ...inp, width: 'auto', cursor: 'pointer', fontWeight: 700 }}>
+            <select value="" onChange={(e) => { if (e.target.value) { setAdding(e.target.value); setOpen(true); } e.target.value = ''; }} style={{ ...inp, width: 'auto', cursor: 'pointer', fontWeight: 700 }}>
               <option value="">＋ Split / Add…</option>
               {SEGMENT_KINDS.map((k) => <option key={k.kind} value={k.kind}>{k.icon} {k.label}</option>)}
             </select>
           </div>
         )}
       </div>
+
+      {open && (<>
+      <div className="muted" style={{ fontSize: 11, margin: '6px 0 0' }}>Add a 2nd tech, a helper, a parts run, a return visit, or a unit/phase — they roll up to this job (labor, parts, photos, margin).</div>
 
       {/* rollup chips */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
@@ -105,6 +113,7 @@ export default function JobSegments({ parentJobId, rollup, segments = [], canDis
           );
         })}
       </div>
+      </>)}
 
       {msg && !msg.ok && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{msg.msg}</div>}
       {msg && msg.ok && <div style={{ color: 'var(--green)', fontSize: 12, marginTop: 8 }}>{msg.msg}</div>}
