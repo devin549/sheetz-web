@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createJobPayLink } from '../../my-day/actions';
-import { startReaderCharge, pollReaderCharge, cancelReaderCharge, createJobAchLink } from './checkoutActions';
+import { startReaderCharge, pollReaderCharge, cancelReaderCharge, createJobAchLink, recordManualPayment } from './checkoutActions';
 
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -23,6 +23,10 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
   const [reader, setReader] = useState(null);
   const [readerState, setReaderState] = useState(null); // 'waiting' | 'paid' | 'failed'
   const [err, setErr] = useState(null);
+  const [checkOpen, setCheckOpen] = useState(false);
+  const [checkNo, setCheckNo] = useState('');
+  const [checkId, setCheckId] = useState('');
+  const [manualPaid, setManualPaid] = useState(null); // { method, total }
   const [pending, start] = useTransition();
   const pollRef = useRef(null);
   const pollingRef = useRef(false); // a tick is in flight — skip overlapping ticks so we never double-record a paid charge
@@ -61,6 +65,16 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
     });
   }
 
+  function takeCash() {
+    setErr(null);
+    start(async () => { const r = await recordManualPayment(jobId, { method: 'cash', amountDollars: amtNum }); if (r.ok) setManualPaid({ method: 'cash', total: r.totalDollars }); else setErr(r.msg); });
+  }
+  function takeCheck() {
+    setErr(null);
+    if (!checkNo.trim() || !checkId.trim()) { setErr('Enter the check number and the ID written on the check.'); return; }
+    start(async () => { const r = await recordManualPayment(jobId, { method: 'check', amountDollars: amtNum, checkNumber: checkNo, idOnCheck: checkId }); if (r.ok) setManualPaid({ method: 'check', total: r.totalDollars, checkNumber: r.checkNumber }); else setErr(r.msg); });
+  }
+
   async function cancelReader() {
     if (pollRef.current) clearInterval(pollRef.current);
     if (reader) await cancelReaderCharge(reader.readerId, reader.paymentIntentId);
@@ -78,6 +92,16 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
       <div className="card" style={{ ...card, borderLeftColor: 'var(--green)' }}>
         <div style={{ fontWeight: 800, color: 'var(--green)', fontSize: 15 }}>✅ Paid {money(total)} {how}</div>
         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Receipt recorded — payment marked “Paid · card” on the closeout.</div>
+      </div>
+    );
+  }
+
+  // PAID (cash / check) — recorded in person.
+  if (manualPaid) {
+    return (
+      <div className="card" style={{ ...card, borderLeftColor: 'var(--green)' }}>
+        <div style={{ fontWeight: 800, color: 'var(--green)', fontSize: 15 }}>✅ Paid {money(manualPaid.total)} · {manualPaid.method === 'cash' ? 'cash' : `check #${manualPaid.checkNumber}`}</div>
+        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{manualPaid.method === 'cash' ? 'Recorded — marked “Paid · cash” (turn the cash in to the office).' : 'Recorded — marked “Paid · check” with the check number + ID on file.'}</div>
       </div>
     );
   }
@@ -142,6 +166,29 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
             {pending && mode === 'ach' ? '…' : '🏦 Send bank (ACH) link — last resort'}
           </button>
           <div className="muted" style={{ fontSize: 10.5, marginTop: 5, textAlign: 'center' }}>No 4% card fee, but takes ~4 business days and can bounce. Use only if card won’t work.</div>
+
+          {/* IN PERSON — cash or check. No Stripe, no fee. Check captures the check # + the ID written on it. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 8px' }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            <span className="muted" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em' }}>or take it in person</span>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={takeCash} disabled={pending || !valid} className="btn btn-ghost" style={{ flex: 1, opacity: (pending || !valid) ? 0.55 : 1 }}>💵 Cash</button>
+            <button onClick={() => setCheckOpen((v) => !v)} disabled={!valid} className="btn btn-ghost" style={{ flex: 1, opacity: !valid ? 0.55 : 1, borderColor: checkOpen ? 'var(--amber)' : undefined, color: checkOpen ? 'var(--amber)' : undefined }}>🧾 Check</button>
+          </div>
+          {checkOpen && (
+            <div style={{ marginTop: 8, padding: 10, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--amber-dim)', display: 'grid', gap: 8 }}>
+              <label style={{ fontSize: 11, color: 'var(--fg-2)' }}>Check number
+                <input value={checkNo} onChange={(e) => setCheckNo(e.target.value)} inputMode="numeric" placeholder="e.g. 1042" style={{ ...input, width: '100%', marginTop: 3 }} />
+              </label>
+              <label style={{ fontSize: 11, color: 'var(--fg-2)' }}>ID written on the check (driver’s license #)
+                <input value={checkId} onChange={(e) => setCheckId(e.target.value)} placeholder="DL # the customer wrote on it" style={{ ...input, width: '100%', marginTop: 3 }} />
+              </label>
+              <div className="muted" style={{ fontSize: 10.5 }}>CB policy: write the customer’s ID on every check before accepting it.</div>
+              <button onClick={takeCheck} disabled={pending || !valid || !checkNo.trim() || !checkId.trim()} className="btn" style={{ opacity: (pending || !valid || !checkNo.trim() || !checkId.trim()) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record check · ${money(amtNum)}`}</button>
+            </div>
+          )}
         </>
       ) : (
         <div style={{ marginTop: 10 }}>

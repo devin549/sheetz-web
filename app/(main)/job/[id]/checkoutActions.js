@@ -202,3 +202,50 @@ export async function createJobAchLink(jobId, amountDollars) {
   return { ok: true, url: r.url, baseDollars: (r.baseCents || cents) / 100, feeDollars: 0, totalDollars: (r.totalCents || cents) / 100, ach: true };
 }
 
+// ── CASH / CHECK collected IN PERSON (no Stripe, no fee) ────────────────────────────────────────────────
+// Records the payment, flips the close-out disposition (paid_cash / check), and reconciles the open invoice
+// just like a card charge. CHECK requires the check number + the ID (driver's license) written on it, per CB
+// policy. Cash is marked "pending turn-in" so the office tracks the drop.
+export async function recordManualPayment(jobId, payload) {
+  const g = await gateCollect();
+  if (g.err) return { ok: false, msg: g.err };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const gj = await gateJob(sb, g, jobId);
+  if (gj.err) return { ok: false, msg: gj.err };
+  const job = gj.job;
+
+  const p = payload || {};
+  const method = p.method === 'check' ? 'check' : 'cash';
+  const dollars = Number(p.amountDollars) > 0 ? Number(p.amountDollars) : await suggestedDollars(sb, jobId, job);
+  if (!(dollars > 0)) return { ok: false, msg: 'Enter an amount.' };
+  const checkNumber = String(p.checkNumber || '').trim().slice(0, 40);
+  const idOnCheck = String(p.idOnCheck || '').trim().slice(0, 60);
+  if (method === 'check' && (!checkNumber || !idOnCheck)) return { ok: false, msg: 'A check needs a check number and the ID written on it.' };
+
+  const row = { job_id: jobId, payment_disposition: method === 'cash' ? 'paid_cash' : 'check', invoice_status: 'receipt_given', updated_by: g.profile.name || g.profile.email || 'field-collect', updated_at: new Date().toISOString() };
+  if (method === 'cash') row.cash_status = 'pending';                          // needs turning in to the office
+  if (method === 'check') { row.check_number = checkNumber; row.check_id = idOnCheck; }
+  let up = await sb.from('job_closeout').upsert(row, { onConflict: 'job_id' });
+  // Pre-155 (no check columns) → retry without them so collection still records.
+  if (up.error && /check_number|check_id/i.test(up.error.message || '')) { const { check_number, check_id, ...lite } = row; up = await sb.from('job_closeout').upsert(lite, { onConflict: 'job_id' }); }
+  if (up.error) return { ok: false, msg: up.error.message };
+
+  // Reconcile the open invoice (subtract the amount), same as the card flow.
+  try {
+    const { data: inv } = await sb.from('invoices').select('id, invoice_number, customer_id, balance').eq('job_id', String(jobId)).gt('balance', 0).order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (inv) {
+      const newBal = Math.max(0, Math.round(((Number(inv.balance) || 0) - dollars) * 100) / 100);
+      const paidOff = newBal === 0;
+      const u = await sb.from('invoices').update({ balance: newBal, ...(paidOff ? { status: 'paid', paid_at: new Date().toISOString() } : {}) }).eq('id', inv.id);
+      if (u.error && /paid_at/.test(u.error.message || '')) await sb.from('invoices').update({ balance: newBal, ...(paidOff ? { status: 'paid' } : {}) }).eq('id', inv.id);
+      try { await sb.from('ar_activity').insert({ action: 'customer_paid', invoice_id: inv.id, invoice_number: inv.invoice_number || null, customer_id: inv.customer_id || null, amount: dollars, by_email: g.profile.email || 'field-collect' }); } catch (_) {}
+    }
+  } catch (_) {}
+
+  const name = (job.customers && job.customers.name) || '';
+  try { await sb.from('ar_activity').insert({ action: method === 'cash' ? 'cash_collected' : 'check_collected', customer_id: job.customer_id || null, customer_name: name || null, invoice_number: method === 'check' ? `check #${checkNumber}` : (job.job_number || null), amount: dollars, by_email: g.profile.email || 'field-collect' }); } catch (_) {}
+  revalidatePath(`/job/${jobId}`);
+  return { ok: true, method, totalDollars: dollars, checkNumber: method === 'check' ? checkNumber : null };
+}
+
