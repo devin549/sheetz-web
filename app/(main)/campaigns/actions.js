@@ -2,7 +2,7 @@
 
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
-import { canCompose, canApprove, AUDIENCE_KEYS, audienceLabel } from '@/lib/campaigns';
+import { canCompose, canApprove, AUDIENCE_KEYS, audienceLabel, audienceBrief, WH_AGE_YEARS } from '@/lib/campaigns';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 import { isEmailConfigured, sendOne, renderEmailHtml } from '@/lib/email';
 import { loadProfile } from '@/lib/profile';
@@ -18,8 +18,28 @@ async function me() {
 
 // Resolve an audience preset → de-duped recipient list. do_not_mail + empty emails are skipped
 // (counted, never silently dropped). Returns { recipients:[{customer_id,name,email}], skipped }.
+const WH_FUEL = { wh_gas: 'gas', wh_electric: 'electric', wh_propane: 'propane' };
 async function resolveAudience(sb, key) {
   let custIds = null; // null = every customer with an email
+  // Aging water heaters by fuel — customers whose scanned data plate shows a 9+ yr-old unit of that fuel.
+  if (WH_FUEL[key]) {
+    const fuel = WH_FUEL[key];
+    const maxYear = new Date().getFullYear() - WH_AGE_YEARS;
+    const set = new Set();
+    let from = 0;
+    while (true) {
+      const { data, error } = await sb.from('customer_equipment').select('customer_id, fuel_type, year').not('customer_id', 'is', null).not('year', 'is', null).lte('year', maxYear).range(from, from + 999);
+      if (error || !data || !data.length) break;
+      data.forEach((e) => {
+        const f = String(e.fuel_type || '').toLowerCase();
+        const match = fuel === 'gas' ? (/gas/.test(f) && !/propane|lp\b/.test(f)) : fuel === 'propane' ? /propane|lp\b/.test(f) : /electric/.test(f);
+        if (match && e.customer_id) set.add(e.customer_id);
+      });
+      if (data.length < 1000) break; from += 1000;
+    }
+    custIds = [...set];
+    if (!custIds.length) return { recipients: [], skipped: 0 };
+  }
   if (key === 'pastdue' || key === 'pastdue90') {
     const cutoff = key === 'pastdue90' ? Date.now() - 90 * 86400000 : null;
     const set = new Set();
@@ -94,7 +114,7 @@ export async function draftCampaignAI(audience, brief) {
       max_tokens: 700,
       output_config: { effort: 'low' },
       system: 'You write short, warm, professional customer emails for Clog Busterz Plumbing (a Kentucky plumbing company). Plain text only. Use {{name}} where the customer’s first name should go. No spammy hype, no ALL CAPS, no emoji walls. Return STRICT JSON: {"subject": "...", "body": "..."} and nothing else.',
-      messages: [{ role: 'user', content: `Audience: ${audienceLabel(audience)}.\nWhat to say: ${String(brief || 'a friendly check-in / notice').slice(0, 600)}\n\nReturn the JSON.` }],
+      messages: [{ role: 'user', content: `Audience: ${audienceLabel(audience)}.\nWhat to say: ${String(brief || audienceBrief(audience) || 'a friendly check-in / notice').slice(0, 800)}\n\nReturn the JSON.` }],
     });
   } catch (e) { return { ok: false, msg: 'AI error: ' + ((e && e.message) || String(e)) }; }
   const text = (res.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
