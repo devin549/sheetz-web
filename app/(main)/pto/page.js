@@ -10,6 +10,8 @@ import OnCallBanners from '../cal/OnCallBanners';
 import { loadOnCallWindows } from '@/lib/onCall';
 import { vacationStatus, lastAnniversary, holidaysForfeited, fmtHours, HOLIDAY_DAYS, UNEXCUSED_FORFEIT } from '@/lib/pto';
 import { noticeDays, conflictsWith } from '@/lib/techAvailability';
+import { upcomingHolidays } from '@/lib/holidays';
+import { nyTodayStr } from '@/lib/day';
 
 const fmtD = (s) => { if (!s) return ''; try { return new Date(s + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }); } catch { return s; } };
 const KIND_ICON = { vacation: '🏖', sick: '🤒', personal: '🙋', unpaid: '💸' };
@@ -145,6 +147,19 @@ export default async function Pto() {
   const vac = vacationStatus({ hireDate, timeOff: myReqs, vacationPullDays: vacPullDays, vacationDays: myVacDays });
   const forfeited = holidaysForfeited(myUnexcused);
   const pct = Math.min(100, (myUnexcused / UNEXCUSED_FORFEIT) * 100);
+
+  // Real-dated holiday list — only what's UPCOMING (past ones drop off automatically). The crew roster is still
+  // sample data (the live roster feed wires next), mapped onto the real dates by holiday name; "YOU" lights up
+  // when the assigned tech's first name matches yours. Split into the 5 paid + the non-paid set.
+  const myFirst = String(name).trim().split(/\s+/)[0].toLowerCase();
+  const crewByName = {};
+  [...pto.paid, ...pto.nonPaid].forEach((h) => { const nm = String(h.date).split('·').slice(1).join('·').trim(); crewByName[nm] = { tech: h.tech, helper: h.helper, sup: h.sup }; });
+  const upcoming = upcomingHolidays(nyTodayStr(), 8).map((h) => {
+    const crew = crewByName[h.name] || {};
+    return { date: `${h.label} · ${h.name}`, today: h.isToday, paid: h.paid, tech: crew.tech || '—', helper: crew.helper || '—', sup: crew.sup || '—', you: !!crew.tech && crew.tech.toLowerCase().split(/\s+/)[0] === myFirst };
+  });
+  const upPaid = upcoming.filter((h) => h.paid);
+  const upNonPaid = upcoming.filter((h) => !h.paid);
 
   return (
     <div className="wrap" style={{ maxWidth: 760 }}>
@@ -293,11 +308,11 @@ export default async function Pto() {
       <h3 style={{ margin: '16px 0 6px', fontSize: 13, color: 'var(--amber-dim)', textTransform: 'uppercase' }}>Holidays &amp; on-call coverage</h3>
       <div style={{ fontSize: 10, color: 'var(--fg-3)', margin: '0 0 10px', lineHeight: 1.55 }}>OM sets the on-call roster 30+ days out. <strong style={{ color: 'var(--green-bright)' }}>Paid</strong> = 8hr × your hourly on top — <strong>work it and you keep your commission too</strong>. <strong style={{ color: '#ffb74d' }}>Non-paid</strong> = your regular/OT rate, only for hours you actually work.</div>
 
-      <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--green-bright)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>● Paid holidays · 8hr hourly (5)</div>
-      {pto.paid.map((h, i) => <HolidayRow key={i} h={h} paid />)}
+      <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--green-bright)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>● Paid holidays · 8hr hourly · upcoming ({upPaid.length})</div>
+      {upPaid.length ? upPaid.map((h, i) => <HolidayRow key={i} h={h} paid />) : <div className="muted" style={{ fontSize: 11, marginBottom: 8 }}>None coming up.</div>}
 
-      <div style={{ fontSize: 10, fontWeight: 800, color: '#ffb74d', textTransform: 'uppercase', letterSpacing: '.05em', margin: '12px 0 6px' }}>● Non-paid holidays · on-call still runs</div>
-      {pto.nonPaid.map((h, i) => <HolidayRow key={i} h={h} />)}
+      <div style={{ fontSize: 10, fontWeight: 800, color: '#ffb74d', textTransform: 'uppercase', letterSpacing: '.05em', margin: '12px 0 6px' }}>● Non-paid holidays · on-call still runs · upcoming ({upNonPaid.length})</div>
+      {upNonPaid.length ? upNonPaid.map((h, i) => <HolidayRow key={i} h={h} />) : <div className="muted" style={{ fontSize: 11 }}>None coming up.</div>}
     </div>
   );
 }
