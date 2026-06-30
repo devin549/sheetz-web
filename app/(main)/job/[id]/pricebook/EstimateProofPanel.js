@@ -16,14 +16,23 @@ const STATUS = {
 const METHOD_LABEL = { link: 'on their device', phone: 'over the phone', in_person: 'in person', text: 'by text', email: 'by email' };
 
 export default function EstimateProofPanel({ estimates = [] }) {
+  const [open, setOpen] = useState(false);
   if (!estimates.length) return null;
+  const declined = estimates.filter((e) => e.status === 'declined').length;
   return (
     <div className="card" style={{ marginTop: 16 }}>
-      <div style={{ fontWeight: 800, marginBottom: 4 }}>🧾 Sent estimates &amp; approval proof</div>
-      <div className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>Every approval is stamped with who, when, and how — so it can’t be disputed later.</div>
-      <div style={{ display: 'grid', gap: 10 }}>
-        {estimates.map((e) => <Row key={e.token} e={e} />)}
-      </div>
+      <button onClick={() => setOpen((o) => !o)} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, width: '100%', boxSizing: 'border-box' }}>
+        <span style={{ fontWeight: 800 }}>🧾 Sent estimates &amp; approval proof</span>
+        <span className="pill" style={{ fontSize: 10 }}>{estimates.length}</span>
+        {declined > 0 && <span className="pill" style={{ fontSize: 10, color: 'var(--red)', border: '1px solid var(--red)' }}>{declined} declined</span>}
+        <span style={{ marginLeft: 'auto', color: 'var(--fg-3)', fontSize: 12 }}>{open ? '▲ hide' : '▼ show'}</span>
+      </button>
+      {open && (<>
+        <div className="muted" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>Every approval is stamped with who, when, and how — so it can’t be disputed later.</div>
+        <div style={{ display: 'grid', gap: 10 }}>
+          {estimates.map((e) => <Row key={e.token} e={e} />)}
+        </div>
+      </>)}
     </div>
   );
 }

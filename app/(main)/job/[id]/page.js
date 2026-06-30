@@ -27,6 +27,7 @@ import { loadCustomerMemory } from '@/lib/customerMemory';
 import { canArchivePhoto, canUploadPhotos, canViewJob, segmentTechHere, jobTitle, loadJob } from './jobAccess';
 import ScanReceipt from './ScanReceipt';
 import JobSegments from './JobSegments';
+import PriorDeclinedEstimates from './PriorDeclinedEstimates';
 import { rollupJob } from '@/lib/segments';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
 
@@ -163,6 +164,18 @@ export default async function JobDetail({ params }) {
     latestEstimate = data || null;
   } catch (_) {}
 
+  // Everything THIS CUSTOMER has been offered before and declined — across all their jobs. Surfaces on the
+  // overview so when they call back we can say "we offered that on <date>, you declined." Best-effort.
+  let priorDeclined = [];
+  if (job.customer_id) {
+    try {
+      const { data } = await sb.from('pricebook_estimates')
+        .select('headline, subtotal, created_at, responded_at, job_number')
+        .eq('customer_id', job.customer_id).eq('status', 'declined').order('created_at', { ascending: false }).limit(12);
+      priorDeclined = data || [];
+    } catch (_) {}
+  }
+
   // Crew & segments rollup (P8) — fail-soft if migration 87 isn't applied yet.
   let segments = [], jobReceipts = [];
   try { const { data } = await sb.from('job_segments').select('*').eq('parent_job_id', id).order('created_at', { ascending: true }); segments = data || []; } catch (_) {}
@@ -272,6 +285,9 @@ export default async function JobDetail({ params }) {
 
       {/* 🏷 Office tags — dispatch sets them (tech sees on My Day; ✨ tags attach a form). Read-only for techs. */}
       <OfficeTags jobId={id} tags={job.office_tags || []} canEdit={can(role, 'assignJobs') || can(role, 'manageUsers') || can(role, 'seeCrew') || can(role, 'createJobs')} />
+
+      {/* 🚫 What this customer declined before (across all jobs) — so they can't say it wasn't offered. */}
+      <PriorDeclinedEstimates items={priorDeclined} />
 
       <JobFlow jobId={id} status={st} reached={reached} gateReady={gateReady} gateMissing={gateMissing} nextHint={gateMissing[0] || ''} canAct={canAct} />
 
