@@ -165,6 +165,9 @@ html.cb-tech .topbar { display: none; }
 .alert-dot.amber { animation: cbBlink 1.1s infinite; }
 /* make a whole pill blink (urgent jobs) */
 .pill-blink { animation: cbBlink 1.1s infinite; }
+/* On-call "you haven't acknowledged yet" nag — a pulsing purple ring that doesn't hide the banner text. */
+@keyframes cbOncallPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(156,100,244,.55); } 50% { box-shadow: 0 0 0 5px rgba(156,100,244,0); } }
+.oncall-pulse { animation: cbOncallPulse 1.5s ease-in-out infinite; }
 .pill-red { background: rgba(239,83,80,.16); color: var(--red); }
 /* Recommended estimate tier — a SLOW, gentle amber glow that draws the eye to the pick without a cheap
    blink (honest merchandising, not a dark pattern). ~2.4s soft halo on the recommended card. */
@@ -174,7 +177,7 @@ html.cb-tech .topbar { display: none; }
 }
 .cb-recommend { animation: cbRecommendGlow 2.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .alert-dot, .pill-blink, .cb-recommend { animation: none; }
+  .alert-dot, .pill-blink, .cb-recommend, .oncall-pulse { animation: none; }
 }
 
 /* Board: breathing snap-target while dragging a job (ported from the live board's .drop-breathe). */
