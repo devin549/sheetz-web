@@ -7,6 +7,8 @@ import { loadProfile } from '@/lib/profile';
 import { can } from '@/lib/roles';
 import { sendOne } from '@/lib/email';
 import { verifyDocNote } from '@/lib/aiVision';
+import { postToDiscord } from '@/lib/discord';
+import { nyTodayStr, nyDayWindow } from '@/lib/day';
 
 // CB has NO sick PTO type — vacation/personal/unpaid only (sick days are handled as excused absences).
 const KINDS = ['vacation', 'personal', 'unpaid'];
@@ -52,6 +54,33 @@ async function pendingPolicy(sb, userId, dateStr, hasVerifiedDoc, category) {
   return 'unexcused';
 }
 
+// A same-day absence means the tech is OUT today. Pull their not-yet-started jobs into the holding tray
+// (unassign + status 'hold' so the board's tray shows them) and ping #dispatch so the office re-covers them.
+// Only touches 'scheduled' jobs for today — never anything already enroute/on-site/done. Best-effort.
+async function holdJobsForOutTech(sb, { techId, techName, dateStr, reason, byEmail }) {
+  const { startISO, endISO } = nyDayWindow(dateStr);
+  const { data: jobs } = await sb.from('jobs')
+    .select('id, job_number, scheduled_at, customers(name, address)')
+    .eq('tech_id', techId).eq('status', 'scheduled')
+    .gte('scheduled_at', startISO).lt('scheduled_at', endISO)
+    .order('scheduled_at', { ascending: true });
+  const list = jobs || [];
+  if (!list.length) return 0;
+  const ids = list.map((j) => j.id);
+  const { error } = await sb.from('jobs').update({ status: 'hold', tech_id: null, tech_name: null, assigned_at: null }).in('id', ids);
+  if (error) return 0;
+  try { await sb.from('job_moves').insert(list.map((j) => ({ job_id: j.id, action: 'unassign', from_tech_id: techId, from_tech_name: techName, to_tech_id: null, to_tech_name: null, scheduled_at: j.scheduled_at, by_email: byEmail || 'system' }))); } catch (_) {}
+  try {
+    const fmtT = (s) => { try { return new Date(s).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
+    const lines = list.slice(0, 12).map((j) => `• ${j.job_number ? '#' + j.job_number + ' ' : ''}${(j.customers && j.customers.name) || 'Customer'}${j.customers && j.customers.address ? ' — ' + j.customers.address : ''}${j.scheduled_at ? ' (' + fmtT(j.scheduled_at) + ')' : ''}`);
+    const more = list.length > 12 ? `\n…and ${list.length - 12} more` : '';
+    const why = reason && reason !== 'other' ? ` (${reason})` : '';
+    await postToDiscord(`🚨 **Tech out — ${list.length} job${list.length > 1 ? 's' : ''} moved to the holding tray**\n${techName} is out today${why}. These need re-covering:\n${lines.join('\n')}${more}\n→ Reassign on the board: /board`, { to: 'office' });
+  } catch (_) {}
+  revalidatePath('/board');
+  return list.length;
+}
+
 export async function reportAbsence(payload) {
   const p = payload || {};
   const supabase = createClient();
@@ -95,6 +124,11 @@ export async function reportAbsence(payload) {
   if (error && /category|bereavement_relation/i.test(error.message || '')) { const { category: _c, bereavement_relation: _r, ...lite } = row; ({ error } = await sb.from('absences').insert(lite)); }
   if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/83_absences.sql first.' : error.message };
   try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'absence.reported', entity: 'tech', entity_id: user.id, detail: { date, status: finalStatus, doc: !!docPath, verify: verify ? { isNote: verify.isMedicalNote, confidence: verify.confidence } : null } }); } catch (_) {}
+  // Out TODAY → pull this tech's remaining jobs into the office holding tray + ping #dispatch. Best-effort.
+  let heldCount = 0;
+  if (profile.tech_id && date === nyTodayStr()) {
+    try { heldCount = await holdJobsForOutTech(sb, { techId: profile.tech_id, techName: profile.name || user.email, dateStr: date, reason: category, byEmail: user.email }); } catch (_) {}
+  }
   revalidatePath('/pto');
   const msg = finalStatus === 'excused'
     ? (category === 'bereavement' ? '✓ Excused — bereavement. Our condolences.'
@@ -104,7 +138,8 @@ export async function reportAbsence(payload) {
         ? (docPath ? '⚖️ Submitted — records will verify your jury summons / proof of service and excuse it.' : '⚖️ Submitted as pending — upload your jury summons or the court’s proof of service so records can excuse it (jury duty needs proof).')
         : '⏳ Submitted — that image couldn’t be confirmed as a note; records will review.')
       : 'Logged as unexcused (no documentation). Pick the right reason or submit a doctor’s note to excuse it.';
-  return { ok: true, status: finalStatus, msg };
+  const heldNote = heldCount > 0 ? ` The office was notified — your ${heldCount} job${heldCount > 1 ? 's' : ''} for today ${heldCount > 1 ? 'were' : 'was'} moved to the holding tray to be re-covered.` : '';
+  return { ok: true, status: finalStatus, msg: msg + heldNote };
 }
 
 // Manager OVERRIDE — flips an absence against the policy result. Requires a reason and is flagged in the
