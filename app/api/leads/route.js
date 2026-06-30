@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { postToDiscord } from '@/lib/discord';
 
 // Public lead-intake endpoint. The website form POSTs here; leads land in web_leads → /web-leads.
 // Self-authenticates via an optional shared secret (no user cookie). Honeypot + validation guard
@@ -54,5 +55,13 @@ export async function POST(req) {
     }
     return json({ ok: false, error: error.message }, 500);
   }
+  // Announce to the office (#dispatch) so a lead is NEVER silently buried — previously it was discoverable
+  // only by opening /web-leads. Flag a missing address: those need a callback to get it before booking.
+  // Best-effort — never block or fail the lead save on a notify hiccup.
+  try {
+    const who = name || phone || email || 'Someone';
+    const addrLine = row.address ? `\n📍 ${row.address}` : '\n⚠️ NO ADDRESS — call to get it';
+    await postToDiscord(`🌐 **New web lead** · ${who}${phone ? ` · ${phone}` : ''}${email ? ` · ${email}` : ''}${row.service ? `\nService: ${row.service}` : ''}${addrLine}${row.message ? `\n📝 ${row.message.slice(0, 200)}` : ''}\nWork it in Web Leads.`, { to: 'office' });
+  } catch (_) {}
   return json({ ok: true, id: ins.id });
 }

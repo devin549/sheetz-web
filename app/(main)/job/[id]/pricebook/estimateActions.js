@@ -10,7 +10,7 @@ import { can } from '@/lib/roles';
 import { scopeJob } from './scope';
 import { createInvoiceFromEstimate } from '@/lib/invoiceFromEstimate';
 import { postToDiscord } from '@/lib/discord';
-import { marginPct } from '@/lib/pricebookEngine';
+import { marginPct, canOverrideMinimum } from '@/lib/pricebookEngine';
 import { financingPartner } from '@/lib/financing';
 import { sendSms } from '@/lib/twilio';
 import { sendOne, isEmailConfigured, appBaseUrl } from '@/lib/email';
@@ -78,9 +78,25 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
   const tierInput = Array.isArray(opts.tiers) ? opts.tiers : [];
   const allLineRefs = [...lines, ...tierInput.flatMap((t) => Array.isArray(t.lines) ? t.lines : [])];
   const itemIds = [...new Set(allLineRefs.map((l) => l.itemId).filter(Boolean))];
-  const { data: items, error: ie } = await c.sb.from('pricebook_items').select('id, name, customer_name, customer_description, short_description, retail_price, warranty_text, primary_photo_url, pdf_url').in('id', itemIds);
+  const { data: items, error: ie } = await c.sb.from('pricebook_items').select('id, name, customer_name, customer_description, short_description, retail_price, minimum_price, warranty_text, primary_photo_url, pdf_url').in('id', itemIds);
   if (ie) return { ok: false, msg: missing(ie) ? 'Run supabase/104_pricebook.sql first.' : ie.message };
   const byId = {}; (items || []).forEach((i) => { byId[i.id] = i; });
+
+  // Minimum-price floor — MIRROR recordSale so the Present/Send (estimate) path can't book sub-floor prices
+  // either (it previously fetched no minimum_price and skipped the check). Covers the flat cart AND every tier
+  // line; non-managers are blocked and told it needs manager approval. (Ad-hoc custom lines have no catalog
+  // minimum — a separate known gap.) Uses the effective price (sold → retail) so a retail line never blocks.
+  const belowMin = [];
+  for (const l of allLineRefs) {
+    if (l.custom || !l.itemId) continue;
+    const it = byId[l.itemId]; if (!it) continue;
+    const min = it.minimum_price == null ? null : Number(it.minimum_price);
+    const sold = Number(l.soldPrice) || Number(it.retail_price) || 0;
+    if (min != null && sold < min) belowMin.push(it.customer_name || it.name);
+  }
+  if (belowMin.length && !canOverrideMinimum(c.profile.role)) {
+    return { ok: false, needsApproval: true, msg: `Below minimum on ${[...new Set(belowMin)].join(', ')} — needs manager approval to send.` };
+  }
 
   // Customer-visible gallery photos per item (pricebook_media). Best-effort.
   const mediaByItem = {};
