@@ -46,6 +46,9 @@ const CLOG_RE = /clog|stoppage|back(ed|ing)?\s*up|back-?up|overflow|won'?t flush
 // A floor / area / basement drain or the main line — the LOW POINT. When one of these backs up it's usually
 // a MAIN-LINE blockage (water rises to the lowest opening), so the right call leans cable/jet + camera.
 const LOWPOINT_RE = /floor ?drain|area ?drain|basement drain|main ?line|sewer|cleanout/i;
+// Main-line work — only the right "clear" for a LOW-POINT fixture. A toilet/sink/tub clog is LOCAL (auger),
+// so we keep main-line items out of those clog ladders (else the priciest hydro-jet wrongly wins "Best").
+const MAINLINE_RE = /main ?line|\bsewer\b|cleanout|camera|hydro.?jet|jet the main/i;
 
 // Turn a price-sorted list into a Good / Better / Best ladder (cheapest = Good, priciest = Best, middle =
 // Better) + the rest as "more". Cheapest repair (flapper/fill valve) → Good; biggest (major rebuild) → Best.
@@ -160,15 +163,20 @@ export async function scanFixtureRepairs(dataUrl) {
     else if (repairsAll.length < 12) repairsAll.push(toLine(it)); // repair-tagged OR default → repairs
   }
   // On a clog, the REPAIR is clearing it → show the auger/clearing options as the repairs ladder (not the
-  // part-rebuilds), so the tech leads with "auger it" instead of a wax ring or a full replacement.
+  // part-rebuilds). For a LOCAL fixture (toilet/sink/tub) keep main-line work out so a hydro-jet doesn't win
+  // "Best"; for a LOW POINT (floor drain/main) main-line clearing IS the right answer, so leave it in.
+  const isLowPoint = LOWPOINT_RE.test(`${fx.fixture} ${fx.label || ''}`);
   let repairsForLadder = repairsAll;
-  if (isClog) { const clearOnly = repairsAll.filter((r) => CLEAR_RE.test(r.name.toLowerCase())); if (clearOnly.length) repairsForLadder = clearOnly; }
+  if (isClog) {
+    let clearOnly = repairsAll.filter((r) => CLEAR_RE.test(r.name.toLowerCase()));
+    if (!isLowPoint) clearOnly = clearOnly.filter((r) => !MAINLINE_RE.test(r.name.toLowerCase()));
+    if (clearOnly.length) repairsForLadder = clearOnly;
+  }
   // Each bucket becomes a Good/Better/Best ladder (the Best glows in the UI) + "more" options.
   const repairs = gbbLadder(repairsForLadder);
   const replacements = gbbLadder(replacementsAll);
-  // Low point (floor/area/basement drain or main) + a backup → almost always a MAIN-LINE blockage, not a local
-  // clog. Nudge the tech to cable/jet the main + camera it, so they don't undersell a 6" snake on a main issue.
-  const isLowPoint = LOWPOINT_RE.test(`${fx.fixture} ${fx.label || ''}`);
+  // Low point + a backup → almost always a MAIN-LINE blockage, not a local clog. Nudge the tech to cable/jet
+  // the main + camera it, so they don't undersell a main issue as a 6" snake.
   const mainLineHint = (isClog && isLowPoint) ? 'Low point + standing water = usually a MAIN-LINE backup, not a local clog. Cable/jet the main line + run a camera — don’t stop at a small snake.' : null;
   try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'fixture.scan', entity: 'pricebook', entity_id: '', detail: { fixture: fx.fixture, clog: isClog, mainLine: !!mainLineHint, repairs: repairsAll.length, replacements: replacementsAll.length } }); } catch (_) {}
   return { ok: true, fixture: fx.fixture, label: fx.label, problem: fx.problem, confidence: fx.confidence, isClog, mainLineHint, repairs, replacements };
