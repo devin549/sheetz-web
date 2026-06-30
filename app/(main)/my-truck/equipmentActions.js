@@ -73,10 +73,17 @@ async function applyScan(action, { unitId, location, lat, lng, note }) {
   if (action === 'checkout') { patch.status = 'out'; patch.held_by = c.name; patch.held_at = now; }
   if (action === 'checkin') { patch.status = 'in'; patch.held_by = null; patch.held_at = null; }
   // 'locate' leaves custody as-is, just moves the pin.
+  // On checkout, tie the machine to the scanning tech's active job so that job's revenue rolls up to it (P&L).
+  let job = null;
+  if (action === 'checkout' && c.profile?.tech_id) {
+    try { const { data } = await c.sb.from('jobs').select('id, job_number').eq('tech_id', c.profile.tech_id).in('status', ['enroute', 'on_site', 'onsite', 'rolling']).order('scheduled_at', { ascending: true }).limit(1).maybeSingle(); job = data || null; } catch (_) {}
+  }
   try {
     const { error } = await c.sb.from('equipment_fleet').update(patch).eq('id', id);
     if (error) return { ok: false, msg: error.message };
     await c.sb.from('equipment_scans').insert({ unit_id: id, action, by_name: c.name, by_id: c.user.id, location: loc, lat: la, lng: ln, note: clean(note, 200) || null });
+    // Revenue link — one row per (unit, job); ignore the dup-conflict on repeat scans to the same job.
+    if (job?.id) { try { await c.sb.from('equipment_job_use').upsert({ unit_id: id, job_id: job.id, job_number: job.job_number || null, used_by: c.name }, { onConflict: 'unit_id,job_id', ignoreDuplicates: true }); } catch (_) {} }
   } catch (e) { return { ok: false, msg: String(e?.message || e).slice(0, 140) }; }
   revalidatePath('/my-truck');
   const verb = action === 'checkout' ? 'Checked out to you' : action === 'checkin' ? 'Checked in' : 'Location updated';
