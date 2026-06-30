@@ -6,7 +6,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { listProjectsWithUnits, linkJobToUnit, flagProjectCandidate } from '../../projects/actions';
 
-export default function LinkToProject({ jobId, currentProjectId, currentProjectName, currentUnitLabel, canLink = false }) {
+export default function LinkToProject({ jobId, currentProjectId, currentProjectName, currentUnitLabel, canLink = false, rollSignal = 0, rollThreshold = 3, totalRolls = 0 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [open, setOpen] = useState(false);
@@ -16,6 +16,8 @@ export default function LinkToProject({ jobId, currentProjectId, currentProjectN
   const [err, setErr] = useState(null);
   const [flagMsg, setFlagMsg] = useState(null);
   const flag = () => start(async () => { const r = await flagProjectCandidate(jobId, ''); setFlagMsg(r.ok ? r.msg : (r.msg || 'Could not flag.')); });
+  // Auto-detected: rolled enough times (NOT counting parts waits) that it's probably a multi-day project.
+  const triggered = !currentProjectId && rollSignal >= rollThreshold;
 
   // Tech view: can't move jobs — show the linkage read-only, or a "flag for a manager" nudge.
   if (!canLink) {
@@ -25,9 +27,11 @@ export default function LinkToProject({ jobId, currentProjectId, currentProjectN
       </div>
     );
     return (
-      <div className="card" style={{ marginTop: 8, borderLeft: '3px solid var(--purple)' }}>
+      <div className="card" style={{ marginTop: 8, borderLeft: '3px solid ' + (triggered ? 'var(--amber)' : 'var(--purple)'), background: triggered ? 'rgba(255,179,0,0.08)' : undefined }}>
+        {triggered && <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--amber)', marginBottom: 4 }}>🏗️ Rolled {totalRolls}× — looks like a multi-day project</div>}
+        {triggered && <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>Come back {rollSignal} time{rollSignal === 1 ? '' : 's'} for more work (parts waits don’t count). Flag it so a manager sets it up as a project.</div>}
         {flagMsg ? <span style={{ fontSize: 12.5, color: 'var(--green)' }}>✓ {flagMsg}</span>
-          : <button onClick={flag} disabled={pending} style={{ background: 'none', border: 'none', color: 'var(--purple)', cursor: 'pointer', fontSize: 13, fontWeight: 800, padding: 0 }}>{pending ? 'Flagging…' : '🏗️ Looks like part of a bigger project? Flag it for a manager'}</button>}
+          : <button onClick={flag} disabled={pending} style={{ background: 'none', border: 'none', color: triggered ? 'var(--amber)' : 'var(--purple)', cursor: 'pointer', fontSize: 13, fontWeight: 800, padding: 0 }}>{pending ? 'Flagging…' : (triggered ? '🏗️ Flag this project for a manager' : '🏗️ Looks like part of a bigger project? Flag it for a manager')}</button>}
       </div>
     );
   }
@@ -43,7 +47,8 @@ export default function LinkToProject({ jobId, currentProjectId, currentProjectN
   const sel = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 13 };
 
   return (
-    <div className="card" style={{ marginTop: 8, borderLeft: '3px solid var(--purple)' }}>
+    <div className="card" style={{ marginTop: 8, borderLeft: '3px solid ' + (triggered ? 'var(--amber)' : 'var(--purple)'), background: triggered && !open ? 'rgba(255,179,0,0.08)' : undefined }}>
+      {triggered && !open && <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--amber)', marginBottom: 6 }}>🏗️ Rolled {totalRolls}× (not counting parts) — looks like a multi-day project. Link it so its visits + margin roll up.</div>}
       {currentProjectId && !open ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 800, fontSize: 13 }}>🏗️ Part of <a href={`/projects/${currentProjectId}`} style={{ color: 'var(--purple)' }}>{currentProjectName || 'a project'}</a></span>

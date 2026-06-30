@@ -163,6 +163,15 @@ export default async function JobDetail({ params }) {
     latestEstimate = data || null;
   } catch (_) {}
 
+  // Rollover counters → multi-day-PROJECT signal. A parts wait is a normal 2nd visit (excluded). 3+ NON-parts
+  // rolls = the job keeps coming back for more work → nudge to flag/link it as a project. Fail-soft pre-156.
+  const PROJECT_ROLL_THRESHOLD = 3;
+  let nonPartsRolls = 0, totalRolls = 0;
+  try {
+    const { data } = await sb.from('jobs').select('rollover_count, parts_rollovers').eq('id', id).maybeSingle();
+    if (data) { totalRolls = data.rollover_count || 0; nonPartsRolls = Math.max(0, totalRolls - (data.parts_rollovers || 0)); }
+  } catch (_) {}
+
   // Everything THIS CUSTOMER has been offered before and declined — across all their jobs. Surfaces on the
   // overview so when they call back we can say "we offered that on <date>, you declined." Best-effort.
   let priorDeclined = [];
@@ -319,7 +328,7 @@ export default async function JobDetail({ params }) {
       {/* Crew & segments (split / second tech / helper / parts run / return visit / unit) — rolls up here. */}
       <JobSegments parentJobId={id} rollup={rollup} segments={segments} canDispatch={canDispatchSeg} />
 
-      {(canAct || job.project_id) && <LinkToProject jobId={id} currentProjectId={job.project_id} currentProjectName={projName} currentUnitLabel={unitLabel} canLink={can(role, 'assignJobs') || can(role, 'createJobs') || can(role, 'manageUsers')} />}
+      {(canAct || job.project_id) && <LinkToProject jobId={id} currentProjectId={job.project_id} currentProjectName={projName} currentUnitLabel={unitLabel} canLink={can(role, 'assignJobs') || can(role, 'createJobs') || can(role, 'manageUsers')} rollSignal={nonPartsRolls} rollThreshold={PROJECT_ROLL_THRESHOLD} totalRolls={totalRolls} />}
 
       {/* 💡 Refer a bigger opportunity (FloodBusterz / Reline) to Sales — internal handoff, customer not contacted. */}
       {canAct && !isEstimate && <ReferToSales jobId={id} customerName={(customer && customer.name) || job.customer_name || ''} />}

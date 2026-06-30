@@ -488,9 +488,19 @@ export async function rollOverJob(jobId, opts = {}) {
 
   const tag = officePending ? ' · OFFICE: find a day + call the customer' : '';
   const note = `Rolled by ${ctx.profile?.name || 'tech'}: ${reason}${returnDate ? ` · wants ~${returnDate}` : ''}${tag}`;
+
+  // Bump the rollover counters. A "waiting on parts" roll is a normal 2nd visit → tracked separately so it
+  // doesn't push the job toward the multi-day-project flag. Fail-soft pre-156 (don't write the counters).
+  const isPartsRoll = /\bpart\b|\bparts\b/i.test(reason);
+  let counters = null;
+  try {
+    const { data: cur, error: cErr } = await ctx.sb.from('jobs').select('rollover_count, parts_rollovers').eq('id', ctx.job.id).maybeSingle();
+    if (!cErr) counters = { rollover_count: (cur?.rollover_count || 0) + 1, parts_rollovers: (cur?.parts_rollovers || 0) + (isPartsRoll ? 1 : 0) };
+  } catch (_) {}
+
   const patch = autoISO
-    ? { scheduled_at: autoISO, status: 'scheduled', enroute_at: null, started_at: null, notes: note }
-    : { scheduled_at: null, status: 'scheduled', enroute_at: null, started_at: null, notes: note }; // unscheduled → office tray
+    ? { scheduled_at: autoISO, status: 'scheduled', enroute_at: null, started_at: null, notes: note, ...(counters || {}) }
+    : { scheduled_at: null, status: 'scheduled', enroute_at: null, started_at: null, notes: note, ...(counters || {}) }; // unscheduled → office tray
   let { error } = await ctx.sb.from('jobs').update(patch).eq('id', ctx.job.id);
   if (error && /notes|column|schema cache/i.test(error.message || '')) { const { notes, ...p2 } = patch; ({ error } = await ctx.sb.from('jobs').update(p2).eq('id', ctx.job.id)); }
   if (error) return { ok: false, msg: error.message };
