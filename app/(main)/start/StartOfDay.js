@@ -294,7 +294,7 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
               ))}
             </div>
             <div style={{ fontSize: 9.5, color: '#c2b0cf', marginTop: 8, textAlign: 'center' }}>
-              ⚡ Devin fires new bounties anytime · 🎰 grab a Power Plunger pull from the top ribbon · full race on 🏁 Races.
+              ⚡ Devin fires new bounties anytime · 🎰 grab a Power Plunger pull on your 👑 Level tab · full race on 🏁 Races.
             </div>
           </div>
         </div>

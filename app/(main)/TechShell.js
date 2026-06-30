@@ -12,54 +12,9 @@ import { useState, useEffect } from 'react';
 import Watermark from './Watermark';
 import ThemeToggle from '@/components/ThemeToggle';
 import BottomBar from './BottomBar';
-import { pullSlot } from './races/pullActions';
 
-// ⚡ POWER PLUNGER PULL — the slot "pull for a bonus" lives in the TOP RIBBON (next to Power Plunger Hour),
-// matching the HTML rail. Compact arcade button: purple PULL chip + tiny 3-reel spin, always tappable —
-// the server (pullSlot) enforces earned-pulls + the company budget cap and routes any win to payroll.
-const PULL_SYMS = ['💵', '🪠', '7', '💎', '👑', '🎰', '🔥', '⭐'];
-const pullRnd = () => PULL_SYMS[Math.floor(Math.random() * PULL_SYMS.length)];
-function RibbonPull() {
-  const [reels, setReels] = useState(['💵', '🪠', '7']);
-  const [spinning, setSpinning] = useState(false);
-  const [result, setResult] = useState(null);
-  const pull = async () => {
-    if (spinning) return;
-    setSpinning(true); setResult(null);
-    const iv = setInterval(() => setReels([pullRnd(), pullRnd(), pullRnd()]), 80);
-    let res;
-    try { res = await pullSlot(); } catch (_) { res = null; }
-    setTimeout(() => {
-      clearInterval(iv);
-      if (res && res.ok) {
-        setReels(res.symbols ? res.symbols.split(' ') : [pullRnd(), pullRnd(), pullRnd()]);
-        setResult({ hit: res.hit, jackpot: res.jackpot, msg: res.msg });
-      } else {
-        setResult({ hit: false, msg: (res && res.msg) || 'Try again in a sec.' });
-      }
-      setSpinning(false);
-    }, 1200);
-  };
-  return (
-    <span style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span style={{ display: 'flex', gap: 3 }}>
-        {reels.map((s, i) => (
-          <span key={i} style={{ fontSize: 14, lineHeight: 1, background: 'rgba(0,0,0,0.45)', border: '1px solid #ce8fe0', borderRadius: 5, padding: '2px 4px', minWidth: 20, textAlign: 'center', transform: spinning ? 'translateY(-1px)' : 'none', transition: 'transform .08s' }}>{s}</span>
-        ))}
-      </span>
-      <button onClick={pull} disabled={spinning} title="Pull for a bonus — earned via memberships / 5★ reviews"
-        style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'linear-gradient(180deg,#ce8fe0 0%,#7b27ad 100%)', color: '#fff', border: '1px solid #ce8fe0', borderRadius: 14, padding: '4px 12px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', cursor: spinning ? 'default' : 'pointer', opacity: spinning ? 0.7 : 1, boxShadow: '0 2px 8px rgba(123,39,173,0.45)', whiteSpace: 'nowrap' }}>
-        🎰 {spinning ? '…' : 'Pull'}
-      </button>
-      {result && (
-        <span style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 30, background: '#241138', border: '1px solid #ce8fe0', borderRadius: 8, padding: '6px 10px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', boxShadow: '0 6px 18px rgba(0,0,0,0.5)', color: result.jackpot ? '#ffd24a' : result.hit ? '#7ee787' : '#f0d9f7' }}>
-          {result.msg}
-          <button onClick={() => setResult(null)} style={{ background: 'transparent', border: 'none', color: '#e3cdec', marginLeft: 8, cursor: 'pointer', fontWeight: 800 }}>✕</button>
-        </span>
-      )}
-    </span>
-  );
-}
+// ⚡ The Power Plunger pull moved OUT of the ribbon to the 👑 Level tab (/level) — one home for level + pull.
+// The ribbon's 👑 Plunger·Lvl chip links there.
 
 const RAIL = [
   { group: 'Work', items: [
@@ -77,6 +32,7 @@ const RAIL = [
     { icon: '💵', label: 'Pay', href: '/pay', money: true },
     { icon: '🏁', label: 'Races', href: '/races', money: true, badge: '5' },
     { icon: '🏆', label: 'Record', href: '/record', money: true },
+    { icon: '👑', label: 'Level', href: '/level', money: true },
     { icon: '📆', label: 'Cal', href: '/pto' },
     { icon: '⭐', label: 'Reviews', href: '/reviews' },
   ] },
@@ -252,19 +208,14 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
               ⚡ <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 11, textTransform: 'uppercase' }}>Power Plunger Hour</span><span style={{ color: '#ffeb3b', fontWeight: 800 }}>{game.powerHour}m</span>
             </span>
           )}
-          {/* 👑 Level + 🎰 PULL jackpot, grouped on the right (Devin: "the pull jackpot needs to be in the LVL") */}
-          <span style={{ marginLeft: 'auto', paddingRight: 6, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <RibbonPull />
-            {game.level != null && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>👑
-                <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
-                  <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Plunger · Lvl {game.level}</span>
-                  <span style={{ background: 'rgba(255,255,255,0.22)', width: 80, height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 2 }}><span style={{ display: 'block', width: `${game.levelPct ?? 0}%`, height: '100%', background: '#ffc44d' }} /></span>
-                  <span style={{ color: '#c3cbd5', fontSize: 8 }}>{game.levelPct ?? 0}% to next</span>
-                </span>
-              </span>
-            )}
-          </span>
+          {/* 👑 Level — taps through to the Level tab (XP progress + the 🎰 Power Plunger pull now live there). */}
+          <Link href="/level" title="Your level + the Power Plunger pull" style={{ marginLeft: 'auto', paddingRight: 6, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>👑
+            <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+              <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Plunger · {game.level != null ? `Lvl ${game.level}` : 'Level'} ›</span>
+              {game.level != null && <span style={{ background: 'rgba(255,255,255,0.22)', width: 80, height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 2 }}><span style={{ display: 'block', width: `${game.levelPct ?? 0}%`, height: '100%', background: '#ffc44d' }} /></span>}
+              <span style={{ color: '#c3cbd5', fontSize: 8 }}>{game.level != null ? `${game.levelPct ?? 0}% to next · 🎰 pull` : 'tap for your level + 🎰 pull'}</span>
+            </span>
+          </Link>
         </div>
       )}
       {cust && (
