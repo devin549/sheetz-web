@@ -8,6 +8,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { reviewWorkSummary } from './pricebook/customEntryActions';
 import { setWorkSummary } from './actions';
+import { flagOpportunities } from './opportunityActions';
 
 export default function WorkSummaryCoach({ jobId, jobType = '', initial = '' }) {
   const router = useRouter();
@@ -15,11 +16,21 @@ export default function WorkSummaryCoach({ jobId, jobType = '', initial = '' }) 
   const [text, setText] = useState(initial || '');
   const [review, setReview] = useState(null);
   const [msg, setMsg] = useState(null);
+  const [picked, setPicked] = useState(new Set());
+  const [flagMsg, setFlagMsg] = useState(null);
+  const togglePick = (i) => setPicked((s) => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; });
 
   const check = () => start(async () => {
-    setMsg(null); setReview(null);
+    setMsg(null); setReview(null); setPicked(new Set()); setFlagMsg(null);
     const r = await reviewWorkSummary(text, jobType);
     if (r.ok) setReview(r.review); else setMsg({ ok: false, t: r.msg });
+  });
+  const flag = () => start(async () => {
+    setFlagMsg(null);
+    const items = [...picked].map((i) => ({ title: review.recommends[i].name, detail: review.recommends[i].why || '' }));
+    const r = await flagOpportunities(jobId, items);
+    setFlagMsg({ ok: r.ok, t: r.msg });
+    if (r.ok) { setPicked(new Set()); router.refresh(); }
   });
   const save = () => start(async () => { setMsg(null); const r = await setWorkSummary(jobId, text); setMsg({ ok: r.ok, t: r.msg }); if (r.ok) router.refresh(); });
   const useRewrite = () => { if (review?.rewrite) { setText(review.rewrite); setReview((v) => ({ ...v, rewrite: '' })); } };
@@ -44,15 +55,21 @@ export default function WorkSummaryCoach({ jobId, jobType = '', initial = '' }) 
               <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>{review.missing.map((m, i) => <li key={i} style={{ fontSize: 12.5, lineHeight: 1.5 }}>{m}</li>)}</ul>
             </div>
           )}
-          {/* Fix recommendations */}
+          {/* Fix recommendations — tick the ones to flag as a future follow-up (saved to the customer). */}
           {review.recommends.length > 0 && (
             <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(167,139,250,.08)', border: '1px solid var(--purple, #a78bfa)' }}>
-              <div style={{ fontWeight: 800, fontSize: 12, color: 'var(--purple, #a78bfa)' }}>🔧 AI recommends</div>
-              <div style={{ display: 'grid', gap: 4, marginTop: 4 }}>
+              <div style={{ fontWeight: 800, fontSize: 12, color: 'var(--purple, #a78bfa)' }}>🔧 AI recommends <span className="muted" style={{ fontWeight: 400, fontSize: 10.5 }}>— tick what they should do later</span></div>
+              <div style={{ display: 'grid', gap: 5, marginTop: 6 }}>
                 {review.recommends.map((r, i) => (
-                  <div key={i} style={{ fontSize: 12.5 }}><strong>{r.name}</strong>{r.why ? <span className="muted"> — {r.why}</span> : ''} <span className="muted" style={{ fontSize: 10.5 }}>· add it from the Pricebook</span></div>
+                  <label key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 7, fontSize: 12.5, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={picked.has(i)} onChange={() => togglePick(i)} style={{ marginTop: 2 }} />
+                    <span><strong>{r.name}</strong>{r.why ? <span className="muted"> — {r.why}</span> : ''}</span>
+                  </label>
                 ))}
               </div>
+              {picked.size > 0 && <button onClick={flag} disabled={pending} className="btn" style={{ marginTop: 8, fontSize: 12.5, background: 'var(--purple, #a78bfa)', borderColor: 'var(--purple, #a78bfa)', color: '#1a1206' }}>{pending ? '…' : `📌 Flag ${picked.size} for follow-up`}</button>}
+              {flagMsg && <div style={{ fontSize: 11.5, marginTop: 6, color: flagMsg.ok ? 'var(--green)' : 'var(--red)' }}>{flagMsg.t}</div>}
+              <div className="muted" style={{ fontSize: 10, marginTop: 6 }}>Flagged = saved to this customer for a later coupon email (the office approves the send).</div>
             </div>
           )}
           {/* Clean rewrite */}
