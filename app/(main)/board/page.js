@@ -3,6 +3,9 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { can } from '@/lib/roles';
 import BoardSurface from './BoardSurface';
+import HoldingTray from './HoldingTray';
+import { rankTechs } from '@/lib/dispatch';
+import { unavailableTechIdsOn } from '@/lib/techAvailability';
 import LiveClock from './LiveClock';
 import DateNav from './DateNav';
 import EtaBanner from './EtaBanner';
@@ -118,6 +121,24 @@ export default async function Board({ searchParams }) {
     else tray.push(base);
   });
 
+  // 🚨 Holding tray — scheduled jobs that lost their tech (sick pull / unassign) but still have a time, so they
+  // need re-covering today. Suggest the best AVAILABLE tech for each: lightest load, working that day, with
+  // anyone off (sick or approved time off) excluded. No one free → the card tells the office to reschedule/call.
+  const heldJobs = tray.filter((j) => j.scheduledISO && !j.techId);
+  let heldWithSuggestions = [];
+  if (heldJobs.length) {
+    let outTechIds = new Set();
+    try { outTechIds = await unavailableTechIdsOn(sb, dateStr); } catch (_) {}
+    const techLoad = {}; gridJobs.forEach((j) => { if (j.techId) techLoad[j.techId] = (techLoad[j.techId] || 0) + 1; });
+    const hourOf = (iso) => { try { return new Date(iso).getUTCHours(); } catch { return null; } };
+    const busyAtHour = {}; gridJobs.forEach((j) => { if (j.techId && j.scheduledISO) { const h = hourOf(j.scheduledISO); (busyAtHour[h] = busyAtHour[h] || new Set()).add(j.techId); } });
+    heldWithSuggestions = heldJobs.map((j) => {
+      const busy = new Set([...outTechIds, ...(busyAtHour[hourOf(j.scheduledISO)] || [])]);
+      const ranked = rankTechs(techs, { jobType: j.job_type, city: j.address, busyTechIds: busy, techLoad });
+      return { ...j, suggestions: ranked.slice(0, 3).map((r) => ({ id: r.tech.id, name: r.tech.name, load: r.load, reasons: r.reasons })) };
+    });
+  }
+
   // Per-job closeout state (powers the job panel + the "needs QA" fire). Guarded internally.
   const closeoutByJob = await loadCloseoutBatch(sb, gridJobs.map((j) => ({ id: j.id, job_type: j.job_type })));
   gridJobs.forEach((j) => { j.closeout = closeoutByJob[j.id] || null; });
@@ -175,6 +196,8 @@ export default async function Board({ searchParams }) {
       <EtaBanner reports={etaReports} jobInfo={jobInfo} canContact={canContact} />
 
       <BoardCommand fire={fire} role={role} />
+
+      <HoldingTray jobs={heldWithSuggestions} canAssign={canAssign} />
 
       <BoardSurface techs={techs} jobs={gridJobs} tray={tray} techStatus={techStatus} canAssign={canAssign} canStatus={canStatus} dateStr={dateStr} />
 
