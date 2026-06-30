@@ -1,12 +1,21 @@
 'use client';
 
 // Collect payment for THIS job — fires a Stripe pay-link (customer pays + card fee on a secure page).
-import { useState, useTransition } from 'react';
+import { useState, useRef, useTransition } from 'react';
 import { createJobPayLink } from '../../../my-day/actions';
 import { recordManualPayment } from '../checkoutActions';
 
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 const fld = { flex: 1, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 15 };
+
+function fileToScaledDataUrl(file, max = 1300) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => { const s = Math.min(1, max / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); resolve(c.toDataURL('image/jpeg', 0.85)); };
+    img.onerror = () => resolve(null);
+    const fr = new FileReader(); fr.onload = () => { img.src = fr.result; }; fr.readAsDataURL(file);
+  });
+}
 
 export default function CollectPay({ jobId, defaultAmount, tel }) {
   const [amt, setAmt] = useState(defaultAmount ? String(defaultAmount) : '');
@@ -15,12 +24,16 @@ export default function CollectPay({ jobId, defaultAmount, tel }) {
   const [checkOpen, setCheckOpen] = useState(false);
   const [checkNo, setCheckNo] = useState('');
   const [checkId, setCheckId] = useState('');
+  const [cashOpen, setCashOpen] = useState(false);
+  const [cashPhoto, setCashPhoto] = useState(null);
+  const cashRef = useRef();
   const [paid, setPaid] = useState(null); // { method, total, checkNumber }
   const [pending, start] = useTransition();
   const amtNum = Number(amt);
   const valid = amtNum > 0;
   const make = () => { setErr(null); start(async () => { const r = await createJobPayLink(jobId, amtNum); if (r.ok) setLink(r); else setErr(r.msg); }); };
-  const takeCash = () => { setErr(null); start(async () => { const r = await recordManualPayment(jobId, { method: 'cash', amountDollars: amtNum }); if (r.ok) setPaid({ method: 'cash', total: r.totalDollars }); else setErr(r.msg); }); };
+  const pickCash = async (e) => { const f = e.target.files && e.target.files[0]; if (!f) return; const url = await fileToScaledDataUrl(f); setCashPhoto(url); e.target.value = ''; };
+  const takeCash = () => { setErr(null); if (!cashPhoto) { setErr('Take a photo of the cash fanned out first.'); return; } start(async () => { const r = await recordManualPayment(jobId, { method: 'cash', amountDollars: amtNum, cashPhoto }); if (r.ok) setPaid({ method: 'cash', total: r.totalDollars }); else setErr(r.msg); }); };
   const takeCheck = () => { setErr(null); if (!checkNo.trim() || !checkId.trim()) { setErr('Enter the check number and the ID written on the check.'); return; } start(async () => { const r = await recordManualPayment(jobId, { method: 'check', amountDollars: amtNum, checkNumber: checkNo, idOnCheck: checkId }); if (r.ok) setPaid({ method: 'check', total: r.totalDollars, checkNumber: r.checkNumber }); else setErr(r.msg); }); };
 
   if (paid) return (
@@ -43,9 +56,17 @@ export default function CollectPay({ jobId, defaultAmount, tel }) {
 
           {/* Cash + check up front — no fee. Check captures the check # + the ID written on it. */}
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <button onClick={takeCash} disabled={pending || !valid} className="btn btn-ghost" style={{ flex: 1, opacity: (pending || !valid) ? 0.55 : 1 }}>💵 Cash</button>
+            <button onClick={() => setCashOpen((v) => !v)} disabled={!valid} className="btn btn-ghost" style={{ flex: 1, opacity: !valid ? 0.55 : 1, borderColor: cashOpen ? 'var(--green)' : undefined, color: cashOpen ? 'var(--green)' : undefined }}>💵 Cash</button>
             <button onClick={() => setCheckOpen((v) => !v)} disabled={!valid} className="btn btn-ghost" style={{ flex: 1, opacity: !valid ? 0.55 : 1, borderColor: checkOpen ? 'var(--amber)' : undefined, color: checkOpen ? 'var(--amber)' : undefined }}>🧾 Check</button>
           </div>
+          {cashOpen && (
+            <div style={{ marginTop: 8, padding: 10, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--green)', display: 'grid', gap: 8 }}>
+              <div style={{ fontSize: 11.5, color: 'var(--fg-2)', lineHeight: 1.45 }}>📸 <strong>Fan the bills out and snap a photo</strong> — proof of the cash collected. Goes to the office, not the customer.</div>
+              <input ref={cashRef} type="file" accept="image/*" capture="environment" onChange={pickCash} style={{ display: 'none' }} />
+              <button onClick={() => cashRef.current && cashRef.current.click()} className="btn btn-ghost" style={{ borderColor: cashPhoto ? 'var(--green)' : 'var(--purple)', color: cashPhoto ? 'var(--green)' : 'var(--purple)' }}>{cashPhoto ? '✓ Cash photo attached — retake' : '📷 Photo the cash (fanned out)'}</button>
+              <button onClick={takeCash} disabled={pending || !valid || !cashPhoto} className="btn" style={{ opacity: (pending || !valid || !cashPhoto) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record cash · ${money(amtNum)}`}</button>
+            </div>
+          )}
           {checkOpen && (
             <div style={{ marginTop: 8, padding: 10, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--amber-dim)', display: 'grid', gap: 8 }}>
               <label style={{ fontSize: 11, color: 'var(--fg-2)' }}>Check number

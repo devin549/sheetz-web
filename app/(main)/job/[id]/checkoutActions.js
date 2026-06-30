@@ -3,6 +3,7 @@
 // In-person card-reader (WisePOS E) collection at job close-out — the "Collect now" half of the close-out
 // checkout (the "Send link" half is createJobPayLink in my-day/actions). Server-driven: we push a
 // card_present PaymentIntent to a reader, the customer taps, we poll until it settles. No card data here.
+import { randomUUID } from 'node:crypto';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
@@ -222,6 +223,21 @@ export async function recordManualPayment(jobId, payload) {
   const checkNumber = String(p.checkNumber || '').trim().slice(0, 40);
   const idOnCheck = String(p.idOnCheck || '').trim().slice(0, 60);
   if (method === 'check' && (!checkNumber || !idOnCheck)) return { ok: false, msg: 'A check needs a check number and the ID written on it.' };
+
+  // CASH requires a photo of the bills FANNED OUT — proof of what was actually collected (anti-skim). Store it
+  // on the job as a cash_proof photo (office-visible, not customer-visible) before recording the payment.
+  if (method === 'cash') {
+    const m = String(p.cashPhoto || '').match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
+    if (!m) return { ok: false, msg: 'Snap a photo of the cash fanned out first.' };
+    const mime = m[1]; const bytes = Buffer.from(m[2], 'base64');
+    if (!bytes.length || bytes.length > 10 * 1024 * 1024) return { ok: false, msg: 'Cash photo is too large or empty — retake it.' };
+    const id = randomUUID();
+    const ext = mime === 'image/jpeg' ? 'jpg' : mime.split('/')[1];
+    const path = `jobs/${jobId}/${new Date().toISOString().slice(0, 10)}/${id}-cash.${ext}`;
+    const upPhoto = await sb.storage.from('job-photos').upload(path, bytes, { contentType: mime, upsert: false });
+    if (upPhoto.error) return { ok: false, msg: 'Cash photo: ' + upPhoto.error.message };
+    try { await sb.from('job_photos').insert({ id, job_id: jobId, storage_bucket: 'job-photos', storage_path: path, file_name: `cash.${ext}`, mime_type: mime, size_bytes: bytes.length, kind: 'cash_proof', caption: `Cash collected — $${dollars} (fanned)`, customer_visible: false, uploaded_by: g.user.id, uploaded_by_email: g.user.email, uploaded_by_name: g.profile.name || g.user.email }); } catch (_) {}
+  }
 
   const row = { job_id: jobId, payment_disposition: method === 'cash' ? 'paid_cash' : 'check', invoice_status: 'receipt_given', updated_by: g.profile.name || g.profile.email || 'field-collect', updated_at: new Date().toISOString() };
   if (method === 'cash') row.cash_status = 'pending';                          // needs turning in to the office
