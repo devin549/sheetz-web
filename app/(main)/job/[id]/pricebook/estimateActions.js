@@ -132,6 +132,13 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
   let snapLines = snapOf(lines);
   if (!snapLines.length) return { ok: false, msg: 'No sellable items in the cart.' };
 
+  // Off-book CUSTOM lines bypass the catalog floor + margin-watch — flag them to the office (#dispatch) for
+  // visibility (the "flag for manager review" rule). Best-effort; never blocks the estimate.
+  const customLines = snapLines.filter((l) => l.custom);
+  if (customLines.length) {
+    try { await postToDiscord(`📝 **Off-book custom pricing** on an estimate${job.job_number ? ` · job ${job.job_number}` : ''} by ${c.profile.name || c.user.email}:\n${customLines.map((l) => `• ${l.name} — $${Number(l.price || 0).toLocaleString()}`).join('\n')}\nReview in the job's 💵 Quote.`, { to: 'office' }); } catch (_) {}
+  }
+
   // Bundle-level Good/Better/Best CAVEATS (migration 127, loss-contrast lever). Best-effort + defensive: absent
   // before the migration → no caveats → the close renders nothing for that lever. Honest copy authored by the
   // owner/GBB builder; we only thread + render it.
