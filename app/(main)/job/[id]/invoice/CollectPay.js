@@ -38,17 +38,11 @@ export default function CollectPay({ jobId, defaultAmount, tel }) {
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <span style={{ fontSize: 16, fontWeight: 700 }}>$</span>
             <input type="number" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="0.00" style={{ flex: 1, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 15 }} />
-            <button onClick={make} disabled={pending || !(Number(amt) > 0)} className="btn" style={{ opacity: pending || !(Number(amt) > 0) ? 0.6 : 1 }}>{pending ? '…' : 'Create link'}</button>
           </div>
-          <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>Customer pays this + a 4% card fee on a secure Stripe page.</div>
+          <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>Customer pays this. <strong>Card</strong> adds a 4% fee; <strong>cash &amp; check</strong> don’t.</div>
 
-          {/* IN PERSON — cash or check (no fee). Check captures the check # + the ID written on it. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 8px' }}>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-            <span className="muted" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em' }}>or take it in person</span>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          {/* Cash + check up front — no fee. Check captures the check # + the ID written on it. */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
             <button onClick={takeCash} disabled={pending || !valid} className="btn btn-ghost" style={{ flex: 1, opacity: (pending || !valid) ? 0.55 : 1 }}>💵 Cash</button>
             <button onClick={() => setCheckOpen((v) => !v)} disabled={!valid} className="btn btn-ghost" style={{ flex: 1, opacity: !valid ? 0.55 : 1, borderColor: checkOpen ? 'var(--amber)' : undefined, color: checkOpen ? 'var(--amber)' : undefined }}>🧾 Check</button>
           </div>
@@ -64,6 +58,14 @@ export default function CollectPay({ jobId, defaultAmount, tel }) {
               <button onClick={takeCheck} disabled={pending || !valid || !checkNo.trim() || !checkId.trim()} className="btn" style={{ opacity: (pending || !valid || !checkNo.trim() || !checkId.trim()) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record check · ${money(amtNum)}`}</button>
             </div>
           )}
+
+          {/* Not on the spot? Send a card pay link instead. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 8px' }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            <span className="muted" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em' }}>or send it to them</span>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+          </div>
+          <button onClick={make} disabled={pending || !valid} className="btn btn-ghost" style={{ width: '100%', fontSize: 12.5, opacity: (pending || !valid) ? 0.55 : 1 }}>{pending ? '…' : '✉️ Send a pay link (card)'}</button>
           {err && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 6 }}>{err}</div>}
         </>
       ) : (

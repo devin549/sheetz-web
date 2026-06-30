@@ -146,7 +146,7 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
         <span style={{ fontSize: 16, fontWeight: 700 }}>$</span>
         <input type="number" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} placeholder="0.00" style={input} />
       </div>
-      <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>Customer pays this + a 4% card fee.</div>
+      <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>Customer pays this. <strong>Card</strong> adds a 4% fee; <strong>cash &amp; check</strong> don’t.</div>
 
       {!link ? (
         <>
@@ -154,26 +154,10 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
           <button onClick={startReader} disabled={pending || !valid || !stripeReady || !hasReader} className="btn" style={{ width: '100%', marginTop: 10, opacity: (pending || !valid || !stripeReady || !hasReader) ? 0.55 : 1 }}>
             {pending && mode === 'reader' ? '…' : '💳 Collect on reader'}{hasReader ? '  ·  preferred' : ''}
           </button>
-          {hasReader && <div className="muted" style={{ fontSize: 10.5, marginTop: 5, textAlign: 'center' }}>Use the reader whenever you can — it’s cheaper and more secure than the options below.</div>}
+          {hasReader && <div className="muted" style={{ fontSize: 10.5, marginTop: 5, textAlign: 'center' }}>Use the reader whenever you can — cheaper + more secure.</div>}
 
-          {/* Fallback: send the customer a pay link. */}
-          <button onClick={makeLink} disabled={pending || !valid || !stripeReady} className="btn btn-ghost" style={{ width: '100%', marginTop: 8, opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>
-            {pending && mode === 'link' ? '…' : '✉️ Send pay link'}
-          </button>
-
-          {/* LAST RESORT: bank transfer — no card fee but slow + can bounce. */}
-          <button onClick={makeAch} disabled={pending || !valid || !stripeReady} className="btn btn-ghost" style={{ width: '100%', marginTop: 8, fontSize: 12.5, opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>
-            {pending && mode === 'ach' ? '…' : '🏦 Send bank (ACH) link — last resort'}
-          </button>
-          <div className="muted" style={{ fontSize: 10.5, marginTop: 5, textAlign: 'center' }}>No 4% card fee, but takes ~4 business days and can bounce. Use only if card won’t work.</div>
-
-          {/* IN PERSON — cash or check. No Stripe, no fee. Check captures the check # + the ID written on it. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 8px' }}>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-            <span className="muted" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em' }}>or take it in person</span>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          {/* Cash + check — in person, no Stripe, no fee. Check captures the check # + the ID written on it. */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button onClick={takeCash} disabled={pending || !valid} className="btn btn-ghost" style={{ flex: 1, opacity: (pending || !valid) ? 0.55 : 1 }}>💵 Cash</button>
             <button onClick={() => setCheckOpen((v) => !v)} disabled={!valid} className="btn btn-ghost" style={{ flex: 1, opacity: !valid ? 0.55 : 1, borderColor: checkOpen ? 'var(--amber)' : undefined, color: checkOpen ? 'var(--amber)' : undefined }}>🧾 Check</button>
           </div>
@@ -189,6 +173,20 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
               <button onClick={takeCheck} disabled={pending || !valid || !checkNo.trim() || !checkId.trim()} className="btn" style={{ opacity: (pending || !valid || !checkNo.trim() || !checkId.trim()) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record check · ${money(amtNum)}`}</button>
             </div>
           )}
+
+          {/* Not paying on the spot? Send it to them — pay link or bank transfer (card-not-present). */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 8px' }}>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+            <span className="muted" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em' }}>or send it to them</span>
+            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+          </div>
+          <button onClick={makeLink} disabled={pending || !valid || !stripeReady} className="btn btn-ghost" style={{ width: '100%', fontSize: 12.5, opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>
+            {pending && mode === 'link' ? '…' : '✉️ Send a pay link (text / email)'}
+          </button>
+          <button onClick={makeAch} disabled={pending || !valid || !stripeReady} className="btn btn-ghost" style={{ width: '100%', marginTop: 8, fontSize: 12.5, opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>
+            {pending && mode === 'ach' ? '…' : '🏦 Bank transfer (ACH)'}
+          </button>
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 5, textAlign: 'center' }}>Bank transfer skips the card fee but is slower — only if a card won’t work.</div>
         </>
       ) : (
         <div style={{ marginTop: 10 }}>
