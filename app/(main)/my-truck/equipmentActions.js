@@ -81,9 +81,14 @@ async function applyScan(action, { unitId, location, lat, lng, note }) {
   if (action === 'checkin') { patch.status = 'in'; patch.held_by = null; patch.held_at = null; }
   // 'locate' leaves custody as-is, just moves the pin.
   // On checkout, tie the machine to the scanning tech's active job so that job's revenue rolls up to it (P&L).
+  // Only auto-link when there's EXACTLY ONE active job — with 2+, a blind "earliest" pick would mis-attribute
+  // the machine's revenue to the wrong job, so we attach nothing rather than guess.
   let job = null;
   if (action === 'checkout' && c.profile?.tech_id) {
-    try { const { data } = await c.sb.from('jobs').select('id, job_number').eq('tech_id', c.profile.tech_id).in('status', ['enroute', 'on_site', 'onsite', 'rolling']).order('scheduled_at', { ascending: true }).limit(1).maybeSingle(); job = data || null; } catch (_) {}
+    try {
+      const { data } = await c.sb.from('jobs').select('id, job_number').eq('tech_id', c.profile.tech_id).in('status', ['enroute', 'on_site', 'onsite', 'rolling']).order('scheduled_at', { ascending: true }).limit(2);
+      if ((data || []).length === 1) job = data[0];
+    } catch (_) {}
   }
   try {
     const { error } = await c.sb.from('equipment_fleet').update(patch).eq('id', id);
