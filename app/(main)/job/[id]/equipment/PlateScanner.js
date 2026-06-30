@@ -33,10 +33,11 @@ export default function PlateScanner({ jobType = '', jobId = '' }) {
   const [plate, setPlate] = useState(null);
   const [err, setErr] = useState(null);
   const [saved, setSaved] = useState(null);
+  const [savedWarn, setSavedWarn] = useState(null);
 
   const save = () => start(async () => {
     const r = await saveEquipment(jobId, plate, jobType);
-    setSaved(r.msg);
+    setSaved(r.msg); setSavedWarn(r.warn || null);
     if (r.ok) router.refresh();
   });
 
@@ -90,6 +91,7 @@ export default function PlateScanner({ jobType = '', jobId = '' }) {
               💾 Save to this location’s equipment
             </button>
           ) : <div style={{ fontSize: 12, marginTop: 10, color: 'var(--green)', fontWeight: 700 }}>✓ {saved}</div>}
+          {savedWarn && <div style={{ marginTop: 8, padding: '9px 11px', borderRadius: 8, background: 'rgba(239,83,80,.14)', border: '2px solid var(--red)', fontSize: 12.5, fontWeight: 800, color: 'var(--red)', lineHeight: 1.4 }}>{savedWarn}</div>}
           <div className="muted" style={{ fontSize: 10.5, marginTop: 8 }}>Saving keeps the model/serial/fuel on file. Snap the plate above to also save the photo.</div>
         </div>
       )}

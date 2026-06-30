@@ -21,21 +21,31 @@ async function me() {
 const WH_FUEL = { wh_gas: 'gas', wh_electric: 'electric', wh_propane: 'propane' };
 async function resolveAudience(sb, key) {
   let custIds = null; // null = every customer with an email
-  // Aging water heaters by fuel — customers whose scanned data plate shows a 9+ yr-old unit of that fuel.
+  // Aging water heaters by fuel. Use each customer's NEWEST water heater on file — so once a unit is replaced
+  // (the tech scans the new plate → a newer row), that customer drops off the aging list automatically.
   if (WH_FUEL[key]) {
     const fuel = WH_FUEL[key];
     const maxYear = new Date().getFullYear() - WH_AGE_YEARS;
-    const set = new Set();
+    const newest = new Map(); // customer_id → { year, fuel, created_at } for their latest water heater
     let from = 0;
     while (true) {
-      const { data, error } = await sb.from('customer_equipment').select('customer_id, fuel_type, year').not('customer_id', 'is', null).not('year', 'is', null).lte('year', maxYear).range(from, from + 999);
+      const { data, error } = await sb.from('customer_equipment').select('customer_id, fuel_type, year, type, created_at').not('customer_id', 'is', null).range(from, from + 999);
       if (error || !data || !data.length) break;
       data.forEach((e) => {
-        const f = String(e.fuel_type || '').toLowerCase();
-        const match = fuel === 'gas' ? (/gas/.test(f) && !/propane|lp\b/.test(f)) : fuel === 'propane' ? /propane|lp\b/.test(f) : /electric/.test(f);
-        if (match && e.customer_id) set.add(e.customer_id);
+        if (/furnace|boiler|hvac|\bac\b|softener|sump|pump/i.test(String(e.type || ''))) return; // not a water heater
+        const yr = Number(e.year) || 0;
+        const cur = newest.get(e.customer_id);
+        const newer = !cur || yr > cur.year || (yr === cur.year && new Date(e.created_at) > new Date(cur.created_at));
+        if (newer) newest.set(e.customer_id, { year: yr, fuel: String(e.fuel_type || '').toLowerCase(), created_at: e.created_at });
       });
       if (data.length < 1000) break; from += 1000;
+    }
+    const set = new Set();
+    for (const [cid, u] of newest) {
+      if (!u.year || u.year > maxYear) continue; // newest unit is recent → replaced / not aging → skip
+      const f = u.fuel;
+      const match = fuel === 'gas' ? (/gas/.test(f) && !/propane|lp\b/.test(f)) : fuel === 'propane' ? /propane|lp\b/.test(f) : /electric/.test(f);
+      if (match) set.add(cid);
     }
     custIds = [...set];
     if (!custIds.length) return { recipients: [], skipped: 0 };

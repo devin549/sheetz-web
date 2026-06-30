@@ -50,6 +50,20 @@ export async function saveEquipment(jobId, plate = {}, type = '') {
   let customerId = null;
   try { const { data: j } = await sb.from('jobs').select('customer_id, job_type').eq('id', jobId).maybeSingle(); customerId = j?.customer_id || null; if (!type) type = j?.job_type || ''; } catch (_) {}
 
+  // ⚠ Gas vs propane is a HARD safety rule — NEVER swap them (different supply line + orifice; the wrong unit
+  // is dangerous). If this address's last water heater was the other gas type, flag it loudly.
+  const fuelCat = (f) => { const s = String(f || '').toLowerCase(); if (/propane|lp\b/.test(s)) return 'propane'; if (/gas/.test(s)) return 'gas'; if (/electric/.test(s)) return 'electric'; return ''; };
+  const newCat = fuelCat(plate.fuelType);
+  let fuelWarn = null;
+  if (customerId && (newCat === 'gas' || newCat === 'propane')) {
+    try {
+      const { data: prior } = await sb.from('customer_equipment').select('fuel_type, type, created_at').eq('customer_id', customerId).order('created_at', { ascending: false }).limit(25);
+      const priorWH = (prior || []).find((e) => !/furnace|boiler|hvac|\bac\b|softener|sump|pump/i.test(String(e.type || '')) && (fuelCat(e.fuel_type) === 'gas' || fuelCat(e.fuel_type) === 'propane'));
+      const priorCat = priorWH ? fuelCat(priorWH.fuel_type) : '';
+      if (priorCat && priorCat !== newCat) fuelWarn = `⚠ STOP — this address was ${priorCat.toUpperCase()} but this plate reads ${newCat === 'gas' ? 'NATURAL GAS' : newCat.toUpperCase()}. Never swap natural gas ↔ propane — different supply + orifice, it's dangerous. Confirm the gas type before you install.`;
+    } catch (_) {}
+  }
+
   const row = {
     customer_id: customerId, job_id: jobId || null, type: clean(type, 60) || 'Equipment',
     brand: clean(plate.brand, 80) || null, model: clean(plate.model, 80) || null, serial: clean(plate.serial, 80) || null,
@@ -60,7 +74,7 @@ export async function saveEquipment(jobId, plate = {}, type = '') {
   const { error } = await sb.from('customer_equipment').insert(row);
   if (error) return { ok: false, msg: missing(error) ? 'Run supabase/103_customer_equipment.sql first.' : error.message };
 
-  try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'equipment.save', entity: 'customer_equipment', entity_id: jobId ? String(jobId) : '', detail: { brand: row.brand, model: row.model, fuel: row.fuel_type } }); } catch (_) {}
+  try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'equipment.save', entity: 'customer_equipment', entity_id: jobId ? String(jobId) : '', detail: { brand: row.brand, model: row.model, fuel: row.fuel_type, fuel_mismatch: !!fuelWarn } }); } catch (_) {}
   revalidatePath(`/job/${jobId}/equipment`);
-  return { ok: true, msg: `Saved ${[row.brand, row.model].filter(Boolean).join(' ') || 'equipment'} to this location.` };
+  return { ok: true, msg: `Saved ${[row.brand, row.model].filter(Boolean).join(' ') || 'equipment'} to this location.`, warn: fuelWarn };
 }
