@@ -9,6 +9,7 @@ import HireDateAdmin from './HireDateAdmin';
 import OnCallBanners from '../cal/OnCallBanners';
 import { loadOnCallWindows } from '@/lib/onCall';
 import { vacationStatus, lastAnniversary, holidaysForfeited, fmtHours, HOLIDAY_DAYS, UNEXCUSED_FORFEIT } from '@/lib/pto';
+import { noticeDays, conflictsWith } from '@/lib/techAvailability';
 
 const fmtD = (s) => { if (!s) return ''; try { return new Date(s + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }); } catch { return s; } };
 const KIND_ICON = { vacation: '🏖', sick: '🤒', personal: '🙋', unpaid: '💸' };
@@ -98,7 +99,7 @@ export default async function Pto() {
 
   // Real time-off requests: the tech's own + (for approvers) the pending queue. Fail-soft.
   const isApprover = can(role, 'manageUsers') || can(role, 'assignJobs') || can(role, 'seeCrew');
-  let myReqs = [], pendingReqs = [], myUnexcused = 0, recentAbsences = [];
+  let myReqs = [], pendingReqs = [], myUnexcused = 0, recentAbsences = [], approvedTimeOff = [];
   let hireDate = null, payType = '', vacPullDays = 0, roster = [], myVacDays = 5;
   // Calendar side (merged Cal+PTO): on-call status this week + today's job count.
   let onCall = '', todayJobs = 0, onCallWindows = [];
@@ -114,7 +115,11 @@ export default async function Pto() {
     try { onCallWindows = (await loadOnCallWindows(sb, name)).map((w) => ({ ...w, acked: ackedIds.includes(w.id) })); } catch (_) {}
     try { if (profile?.tech_id) { const s = new Date(); s.setHours(0, 0, 0, 0); const e = new Date(); e.setHours(23, 59, 59, 999); const { count } = await sb.from('jobs').select('id', { count: 'exact', head: true }).eq('tech_id', profile.tech_id).gte('scheduled_at', s.toISOString()).lte('scheduled_at', e.toISOString()); todayJobs = count || 0; } } catch (_) {}
     try { const { data } = await sb.from('time_off_requests').select('id, kind, start_date, end_date, status, reason, decided_by_name, decision_note').eq('user_id', user.id).order('created_at', { ascending: false }).limit(12); myReqs = data || []; } catch (_) {}
-    if (isApprover) { try { const { data } = await sb.from('time_off_requests').select('id, tech_name, kind, start_date, end_date, reason').eq('status', 'pending').order('start_date', { ascending: true }).limit(40); pendingReqs = data || []; } catch (_) {} }
+    if (isApprover) {
+      try { const { data } = await sb.from('time_off_requests').select('id, user_id, tech_name, kind, start_date, end_date, reason').eq('status', 'pending').order('start_date', { ascending: true }).limit(40); pendingReqs = data || []; } catch (_) {}
+      // All approved time-off → overlap detection for the "are you sure, others are off then" approval warning.
+      try { const { data } = await sb.from('time_off_requests').select('user_id, tech_name, kind, start_date, end_date').eq('status', 'approved').gte('start_date', new Date(Date.now() - 366 * 86400000).toISOString().slice(0, 10)); approvedTimeOff = data || []; } catch (_) {}
+    }
     // Real unexcused-this-year count (policy: 2 = forfeit holidays). Manager sees recent absences to override.
     try { const { count } = await sb.from('absences').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'unexcused').gte('absence_date', yearStart); myUnexcused = count || 0; } catch (_) {}
     if (isApprover) { try { const { data } = await sb.from('absences').select('id, tech_name, absence_date, status, reason, doc_path, decided_by_name').gte('absence_date', yearStart).order('absence_date', { ascending: false }).limit(30); recentAbsences = data || []; } catch (_) {} }
@@ -249,7 +254,12 @@ export default async function Pto() {
       {isApprover && pendingReqs.length > 0 && (
         <div className="card" style={{ marginTop: 14, borderLeft: '3px solid var(--amber)' }}>
           <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>🗳 Pending approvals · {pendingReqs.length}</div>
-          <PtoApprovals items={pendingReqs.map((r) => ({ ...r, label: `${KIND_ICON[r.kind] || ''} ${r.tech_name || 'Tech'} · ${fmtD(r.start_date)}${r.end_date ? `–${fmtD(r.end_date)}` : ''}${r.reason ? ` — ${r.reason}` : ''}` }))} />
+          <PtoApprovals items={pendingReqs.map((r) => ({
+            id: r.id,
+            label: `${KIND_ICON[r.kind] || ''} ${r.tech_name || 'Tech'} · ${fmtD(r.start_date)}${r.end_date ? `–${fmtD(r.end_date)}` : ''}${r.reason ? ` — ${r.reason}` : ''}`,
+            notice: noticeDays(r.start_date),
+            conflicts: conflictsWith(approvedTimeOff, r.start_date, r.end_date, r.user_id).map((c) => ({ name: c.tech_name || 'Tech', start: fmtD(c.start_date), end: c.end_date ? fmtD(c.end_date) : '' })),
+          }))} />
         </div>
       )}
 

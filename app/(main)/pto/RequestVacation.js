@@ -4,6 +4,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { requestTimeOff } from './actions';
+import { noticeDays, SHORT_NOTICE_DAYS } from '@/lib/techAvailability';
 
 // CB offers no sick PTO — sick days are handled as excused absences (with a doctor's note). Planned
 // time off is vacation / personal / unpaid only.
@@ -14,10 +15,13 @@ export default function RequestVacation() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState('vacation');
+  const [startDate, setStartDate] = useState('');
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
+  const nd = noticeDays(startDate);
+  const shortNotice = nd != null && nd >= 0 && nd < SHORT_NOTICE_DAYS;
 
-  const submit = (form) => { setMsg(null); start(async () => { const r = await requestTimeOff(form); setMsg(r); if (r.ok) { setOpen(false); router.refresh(); } }); };
+  const submit = (form) => { setMsg(null); start(async () => { const r = await requestTimeOff(form); setMsg(r); if (r.ok) { setOpen(false); setStartDate(''); router.refresh(); } }); };
 
   return (
     <>
@@ -33,10 +37,11 @@ export default function RequestVacation() {
               ))}
             </div>
             <input type="hidden" name="kind" value={kind} />
-            <label className="muted" style={{ fontSize: 11 }}>From<input type="date" name="start_date" required style={{ ...inp, marginTop: 3 }} /></label>
+            <label className="muted" style={{ fontSize: 11 }}>From<input type="date" name="start_date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} style={{ ...inp, marginTop: 3 }} /></label>
             <label className="muted" style={{ fontSize: 11 }}>To (optional)<input type="date" name="end_date" style={{ ...inp, marginTop: 3 }} /></label>
             <textarea name="reason" rows={2} placeholder="Reason (optional)" style={{ ...inp, resize: 'vertical' }} />
-            <div className="muted" style={{ fontSize: 11 }}>Routes to your Field Supervisor — never auto-approved. Paid types draw from your hourly balance.</div>
+            {shortNotice && <div style={{ fontSize: 11, color: 'var(--amber)', background: 'rgba(255,179,0,0.08)', border: '1px solid var(--amber-dim)', borderRadius: 8, padding: '7px 10px' }}>⚠ Heads up — that’s only <strong>{nd} day{nd === 1 ? '' : 's'}</strong> away. CB asks for <strong>at least 2 weeks notice</strong> when possible. You can still send it; your supervisor will see it’s short notice.</div>}
+            <div className="muted" style={{ fontSize: 11 }}>Routes to your Field Supervisor — never auto-approved. Blocks you off the schedule once approved. Paid types draw from your hourly balance.</div>
             {msg && !msg.ok && <div style={{ color: 'var(--red)', fontSize: 12 }}>{msg.msg}</div>}
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn" type="submit" disabled={pending}>{pending ? 'Sending…' : 'Send request →'}</button>
