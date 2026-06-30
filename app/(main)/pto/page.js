@@ -5,8 +5,10 @@ import RequestVacation from './RequestVacation';
 import PtoApprovals from './PtoApprovals';
 import AbsenceReport from './AbsenceReport';
 import AbsenceOverride from './AbsenceOverride';
+import HireDateAdmin from './HireDateAdmin';
 import OnCallBanners from '../cal/OnCallBanners';
 import { loadOnCallWindows } from '@/lib/onCall';
+import { vacationStatus, lastAnniversary, holidaysForfeited, fmtHours, VACATION_HOURS, HOLIDAY_DAYS, UNEXCUSED_FORFEIT } from '@/lib/pto';
 
 const fmtD = (s) => { if (!s) return ''; try { return new Date(s + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }); } catch { return s; } };
 const KIND_ICON = { vacation: '🏖', sick: '🤒', personal: '🙋', unpaid: '💸' };
@@ -18,9 +20,10 @@ export const dynamic = 'force-dynamic';
 // 5 paid holidays, all at HOURLY rate (no commission), routed through the Field Supervisor. Unexcused-
 // absence rule (2 = forfeit all 5 holidays) matches Tech Sheet AutoFill_412_1e. Holiday/on-call roster
 // is set by OM 30+ days out. All values isolated below = the seam for the live time-off/roster feed.
+// Vacation balance / used / holidays / on-call are now REAL (computed in lib/pto.js from hire_date +
+// time_off + absences). Only the holiday-coverage roster below is still sample data (the live roster feed
+// wires next). pending/paid/nonPaid = illustrative roster rows.
 const pto = {
-  vacationBalance: '40 hrs', usedYtd: '0 hrs', paidHolidays: '5 / yr', onCall: '2 of 8', onCallNext: 'June 14-15',
-  unexcused: 0, unexcusedMax: 2,
   pending: [
     { label: 'June 12 · Fri (vacation)', state: 'PENDING FS', color: 'var(--amber)' },
     { label: 'July 4-7 · Mon-Thu (vacation)', state: 'APPROVED ✓', color: 'var(--green-bright)' },
@@ -96,6 +99,7 @@ export default async function Pto() {
   // Real time-off requests: the tech's own + (for approvers) the pending queue. Fail-soft.
   const isApprover = can(role, 'manageUsers') || can(role, 'assignJobs') || can(role, 'seeCrew');
   let myReqs = [], pendingReqs = [], myUnexcused = 0, recentAbsences = [];
+  let hireDate = null, payType = '', vacPullDays = 0, roster = [];
   // Calendar side (merged Cal+PTO): on-call status this week + today's job count.
   let onCall = '', todayJobs = 0, onCallWindows = [];
   const ackedIds = Array.isArray(profile.prefs?.oncall_acked) ? profile.prefs.oncall_acked : [];
@@ -114,8 +118,28 @@ export default async function Pto() {
     // Real unexcused-this-year count (policy: 2 = forfeit holidays). Manager sees recent absences to override.
     try { const { count } = await sb.from('absences').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'unexcused').gte('absence_date', yearStart); myUnexcused = count || 0; } catch (_) {}
     if (isApprover) { try { const { data } = await sb.from('absences').select('id, tech_name, absence_date, status, reason, doc_path, decided_by_name').gte('absence_date', yearStart).order('absence_date', { ascending: false }).limit(30); recentAbsences = data || []; } catch (_) {} }
+    // Real vacation balance inputs: hire date (anniversary grant) + pay type. For salary/supervisors, sick &
+    // personal days PULL from vacation — count those since the anniversary so the balance reflects it. Fail-soft
+    // (pre-153 has no hire_date; pre-152 has no category) so /pto never breaks if a migration is behind.
+    try { if (profile?.tech_id) { const { data: pp } = await sb.from('pay_profiles').select('hire_date, pay_type').eq('tech_id', profile.tech_id).maybeSingle(); if (pp) { hireDate = pp.hire_date || null; payType = String(pp.pay_type || '').toLowerCase(); } } } catch (_) {}
+    if (payType === 'salary' && hireDate) {
+      try { const anniv = lastAnniversary(hireDate); const { count } = await sb.from('absences').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('absence_date', anniv.toISOString().slice(0, 10)).in('category', ['sick', 'doctor', 'personal', 'other']); vacPullDays = count || 0; } catch (_) {}
+    }
+    // Office roster (crew with a tech_id) + their current hire dates, for the hire-date editor below.
+    if (isApprover) {
+      try {
+        const { data: profs } = await sb.from('profiles').select('name, role, tech_id, active').not('tech_id', 'is', null).eq('active', true);
+        const ids = (profs || []).map((p) => p.tech_id).filter(Boolean);
+        let byTech = {};
+        if (ids.length) { try { const { data: pps } = await sb.from('pay_profiles').select('tech_id, hire_date').in('tech_id', ids); (pps || []).forEach((p) => { byTech[p.tech_id] = p.hire_date || null; }); } catch (_) {} }
+        roster = (profs || []).filter((p) => p.name).map((p) => ({ techId: p.tech_id, name: p.name, role: p.role || 'tech', hireDate: byTech[p.tech_id] || null })).sort((a, b) => a.name.localeCompare(b.name));
+      } catch (_) {}
+    }
   }
-  const pct = Math.min(100, (myUnexcused / pto.unexcusedMax) * 100);
+  // The real vacation picture — replaces the old hardcoded '40 hrs'.
+  const vac = vacationStatus({ hireDate, timeOff: myReqs, vacationPullDays: vacPullDays });
+  const forfeited = holidaysForfeited(myUnexcused);
+  const pct = Math.min(100, (myUnexcused / UNEXCUSED_FORFEIT) * 100);
 
   return (
     <div className="wrap" style={{ maxWidth: 760 }}>
@@ -140,10 +164,19 @@ export default async function Pto() {
       <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>CB benefit: 1 week vacation (40 hrs) + 5 paid holidays · all paid at HOURLY rate (no commission) · routes through Field Supervisor.</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-        <StatCard h="Vacation Balance" v={pto.vacationBalance} d="1 full week · resets Jan 1" dc="var(--green)" />
-        <StatCard h="Used YTD" v={pto.usedYtd} d="0 days taken" />
-        <StatCard h="Paid Holidays" v={pto.paidHolidays} d="$X each · 8 hrs hourly" dc="var(--green-bright)" />
-        <StatCard h="On-Call Weekends" v={pto.onCall} d={`next: ${pto.onCallNext}`} dc="#58a6ff" />
+        <StatCard h="Vacation Balance"
+          v={!vac.hasHireDate ? '—' : vac.earned ? fmtHours(vac.balanceHours) : '0 hrs'}
+          d={!vac.hasHireDate ? 'office: add hire date' : vac.earned ? `of ${VACATION_HOURS} hrs · use it or lose it` : `earns ${VACATION_HOURS} hrs at 1-yr mark`}
+          dc="var(--green)" />
+        <StatCard h="Used this year"
+          v={vac.hasHireDate ? fmtHours(vac.usedHours) : '—'}
+          d={vac.overdrawnHours > 0 ? `${fmtHours(vac.overdrawnHours)} over → pro-rated dock` : 'since your anniversary'}
+          dc={vac.overdrawnHours > 0 ? 'var(--red)' : 'var(--fg-3)'} />
+        <StatCard h="Paid Holidays"
+          v={forfeited ? '0 / 5' : vac.holidaysEligible ? `${HOLIDAY_DAYS} / yr` : 'pending'}
+          d={forfeited ? '🚨 forfeited · 2 unexcused' : vac.holidaysEligible ? '8 hrs hourly each' : vac.hasHireDate ? `eligible in ${vac.daysToHolidayEligible}d` : 'after 90 days'}
+          dc={forfeited ? 'var(--red)' : 'var(--green-bright)'} />
+        <StatCard h="On-Call" v={onCall ? '✓ YES' : '—'} d={onCall || 'not scheduled this week'} dc="#58a6ff" />
       </div>
 
       {/* UNEXCUSED ABSENCE COUNTER */}
@@ -155,7 +188,7 @@ export default async function Pto() {
             <div style={{ fontSize: 11, color: 'var(--fg-2)', marginTop: 2 }}>Rule: <strong style={{ color: '#ffb74d' }}>2 unexcused = ALL 5 holidays FORFEITED</strong> for the year. No exceptions, no humor.</div>
           </div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 30, fontWeight: 900, color: '#4caf50', lineHeight: 1 }}>{myUnexcused} / {pto.unexcusedMax}</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 30, fontWeight: 900, color: '#4caf50', lineHeight: 1 }}>{myUnexcused} / {UNEXCUSED_FORFEIT}</div>
             <div style={{ fontSize: 9, color: '#a5d6a7', textTransform: 'uppercase', fontWeight: 800 }}>{myUnexcused === 0 ? 'CLEAR ✓' : myUnexcused === 1 ? 'WARNING' : 'FORFEITED'}</div>
           </div>
         </div>
@@ -181,8 +214,8 @@ export default async function Pto() {
         </div>
         <div style={{ fontSize: 11, color: 'var(--fg-2)', marginBottom: 10, lineHeight: 1.5 }}>When you miss work, your paid time off burns in this order before salary docking kicks in:</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <BurnStep n="1" accent="#4caf50" tint="rgba(76,175,80,0.06)" title="🎄 Holiday days absorb first" sub="5 days/yr · 8hr × $15 hourly each ($120/holiday)" right={<span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: '#4caf50', fontWeight: 800 }}>5 left</span>} />
-          <BurnStep n="2" accent="var(--amber)" tint="rgba(255,179,0,0.06)" title="🏖 Vacation absorbs next" sub="40 hrs/yr · 1 full week · hourly base rate, no commission" right={<span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: 'var(--amber)', fontWeight: 800 }}>40 hrs left</span>} />
+          <BurnStep n="1" accent="#4caf50" tint="rgba(76,175,80,0.06)" title="🎄 Holiday days absorb first" sub="5 days/yr · 8hr × hourly base each" right={<span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: forfeited ? '#ff5252' : '#4caf50', fontWeight: 800 }}>{forfeited ? 'forfeited' : `${HOLIDAY_DAYS} left`}</span>} />
+          <BurnStep n="2" accent="var(--amber)" tint="rgba(255,179,0,0.06)" title="🏖 Vacation absorbs next" sub="40 hrs/yr · 1 full week · hourly base rate, no commission" right={<span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: 'var(--amber)', fontWeight: 800 }}>{vac.hasHireDate ? `${fmtHours(vac.balanceHours)} left` : 'set hire date'}</span>} />
           <BurnStep n="3" accent="#ff5252" tint="rgba(255,82,82,0.06)" title="💸 PRO-RATED salary dock" sub="Once Holiday + Vacation both exhausted → salary deducted proportionally for missed time" right={<span style={{ background: '#ff5252', color: '#fff', padding: '2px 8px', borderRadius: 6, fontSize: 9, fontWeight: 800 }}>LAST RESORT</span>} />
         </div>
         <div style={{ background: 'rgba(255,138,101,0.08)', borderLeft: '3px solid #ff8a65', padding: '7px 10px', marginTop: 10, borderRadius: '0 5px 5px 0', fontSize: 10, color: 'var(--fg-2)', lineHeight: 1.5 }}>
@@ -198,6 +231,9 @@ export default async function Pto() {
         • <strong style={{ color: '#ffb74d' }}>2+ unexcused absences/yr</strong> = ALL 5 holidays FORFEITED for the year · auto-calc via Tech Sheet · manager email + audit log<br />
         • Excused absence (sick w/ notice, doctor note, family emergency w/ Tracey approval) does NOT count against you · UNEXCUSED = no call/no show or last-minute bail without legit reason
       </div>
+
+      {/* Office: set hire dates — the anchor for vacation anniversary + 90-day holiday eligibility */}
+      {isApprover && <HireDateAdmin roster={roster} />}
 
       {/* Manager: recent absences — policy already decided; override is logged */}
       {isApprover && recentAbsences.length > 0 && (
