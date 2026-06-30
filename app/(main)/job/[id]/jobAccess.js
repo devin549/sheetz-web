@@ -49,6 +49,18 @@ export async function loadJob(sb, jobId) {
   return res;
 }
 
+// Is this user a non-lead tech added to the job via a SEGMENT (2nd tech / work segment — NOT a helper)?
+// Such a tech may VIEW the job but is locked to photos + receipts (the page enforces it). Helpers are
+// excluded on purpose — we don't hand the photo/receipt duty to helpers (keeps the lead tech honest).
+export async function segmentTechHere(sb, profile, jobId) {
+  const tid = profile?.tech_id;
+  if (!tid || !jobId) return false;
+  try {
+    const { data } = await sb.from('job_segments').select('kind').eq('parent_job_id', jobId).eq('assigned_tech_id', tid).neq('status', 'cancelled').limit(5);
+    return (data || []).some((s) => s.kind !== 'helper');
+  } catch (_) { return false; }
+}
+
 export async function canViewJob(sb, user, profile, role, job) {
   if (!user || !job) return false;
   if (can(role, 'seeAllJobs') || can(role, 'seeQueue') || can(role, 'seeCrew')) return true;
@@ -62,6 +74,7 @@ export async function canViewJob(sb, user, profile, role, job) {
     if (myTechId && job.tech_id && String(job.tech_id) === String(myTechId)) return true; // exact tech_id link
     if (email && norm(job.tech_email) === email) return true;
     if (sameName(techName, name)) return true;
+    if (await segmentTechHere(sb, profile, job.id)) return true; // a 2nd tech added to this job (photos+receipts only)
   }
 
   if (role === 'helper' && email) {

@@ -24,7 +24,8 @@ import RollOverCard from './RollOverCard';
 import OfficeTags from './OfficeTags';
 import JobHeader from './JobHeader';
 import { loadCustomerMemory } from '@/lib/customerMemory';
-import { canArchivePhoto, canUploadPhotos, canViewJob, jobTitle, loadJob } from './jobAccess';
+import { canArchivePhoto, canUploadPhotos, canViewJob, segmentTechHere, jobTitle, loadJob } from './jobAccess';
+import ScanReceipt from './ScanReceipt';
 import JobSegments from './JobSegments';
 import { rollupJob } from '@/lib/segments';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
@@ -208,6 +209,30 @@ export default async function JobDetail({ params }) {
   };
   const canAct = can(role, 'changeStatus');
   const urgent = /high|urgent|emergency/i.test(String(job.priority || ''));
+
+  // 2nd-tech LOCK — a tech added to this job via a segment gets photos + receipts ONLY; the lead/office own
+  // status, pricing, and closeout. (Helpers are excluded — we don't hand them the photo/receipt duty, or the
+  // lead gets lazy.) Deny-by-default: render just the proof tools, nothing that could change the job or sell.
+  const isOfficeView = can(role, 'seeAllJobs') || can(role, 'seeQueue') || can(role, 'seeCrew');
+  const isLeadTech = !!(profile?.tech_id && job.tech_id && String(job.tech_id) === String(profile.tech_id));
+  const proofOnly = !isOfficeView && !isLeadTech && await segmentTechHere(sb, profile, id);
+  if (proofOnly) {
+    return (
+      <div className="wrap" style={{ maxWidth: 1040 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Link href="/my-day" className="muted" style={{ fontSize: 12 }}>My Day</Link>
+        </div>
+        <JobHeader job={job} customer={customer} tab="Overview" />
+        <div className="card card-amber" style={{ marginTop: 10 }}>
+          <div style={{ fontWeight: 800 }}>➕ You’re the 2nd tech on this job</div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>Add your <strong>photos and receipts</strong> here — that’s your part. <strong>{techName}</strong> runs the job (status, pricing, closeout). Commission splits 50/50.</div>
+        </div>
+        <ScanReceipt jobId={id} dispatchCents={job.dispatch_fee_cents} />
+        <div id="photos" style={{ scrollMarginTop: 70 }} />
+        <JobPhotos jobId={id} photos={stillPhotos} reviewByPhoto={reviewByPhoto} closeout={closeout} canUpload={canUpload && !photoError} canArchive={canArchiveAny} canReview={false} canOverride={false} isDone={isDone} currentUserId={user.id} />
+      </div>
+    );
+  }
 
   return (
     <div className="wrap" style={{ maxWidth: 1040 }}>
