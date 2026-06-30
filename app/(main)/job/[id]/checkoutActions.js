@@ -12,6 +12,19 @@ import {
   getCardPresentStatus, cancelReaderAction, createInvoiceCheckout,
 } from '@/lib/stripe';
 import { revalidatePath } from 'next/cache';
+import { canViewJob } from './jobAccess';
+
+// Ownership gate — closes the payment IDOR. A field tech may only collect on THEIR OWN job; office/crew/
+// financials roles may collect on any. Loads the job WITH the tech fields canViewJob needs, then checks it.
+// Returns { job } (with tech fields + customer name) or { err }.
+async function gateJob(sb, g, jobId) {
+  const { data: job } = await sb.from('jobs')
+    .select('id, customer_id, job_number, amount, tech_id, tech_email, tech_name, customers(name), techs(name)')
+    .eq('id', jobId).maybeSingle();
+  if (!job) return { err: 'Job not found.' };
+  if (!(await canViewJob(sb, g.user, g.profile, g.profile.role, job))) return { err: 'That job isn’t yours.' };
+  return { job };
+}
 
 // Record a paid charge ONCE (idempotent on the PaymentIntent id) + flip the job's payment disposition to
 // paid_card so the close-out checklist reflects it. Shared by the reader + keyed-entry flows.
@@ -100,8 +113,9 @@ export async function startReaderCharge(jobId, amountDollars) {
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Server not configured.' };
 
-  const { data: job } = await sb.from('jobs').select('id, customer_id, job_number, amount, customers(name)').eq('id', jobId).maybeSingle();
-  if (!job) return { ok: false, msg: 'Job not found.' };
+  const gj = await gateJob(sb, g, jobId);
+  if (gj.err) return { ok: false, msg: gj.err };
+  const job = gj.job;
 
   const reader = await resolveReader(sb, g.profile);
   if (reader.err) return { ok: false, msg: reader.err };
@@ -129,6 +143,8 @@ export async function pollReaderCharge(jobId, paymentIntentId) {
   if (g.err) return { ok: false, msg: g.err };
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const gj = await gateJob(sb, g, jobId); // own-job gate before we can flip THIS job's closeout/AR
+  if (gj.err) return { ok: false, msg: gj.err };
 
   const s = await getCardPresentStatus(paymentIntentId);
   if (!s.ok) return { ok: false, msg: s.error };
@@ -160,8 +176,9 @@ export async function createJobAchLink(jobId, amountDollars) {
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Server not configured.' };
 
-  const { data: job } = await sb.from('jobs').select('id, customer_id, job_number, amount, customers(name)').eq('id', jobId).maybeSingle();
-  if (!job) return { ok: false, msg: 'Job not found.' };
+  const gj = await gateJob(sb, g, jobId);
+  if (gj.err) return { ok: false, msg: gj.err };
+  const job = gj.job;
 
   const dollars = Number(amountDollars) > 0 ? Number(amountDollars) : await suggestedDollars(sb, jobId, job);
   const cents = Math.round(dollars * 100);

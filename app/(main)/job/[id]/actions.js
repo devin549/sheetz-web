@@ -767,18 +767,17 @@ export async function setDispatchmeId(jobId, value) {
 
 // Closeout v2 — save the disposition checklist (payment, signature, invoice, review, cash, warranty).
 export async function saveCloseout(formData) {
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { ok: false, msg: 'Not signed in.' };
-  const profile = await loadProfile(user);
-  if (profile.active === false || !(can(profile.role, 'changeStatus') || can(profile.role, 'qaReview') || canUploadPhotos(profile.role))) return { ok: false, msg: 'Your role can’t set closeout.' };
-  const sb = getSupabaseAdmin();
-  if (!sb) return { ok: false, msg: 'Server not configured.' };
   const job_id = cleanText(formData.get('jobId'), 80);
   if (!job_id) return { ok: false, msg: 'No job.' };
+  // Own-job gate (closes the closeout IDOR): getActionContext authenticates + loads the job + canViewJob,
+  // so a tech can't post a foreign jobId and corrupt another job's closeout / AR reconciliation.
+  const ctx = await getActionContext(job_id);
+  if (!ctx.ok) return ctx;
+  if (ctx.profile.active === false || !(can(ctx.role, 'changeStatus') || can(ctx.role, 'qaReview') || canUploadPhotos(ctx.role))) return { ok: false, msg: 'Your role can’t set closeout.' };
+  const { sb, profile, user } = ctx;
   const bool = (k) => formData.get(k) === 'true' || formData.get(k) === 'on';
   const row = {
-    job_id,
+    job_id: ctx.job.id,
     payment_disposition: cleanText(formData.get('payment_disposition'), 40) || null,
     signed: bool('signed'), signed_by: cleanText(formData.get('signed_by'), 80) || null,
     invoice_status: cleanText(formData.get('invoice_status'), 30) || null,
@@ -790,6 +789,6 @@ export async function saveCloseout(formData) {
   };
   const { error } = await sb.from('job_closeout').upsert(row, { onConflict: 'job_id' });
   if (error) return { ok: false, msg: /schema cache|does not exist|could not find/i.test(error.message || '') ? 'Run supabase/55_job_closeout.sql first.' : error.message };
-  revalidatePath(`/job/${job_id}`); revalidatePath('/board');
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/board');
   return { ok: true, msg: 'Closeout saved.' };
 }

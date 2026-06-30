@@ -7,6 +7,7 @@ import { can } from '@/lib/roles';
 import { normalizeEta } from '@/lib/eta';
 import { closeoutReason } from '@/lib/qa';
 import { createInvoiceCheckout, isStripeConfigured } from '@/lib/stripe';
+import { canViewJob } from '../job/[id]/jobAccess';
 import { revalidatePath } from 'next/cache';
 
 // Field tech (or office) generates a Stripe pay link for a job — bills the amount + 4% card fee. The tech
@@ -19,8 +20,10 @@ export async function createJobPayLink(jobId, amountDollars) {
   if (!isStripeConfigured()) return { ok: false, msg: 'Stripe isn’t set up yet.' };
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Server not configured.' };
-  const { data: job } = await sb.from('jobs').select('id, customer_id, job_number, job_type, amount, customers(name)').eq('id', jobId).maybeSingle();
+  const { data: job } = await sb.from('jobs').select('id, customer_id, job_number, job_type, amount, tech_id, tech_email, tech_name, customers(name), techs(name)').eq('id', jobId).maybeSingle();
   if (!job) return { ok: false, msg: 'Job not found.' };
+  // Ownership gate (payment IDOR): a field tech can only bill THEIR OWN job; office/crew bill any.
+  if (!(await canViewJob(sb, user, profile, profile.role, job))) return { ok: false, msg: 'That job isn’t yours.' };
   const name = (job.customers && job.customers.name) || '';
   // Prefer the OPEN invoice balance (it reflects any partial payment already taken) so a blank amount can't
   // re-bill the full total — and tie the link to that invoice so the webhook marks it paid. Best-effort;
