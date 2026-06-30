@@ -11,12 +11,15 @@ export default async function WebLeads() {
     return <div className="wrap"><div className="h1">Web Leads</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel.</div></div>;
   }
   const sb = getSupabaseAdmin();
-  const { data, error } = await sb.from('web_leads')
-    .select('id, name, phone, email, address, service, message, source, status, job_id, created_at')
-    .order('created_at', { ascending: false }).limit(100);
-
+  const cols = 'id, name, phone, email, address, service, message, source, status, job_id, created_at';
+  // OPEN leads (new/contacted) ALWAYS surface — a separate fetch so an un-worked lead can't scroll off behind
+  // 100 newer rows of any status. Then the recent feed for context. Merged open-first, deduped.
+  const openRes = await sb.from('web_leads').select(cols).in('status', ['new', 'contacted']).order('created_at', { ascending: false }).limit(200);
+  const recentRes = await sb.from('web_leads').select(cols).order('created_at', { ascending: false }).limit(100);
+  const error = openRes.error || recentRes.error;
   const missing = error && /could not find|does not exist|schema cache/i.test(error.message || '');
-  const leads = data || [];
+  const seen = new Set();
+  const leads = [...(openRes.data || []), ...(recentRes.data || [])].filter((l) => l && !seen.has(l.id) && seen.add(l.id));
   const newCount = leads.filter((l) => l.status === 'new').length;
 
   return (

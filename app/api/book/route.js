@@ -40,7 +40,9 @@ export async function POST(request) {
   if (!sb) return NextResponse.json({ ok: false, error: 'Unavailable.' }, { status: 503, headers: CORS });
 
   // Validate the chosen window is still open (race guard). Sunday emergencies skip the window rules.
-  let scheduledAt = new Date().toISOString(), arrivalWindow = null, status = 'hold';
+  // Unscheduled holds get scheduled_at = NULL so they sit in the standing backlog tray — NOT pinned to today
+  // (which made an address-less/no-date hold vanish off the board tomorrow). Only a real date sets a time.
+  let scheduledAt = null, arrivalWindow = null, status = 'hold';
   if (date && win && windowByLabel(win)) {
     const open = await windowOpen(sb, date, win);
     if (!open) return NextResponse.json({ ok: false, error: 'That time just filled up — please pick another window.' }, { status: 409, headers: CORS });
@@ -64,7 +66,7 @@ export async function POST(request) {
       }
     } catch (_) {}
   }
-  if (addrReview) { arrivalWindow = null; status = 'hold'; if (!date) scheduledAt = new Date().toISOString(); }
+  if (addrReview) { arrivalWindow = null; status = 'hold'; } // out-of-area review hold: leave scheduled_at null (backlog), don't pin to today
   const areaLine = addrReview ? `⚠ OUT-OF-AREA — NEEDS REVIEW${distanceMi != null ? ` (~${distanceMi} mi from base)` : ' (unserved city)'} · do NOT promise a slot until confirmed` : '';
 
   // 📷 Optional data-plate photo (water heater etc.) → OCR brand/model/fuel/age so we know the exact unit.
