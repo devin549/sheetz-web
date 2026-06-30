@@ -7,6 +7,10 @@ import { can } from '@/lib/roles';
 import { closeoutReason } from '@/lib/qa';
 import { revalidatePath } from 'next/cache';
 import { CANCEL_REASONS } from './boardTokens';
+import { techUnavailabilityReason } from '@/lib/techAvailability';
+
+// ET date string (YYYY-MM-DD) of an instant — the day the office is actually putting the job on.
+const nyDateOf = (iso) => { try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date(iso)); } catch { return null; } };
 
 // Re-check the caller's perms on every call — a server action is a public RPC, so guarding only
 // the page/nav isn't enough. Role + scope come from the profile (server-authoritative).
@@ -137,6 +141,13 @@ export async function assignTech(jobId, techId, scheduledISO) {
   if (techId) {
     const { data } = await sb.from('techs').select('name').eq('id', techId).maybeSingle();
     techName = (data && data.name) || null;
+    // Block assigning a job to a tech who's OFF that day (sick absence or approved time off). The job's day =
+    // the new scheduled time if rescheduling, else its current time. Office must pick someone who's working.
+    const onDate = nyDateOf(scheduledISO && !Number.isNaN(Date.parse(scheduledISO)) ? scheduledISO : job.scheduled_at);
+    if (onDate) {
+      const off = await techUnavailabilityReason(sb, techId, onDate);
+      if (off) return { ok: false, msg: `${techName || 'That tech'} is off that day (${off.label}). Pick another tech or reschedule.` };
+    }
   }
   const patch = {
     tech_id: techId || null,
