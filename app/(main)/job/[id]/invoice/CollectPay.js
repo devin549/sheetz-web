@@ -21,10 +21,9 @@ export default function CollectPay({ jobId, defaultAmount, tel }) {
   const [amt, setAmt] = useState(defaultAmount ? String(defaultAmount) : '');
   const [link, setLink] = useState(null);
   const [err, setErr] = useState(null);
-  const [checkOpen, setCheckOpen] = useState(false);
+  const [tab, setTab] = useState('cash');
   const [checkNo, setCheckNo] = useState('');
   const [checkId, setCheckId] = useState('');
-  const [cashOpen, setCashOpen] = useState(false);
   const [cashPhoto, setCashPhoto] = useState(null);
   const cashRef = useRef();
   const [paid, setPaid] = useState(null); // { method, total, checkNumber }
@@ -54,40 +53,36 @@ export default function CollectPay({ jobId, defaultAmount, tel }) {
           </div>
           <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>Customer pays this. <strong>Card</strong> adds a 4% fee; <strong>cash &amp; check</strong> don’t.</div>
 
-          {/* Cash + check up front — no fee. Check captures the check # + the ID written on it. */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <button onClick={() => setCashOpen((v) => !v)} disabled={!valid} className="btn btn-ghost" style={{ flex: 1, opacity: !valid ? 0.55 : 1, borderColor: cashOpen ? 'var(--green)' : undefined, color: cashOpen ? 'var(--green)' : undefined }}>💵 Cash</button>
-            <button onClick={() => setCheckOpen((v) => !v)} disabled={!valid} className="btn btn-ghost" style={{ flex: 1, opacity: !valid ? 0.55 : 1, borderColor: checkOpen ? 'var(--amber)' : undefined, color: checkOpen ? 'var(--amber)' : undefined }}>🧾 Check</button>
+          {/* Method tabs — only the picked one's controls show (keeps it clean). */}
+          <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+            {[['cash', '💵 Cash'], ['check', '🧾 Check'], ['link', '✉️ Link']].map(([id, label]) => {
+              const on = tab === id;
+              return <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: '8px 6px', borderRadius: 9, fontSize: 12.5, fontWeight: on ? 800 : 600, cursor: 'pointer', textAlign: 'center', background: on ? 'var(--amber)' : 'var(--surface-2)', color: on ? '#1a1206' : 'var(--fg-2)', border: '1px solid ' + (on ? 'var(--amber)' : 'var(--border)') }}>{label}</button>;
+            })}
           </div>
-          {cashOpen && (
-            <div style={{ marginTop: 8, padding: 10, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--green)', display: 'grid', gap: 8 }}>
-              <div style={{ fontSize: 11.5, color: 'var(--fg-2)', lineHeight: 1.45 }}>📸 <strong>Fan the bills out and snap a photo</strong> — proof of the cash collected. Goes to the office, not the customer.</div>
-              <input ref={cashRef} type="file" accept="image/*" capture="environment" onChange={pickCash} style={{ display: 'none' }} />
-              <button onClick={() => cashRef.current && cashRef.current.click()} className="btn btn-ghost" style={{ borderColor: cashPhoto ? 'var(--green)' : 'var(--purple)', color: cashPhoto ? 'var(--green)' : 'var(--purple)' }}>{cashPhoto ? '✓ Cash photo attached — retake' : '📷 Photo the cash (fanned out)'}</button>
-              <button onClick={takeCash} disabled={pending || !valid || !cashPhoto} className="btn" style={{ opacity: (pending || !valid || !cashPhoto) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record cash · ${money(amtNum)}`}</button>
-            </div>
-          )}
-          {checkOpen && (
-            <div style={{ marginTop: 8, padding: 10, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--amber-dim)', display: 'grid', gap: 8 }}>
-              <label style={{ fontSize: 11, color: 'var(--fg-2)' }}>Check number
-                <input value={checkNo} onChange={(e) => setCheckNo(e.target.value)} inputMode="numeric" placeholder="e.g. 1042" style={{ ...fld, width: '100%', marginTop: 3 }} />
-              </label>
-              <label style={{ fontSize: 11, color: 'var(--fg-2)' }}>ID written on the check (driver’s license #)
-                <input value={checkId} onChange={(e) => setCheckId(e.target.value)} placeholder="DL # the customer wrote on it" style={{ ...fld, width: '100%', marginTop: 3 }} />
-              </label>
-              <div className="muted" style={{ fontSize: 10.5 }}>CB policy: write the customer’s ID on every check before accepting it.</div>
-              <button onClick={takeCheck} disabled={pending || !valid || !checkNo.trim() || !checkId.trim()} className="btn" style={{ opacity: (pending || !valid || !checkNo.trim() || !checkId.trim()) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record check · ${money(amtNum)}`}</button>
-            </div>
-          )}
-
-          {/* Not on the spot? Send a card pay link instead. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 8px' }}>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-            <span className="muted" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em' }}>or send it to them</span>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+          <div style={{ marginTop: 10 }}>
+            {tab === 'cash' && (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ fontSize: 11.5, color: 'var(--fg-2)', lineHeight: 1.45 }}>📸 <strong>Fan the bills out and snap a photo</strong> — proof of the cash collected. Goes to the office, not the customer.</div>
+                <input ref={cashRef} type="file" accept="image/*" capture="environment" onChange={pickCash} style={{ display: 'none' }} />
+                <button onClick={() => cashRef.current && cashRef.current.click()} className="btn btn-ghost" style={{ borderColor: cashPhoto ? 'var(--green)' : 'var(--purple)', color: cashPhoto ? 'var(--green)' : 'var(--purple)' }}>{cashPhoto ? '✓ Cash photo attached — retake' : '📷 Photo the cash (fanned out)'}</button>
+                <button onClick={takeCash} disabled={pending || !valid || !cashPhoto} className="btn" style={{ opacity: (pending || !valid || !cashPhoto) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record cash · ${money(amtNum)}`}</button>
+              </div>
+            )}
+            {tab === 'check' && (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <label style={{ fontSize: 11, color: 'var(--fg-2)' }}>Check number<input value={checkNo} onChange={(e) => setCheckNo(e.target.value)} inputMode="numeric" placeholder="e.g. 1042" style={{ ...fld, width: '100%', marginTop: 3 }} /></label>
+                <label style={{ fontSize: 11, color: 'var(--fg-2)' }}>ID written on the check (driver’s license #)<input value={checkId} onChange={(e) => setCheckId(e.target.value)} placeholder="DL # the customer wrote on it" style={{ ...fld, width: '100%', marginTop: 3 }} /></label>
+                <div className="muted" style={{ fontSize: 10.5 }}>CB policy: write the customer’s ID on every check before accepting it.</div>
+                <button onClick={takeCheck} disabled={pending || !valid || !checkNo.trim() || !checkId.trim()} className="btn" style={{ opacity: (pending || !valid || !checkNo.trim() || !checkId.trim()) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record check · ${money(amtNum)}`}</button>
+              </div>
+            )}
+            {tab === 'link' && (<>
+              <button onClick={make} disabled={pending || !valid} className="btn" style={{ width: '100%', opacity: (pending || !valid) ? 0.55 : 1 }}>{pending ? '…' : '✉️ Send a pay link (card)'}</button>
+              <div className="muted" style={{ fontSize: 10.5, marginTop: 6, textAlign: 'center' }}>Customer pays on a secure Stripe page (+4% card fee).</div>
+            </>)}
           </div>
-          <button onClick={make} disabled={pending || !valid} className="btn btn-ghost" style={{ width: '100%', fontSize: 12.5, opacity: (pending || !valid) ? 0.55 : 1 }}>{pending ? '…' : '✉️ Send a pay link (card)'}</button>
-          {err && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 6 }}>{err}</div>}
+          {err && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{err}</div>}
         </>
       ) : (
         <>

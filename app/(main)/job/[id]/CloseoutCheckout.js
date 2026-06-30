@@ -24,6 +24,14 @@ function fileToScaledDataUrl(file, max = 1300) {
   });
 }
 
+const PAY_TABS = [
+  { id: 'reader', label: '💳 Reader' },
+  { id: 'cash', label: '💵 Cash' },
+  { id: 'check', label: '🧾 Check' },
+  { id: 'link', label: '✉️ Link' },
+  { id: 'ach', label: '🏦 Bank' },
+];
+
 export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, stripeReady, officeBilled = false, netDays = 0 }) {
   const router = useRouter();
   const [amt, setAmt] = useState(suggested ? String(suggested) : '');
@@ -33,10 +41,9 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
   const [reader, setReader] = useState(null);
   const [readerState, setReaderState] = useState(null); // 'waiting' | 'paid' | 'failed'
   const [err, setErr] = useState(null);
-  const [checkOpen, setCheckOpen] = useState(false);
+  const [tab, setTab] = useState(hasReader ? 'reader' : 'cash');
   const [checkNo, setCheckNo] = useState('');
   const [checkId, setCheckId] = useState('');
-  const [cashOpen, setCashOpen] = useState(false);
   const [cashPhoto, setCashPhoto] = useState(null);
   const cashRef = useRef();
   const [manualPaid, setManualPaid] = useState(null); // { method, total }
@@ -165,51 +172,51 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
 
       {!link ? (
         <>
-          {/* PREFERRED: tap on the reader. */}
-          <button onClick={startReader} disabled={pending || !valid || !stripeReady || !hasReader} className="btn" style={{ width: '100%', marginTop: 10, opacity: (pending || !valid || !stripeReady || !hasReader) ? 0.55 : 1 }}>
-            {pending && mode === 'reader' ? '…' : '💳 Collect on reader'}{hasReader ? '  ·  preferred' : ''}
-          </button>
-          {hasReader && <div className="muted" style={{ fontSize: 10.5, marginTop: 5, textAlign: 'center' }}>Use the reader whenever you can — cheaper + more secure.</div>}
-
-          {/* Cash + check — in person, no Stripe, no fee. Check captures the check # + the ID written on it. */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button onClick={() => setCashOpen((v) => !v)} disabled={!valid} className="btn btn-ghost" style={{ flex: 1, opacity: !valid ? 0.55 : 1, borderColor: cashOpen ? 'var(--green)' : undefined, color: cashOpen ? 'var(--green)' : undefined }}>💵 Cash</button>
-            <button onClick={() => setCheckOpen((v) => !v)} disabled={!valid} className="btn btn-ghost" style={{ flex: 1, opacity: !valid ? 0.55 : 1, borderColor: checkOpen ? 'var(--amber)' : undefined, color: checkOpen ? 'var(--amber)' : undefined }}>🧾 Check</button>
+          {/* Method tabs — pick one, only its controls show underneath (keeps it clean). */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+            {PAY_TABS.map((t) => {
+              const on = tab === t.id;
+              return <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: '1 1 auto', minWidth: 62, padding: '8px 6px', borderRadius: 9, fontSize: 12.5, fontWeight: on ? 800 : 600, cursor: 'pointer', textAlign: 'center', background: on ? 'var(--amber)' : 'var(--surface-2)', color: on ? '#1a1206' : 'var(--fg-2)', border: '1px solid ' + (on ? 'var(--amber)' : 'var(--border)') }}>{t.label}</button>;
+            })}
           </div>
-          {cashOpen && (
-            <div style={{ marginTop: 8, padding: 10, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--green)', display: 'grid', gap: 8 }}>
-              <div style={{ fontSize: 11.5, color: 'var(--fg-2)', lineHeight: 1.45 }}>📸 <strong>Fan the bills out and snap a photo</strong> — proof of the cash collected. Goes to the office, not the customer.</div>
-              <input ref={cashRef} type="file" accept="image/*" capture="environment" onChange={pickCash} style={{ display: 'none' }} />
-              <button onClick={() => cashRef.current && cashRef.current.click()} className="btn btn-ghost" style={{ borderColor: cashPhoto ? 'var(--green)' : 'var(--purple)', color: cashPhoto ? 'var(--green)' : 'var(--purple)' }}>{cashPhoto ? '✓ Cash photo attached — retake' : '📷 Photo the cash (fanned out)'}</button>
-              <button onClick={takeCash} disabled={pending || !valid || !cashPhoto} className="btn" style={{ opacity: (pending || !valid || !cashPhoto) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record cash · ${money(amtNum)}`}</button>
-            </div>
-          )}
-          {checkOpen && (
-            <div style={{ marginTop: 8, padding: 10, borderRadius: 10, background: 'var(--surface-2)', border: '1px solid var(--amber-dim)', display: 'grid', gap: 8 }}>
-              <label style={{ fontSize: 11, color: 'var(--fg-2)' }}>Check number
-                <input value={checkNo} onChange={(e) => setCheckNo(e.target.value)} inputMode="numeric" placeholder="e.g. 1042" style={{ ...input, width: '100%', marginTop: 3 }} />
-              </label>
-              <label style={{ fontSize: 11, color: 'var(--fg-2)' }}>ID written on the check (driver’s license #)
-                <input value={checkId} onChange={(e) => setCheckId(e.target.value)} placeholder="DL # the customer wrote on it" style={{ ...input, width: '100%', marginTop: 3 }} />
-              </label>
-              <div className="muted" style={{ fontSize: 10.5 }}>CB policy: write the customer’s ID on every check before accepting it.</div>
-              <button onClick={takeCheck} disabled={pending || !valid || !checkNo.trim() || !checkId.trim()} className="btn" style={{ opacity: (pending || !valid || !checkNo.trim() || !checkId.trim()) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record check · ${money(amtNum)}`}</button>
-            </div>
-          )}
 
-          {/* Not paying on the spot? Send it to them — pay link or bank transfer (card-not-present). */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '14px 0 8px' }}>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-            <span className="muted" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.05em' }}>or send it to them</span>
-            <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+          <div style={{ marginTop: 10 }}>
+            {tab === 'reader' && (<>
+              <button onClick={startReader} disabled={pending || !valid || !stripeReady || !hasReader} className="btn" style={{ width: '100%', opacity: (pending || !valid || !stripeReady || !hasReader) ? 0.55 : 1 }}>{pending && mode === 'reader' ? '…' : '💳 Collect on reader'}{hasReader ? '  ·  preferred' : ''}</button>
+              <div className="muted" style={{ fontSize: 10.5, marginTop: 6, textAlign: 'center' }}>{hasReader ? 'Cheaper + more secure — use it whenever you can.' : 'No reader paired — add a WisePOS E in Card Readers settings.'}</div>
+            </>)}
+
+            {tab === 'cash' && (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ fontSize: 11.5, color: 'var(--fg-2)', lineHeight: 1.45 }}>📸 <strong>Fan the bills out and snap a photo</strong> — proof of the cash collected. Goes to the office, not the customer.</div>
+                <input ref={cashRef} type="file" accept="image/*" capture="environment" onChange={pickCash} style={{ display: 'none' }} />
+                <button onClick={() => cashRef.current && cashRef.current.click()} className="btn btn-ghost" style={{ borderColor: cashPhoto ? 'var(--green)' : 'var(--purple)', color: cashPhoto ? 'var(--green)' : 'var(--purple)' }}>{cashPhoto ? '✓ Cash photo attached — retake' : '📷 Photo the cash (fanned out)'}</button>
+                <button onClick={takeCash} disabled={pending || !valid || !cashPhoto} className="btn" style={{ opacity: (pending || !valid || !cashPhoto) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record cash · ${money(amtNum)}`}</button>
+              </div>
+            )}
+
+            {tab === 'check' && (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <label style={{ fontSize: 11, color: 'var(--fg-2)' }}>Check number
+                  <input value={checkNo} onChange={(e) => setCheckNo(e.target.value)} inputMode="numeric" placeholder="e.g. 1042" style={{ ...input, width: '100%', marginTop: 3 }} />
+                </label>
+                <label style={{ fontSize: 11, color: 'var(--fg-2)' }}>ID written on the check (driver’s license #)
+                  <input value={checkId} onChange={(e) => setCheckId(e.target.value)} placeholder="DL # the customer wrote on it" style={{ ...input, width: '100%', marginTop: 3 }} />
+                </label>
+                <div className="muted" style={{ fontSize: 10.5 }}>CB policy: write the customer’s ID on every check before accepting it.</div>
+                <button onClick={takeCheck} disabled={pending || !valid || !checkNo.trim() || !checkId.trim()} className="btn" style={{ opacity: (pending || !valid || !checkNo.trim() || !checkId.trim()) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record check · ${money(amtNum)}`}</button>
+              </div>
+            )}
+
+            {tab === 'link' && (
+              <button onClick={makeLink} disabled={pending || !valid || !stripeReady} className="btn" style={{ width: '100%', opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>{pending && mode === 'link' ? '…' : '✉️ Send a pay link (text / email)'}</button>
+            )}
+
+            {tab === 'ach' && (<>
+              <button onClick={makeAch} disabled={pending || !valid || !stripeReady} className="btn" style={{ width: '100%', opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>{pending && mode === 'ach' ? '…' : '🏦 Bank transfer (ACH)'}</button>
+              <div className="muted" style={{ fontSize: 10.5, marginTop: 6, textAlign: 'center' }}>Skips the card fee but is slower — only if a card won’t work.</div>
+            </>)}
           </div>
-          <button onClick={makeLink} disabled={pending || !valid || !stripeReady} className="btn btn-ghost" style={{ width: '100%', fontSize: 12.5, opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>
-            {pending && mode === 'link' ? '…' : '✉️ Send a pay link (text / email)'}
-          </button>
-          <button onClick={makeAch} disabled={pending || !valid || !stripeReady} className="btn btn-ghost" style={{ width: '100%', marginTop: 8, fontSize: 12.5, opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>
-            {pending && mode === 'ach' ? '…' : '🏦 Bank transfer (ACH)'}
-          </button>
-          <div className="muted" style={{ fontSize: 10.5, marginTop: 5, textAlign: 'center' }}>Bank transfer skips the card fee but is slower — only if a card won’t work.</div>
         </>
       ) : (
         <div style={{ marginTop: 10 }}>
@@ -226,7 +233,6 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
         </div>
       )}
 
-      {!hasReader && stripeReady && <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>No card reader paired — “Collect on reader” unlocks once you add a WisePOS E in Card Readers settings.</div>}
       {err && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{err}</div>}
     </div>
   );
