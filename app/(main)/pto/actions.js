@@ -35,9 +35,13 @@ export async function requestTimeOff(form) {
 }
 
 // ── Excused / unexcused absences — POLICY decides (not a manager's gut), override is logged ──────────
-// Policy: a verified doctor's note OR a pre-approved PTO covering the date = EXCUSED; otherwise UNEXCUSED.
-// An image that AI can't confirm is a real note → 'pending' (human looks), never auto-excused.
-async function pendingPolicy(sb, userId, dateStr, hasVerifiedDoc) {
+// Policy: bereavement or jury duty (their own categories) = auto-EXCUSED (no note needed); else a verified
+// doctor's note OR a pre-approved PTO covering the date = EXCUSED; otherwise UNEXCUSED. An image AI can't
+// confirm → 'pending' (human looks), never auto-excused.
+const ABSENCE_CATEGORIES = ['bereavement', 'jury_duty', 'sick', 'doctor', 'other'];
+const AUTO_EXCUSED_CATEGORIES = new Set(['bereavement', 'jury_duty']);
+async function pendingPolicy(sb, userId, dateStr, hasVerifiedDoc, category) {
+  if (AUTO_EXCUSED_CATEGORIES.has(category)) return 'excused'; // funeral / jury duty — excused without a note
   if (hasVerifiedDoc) return 'excused';
   try {
     const { data } = await sb.from('time_off_requests').select('id').eq('user_id', userId).eq('status', 'approved').lte('start_date', dateStr).or(`end_date.gte.${dateStr},and(end_date.is.null,start_date.eq.${dateStr})`).limit(1);
@@ -54,6 +58,8 @@ export async function reportAbsence(payload) {
   const profile = await loadProfile(user);
   const date = clean(p.date, 10);
   if (!isDate(date)) return { ok: false, msg: 'Pick the absence date.' };
+  const category = ABSENCE_CATEGORIES.includes(p.category) ? p.category : 'other';
+  const bereavementRelation = category === 'bereavement' && ['immediate', 'extended'].includes(p.relation) ? p.relation : null;
   const sb = getSupabaseAdmin();
 
   // If a doctor's note image was attached, AI-verify it's a real note (no medical content read), store it
@@ -72,16 +78,23 @@ export async function reportAbsence(payload) {
     } catch (_) {}
   }
 
-  const status = await pendingPolicy(sb, user.id, date, docOk);
+  const status = await pendingPolicy(sb, user.id, date, docOk, category);
   // A note was submitted but AI couldn't confirm it's a real note → hold for a human, don't auto-decide.
-  const finalStatus = (p.docPhoto && !docOk) ? 'pending' : status;
-  const { error } = await sb.from('absences').insert({ user_id: user.id, tech_name: profile.name || user.email, absence_date: date, status: finalStatus, reason: clean(p.reason, 200) || null, doc_path: docPath, doc_emailed_at: docEmailed });
+  // (Auto-excused categories like bereavement skip this — they don't depend on a note.)
+  const finalStatus = (p.docPhoto && !docOk && !AUTO_EXCUSED_CATEGORIES.has(category)) ? 'pending' : status;
+  const row = { user_id: user.id, tech_name: profile.name || user.email, absence_date: date, status: finalStatus, reason: clean(p.reason, 200) || null, doc_path: docPath, doc_emailed_at: docEmailed, category, bereavement_relation: bereavementRelation };
+  let { error } = await sb.from('absences').insert(row);
+  // Pre-152 (no category columns) → retry without them so reporting still works.
+  if (error && /category|bereavement_relation/i.test(error.message || '')) { const { category: _c, bereavement_relation: _r, ...lite } = row; ({ error } = await sb.from('absences').insert(lite)); }
   if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/83_absences.sql first.' : error.message };
   try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'absence.reported', entity: 'tech', entity_id: user.id, detail: { date, status: finalStatus, doc: !!docPath, verify: verify ? { isNote: verify.isMedicalNote, confidence: verify.confidence } : null } }); } catch (_) {}
   revalidatePath('/pto');
-  const msg = finalStatus === 'excused' ? '✓ Excused — documentation on file (sent to records).'
+  const msg = finalStatus === 'excused'
+    ? (category === 'bereavement' ? '✓ Excused — bereavement. Our condolences.'
+      : category === 'jury_duty' ? '✓ Excused — jury duty.'
+      : '✓ Excused — documentation on file (sent to records).')
     : finalStatus === 'pending' ? '⏳ Submitted — that image couldn’t be confirmed as a note; records will review.'
-      : 'Logged as unexcused (no documentation). Submit a doctor’s note to excuse it.';
+      : 'Logged as unexcused (no documentation). Pick the right reason or submit a doctor’s note to excuse it.';
   return { ok: true, status: finalStatus, msg };
 }
 

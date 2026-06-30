@@ -16,19 +16,23 @@ function fileToScaledDataUrl(file, max = 1300) {
   });
 }
 const inp = { width: '100%', boxSizing: 'border-box', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '10px 12px', fontSize: 14 };
+const CATS = [['sick', '🤒 Sick'], ['bereavement', '🕯️ Funeral'], ['jury_duty', '⚖️ Jury duty'], ['other', '📋 Other']];
 
 export default function AbsenceReport() {
   const router = useRouter();
   const fileRef = useRef();
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState('');
+  const [category, setCategory] = useState('sick');
+  const [relation, setRelation] = useState('immediate');
   const [reason, setReason] = useState('');
   const [doc, setDoc] = useState(null);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState(null);
+  const autoExcused = category === 'bereavement' || category === 'jury_duty';
 
   const pickDoc = async (e) => { const f = e.target.files && e.target.files[0]; if (!f) return; const url = await fileToScaledDataUrl(f); setDoc(url); e.target.value = ''; };
-  const submit = () => { setMsg(null); start(async () => { const r = await reportAbsence({ date, reason, docPhoto: doc }); setMsg(r); if (r.ok) { setDate(''); setReason(''); setDoc(null); setOpen(false); router.refresh(); } }); };
+  const submit = () => { setMsg(null); start(async () => { const r = await reportAbsence({ date, reason, category, relation, docPhoto: doc }); setMsg(r); if (r.ok) { setDate(''); setReason(''); setDoc(null); setCategory('sick'); setOpen(false); router.refresh(); } }); };
 
   if (!open) return (
     <div style={{ marginTop: 8 }}>
@@ -41,10 +45,42 @@ export default function AbsenceReport() {
     <div className="card card-amber" style={{ marginTop: 8, display: 'grid', gap: 9 }}>
       <div style={{ fontWeight: 800 }}>Report an absence</div>
       <label className="muted" style={{ fontSize: 11 }}>Date missed<input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ ...inp, marginTop: 3 }} /></label>
-      <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Quick reason (not medical details)" style={inp} />
-      <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={pickDoc} style={{ display: 'none' }} />
-      <button onClick={() => fileRef.current && fileRef.current.click()} style={{ background: doc ? 'color-mix(in oklab, var(--green) 12%, var(--surface-1))' : 'var(--surface-2)', border: '1px solid ' + (doc ? 'var(--green)' : 'var(--purple)'), color: doc ? 'var(--green)' : 'var(--purple)', borderRadius: 8, padding: '10px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>{doc ? '✓ Doctor’s note attached — will excuse it' : '📷 Attach a doctor’s note (to excuse it)'}</button>
-      <div className="muted" style={{ fontSize: 10.5, lineHeight: 1.5 }}>A verified doctor’s note = <strong style={{ color: 'var(--green)' }}>excused</strong> and is sent to records. No note = <strong style={{ color: 'var(--amber)' }}>unexcused</strong> (2 unexcused/yr forfeits your 5 holidays). The note is checked only to confirm it’s real — the medical reason is never read or stored.</div>
+
+      {/* Reason category — bereavement / jury duty auto-excuse without a note. */}
+      <div>
+        <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>Reason</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {CATS.map(([k, label]) => {
+            const on = category === k;
+            return <button key={k} type="button" onClick={() => setCategory(k)} style={{ fontSize: 12.5, fontWeight: on ? 800 : 600, padding: '6px 11px', borderRadius: 14, cursor: 'pointer', background: on ? 'var(--amber)' : 'var(--surface-2)', color: on ? '#1a1206' : 'var(--fg-2)', border: '1px solid ' + (on ? 'var(--amber)' : 'var(--border)') }}>{label}</button>;
+          })}
+        </div>
+      </div>
+
+      {/* Bereavement: immediate vs extended drives the paid-day count. */}
+      {category === 'bereavement' && (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="muted" style={{ fontSize: 11 }}>Who:</span>
+          {[['immediate', 'Immediate family (spouse/child/parent/sibling)'], ['extended', 'Extended / close']].map(([k, label]) => {
+            const on = relation === k;
+            return <button key={k} type="button" onClick={() => setRelation(k)} style={{ fontSize: 11.5, fontWeight: on ? 800 : 600, padding: '5px 9px', borderRadius: 12, cursor: 'pointer', background: on ? 'var(--surface-3)' : 'var(--surface-2)', color: on ? 'var(--fg-1)' : 'var(--fg-3)', border: '1px solid ' + (on ? 'var(--amber-dim)' : 'var(--border)') }}>{label}</button>;
+          })}
+        </div>
+      )}
+
+      <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Quick note (optional — not medical details)" style={inp} />
+
+      {/* Doctor's note only matters for sick/other — bereavement & jury duty don't need one. */}
+      {!autoExcused && (<>
+        <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={pickDoc} style={{ display: 'none' }} />
+        <button onClick={() => fileRef.current && fileRef.current.click()} style={{ background: doc ? 'color-mix(in oklab, var(--green) 12%, var(--surface-1))' : 'var(--surface-2)', border: '1px solid ' + (doc ? 'var(--green)' : 'var(--purple)'), color: doc ? 'var(--green)' : 'var(--purple)', borderRadius: 8, padding: '10px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>{doc ? '✓ Doctor’s note attached — will excuse it' : '📷 Attach a doctor’s note (to excuse it)'}</button>
+      </>)}
+
+      <div className="muted" style={{ fontSize: 10.5, lineHeight: 1.5 }}>
+        {autoExcused
+          ? <>🕯️/⚖️ <strong style={{ color: 'var(--green)' }}>Excused</strong> — a funeral or jury duty doesn’t need a doctor’s note and is never a strike.</>
+          : <>A verified doctor’s note = <strong style={{ color: 'var(--green)' }}>excused</strong> (sent to records). No note = <strong style={{ color: 'var(--amber)' }}>unexcused</strong> (2 unexcused/yr forfeits your 5 holidays). The note is only confirmed real — the medical reason is never read or stored.</>}
+      </div>
       {msg && !msg.ok && <div style={{ color: 'var(--red)', fontSize: 12 }}>{msg.msg}</div>}
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={submit} disabled={pending || !date} className="btn" style={{ opacity: (pending || !date) ? 0.6 : 1 }}>{pending ? 'Submitting…' : 'Submit'}</button>
