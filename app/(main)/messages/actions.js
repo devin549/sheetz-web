@@ -242,7 +242,7 @@ export async function sendRescheduleNotice(actionId) {
   const log = (channel, to, r) => { try { return sb.from('cb_comms').insert({ channel, direction: 'out', to_addr: to, customer_id: job && job.customer_id, job_id: a.job_id, body, status: r.ok ? 'sent' : 'failed', error: r.ok ? null : (r.msg || r.error), sent_by: g.who }); } catch (_) {} };
   if (phone && c.sms_consent) { const r = await sendSms(phone, body); await log('sms', (r && r.to) || phone, r); bits.push(r.ok ? 'text sent' : `text not sent (${r.msg})`); }
   else if (phone) bits.push('no text consent');
-  if (email) { const r = isEmailConfigured ? await sendOne({ to: email, cc: email2 || undefined, subject: 'Appointment update — Clog Busterz Plumbing', html: `<p>${body}</p>` }) : { ok: false, error: 'no email key' }; await log('email', email2 ? `${email}, ${email2}` : email, r); bits.push(r.ok ? 'email sent' : 'email not sent'); }
+  if (email) { const r = isEmailConfigured ? await sendOne({ to: email, cc: email2 || undefined, subject: 'Appointment update — Clog Busterz Plumbing', html: `<p>${body}</p>`, meta: { customerId: job && job.customer_id, purpose: 'reschedule', ref: a.job_id } }) : { ok: false, error: 'no email key' }; await log('email', email2 ? `${email}, ${email2}` : email, r); bits.push(r.ok ? 'email sent' : 'email not sent'); }
   if (!phone && !email) bits.push('no phone/email on file');
   revalidatePath('/messages');
   return { ok: bits.some((b) => b.includes('sent')), msg: bits.join(', ') };

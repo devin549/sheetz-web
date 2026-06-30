@@ -335,7 +335,7 @@ export async function createBooking(formData) {
     if (email) {
       const subject = `You're booked — Clog Busterz Plumbing`;
       const html = `<!doctype html><html><body style="margin:0;background:#f4f3ef;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a"><div style="max-width:560px;margin:0 auto;padding:24px"><div style="background:#fff;border:1px solid #e3e0d8;border-radius:10px;overflow:hidden"><div style="background:#FF6B00;color:#fff;padding:14px 20px;font-weight:800;font-size:16px">Clog Busterz Plumbing</div><div style="padding:22px 20px;font-size:14px"><p>Hi ${esc(nm) || 'there'},</p><p>You're booked for <strong>${esc(jobType)}</strong>${whenStr ? ` on <strong>${esc(whenStr)}</strong>` : ''}${address ? ` at ${esc(address)}` : ''}.</p><p>We'll text or call when your tech is on the way. Questions? Just reply to this email.</p></div><div style="padding:14px 20px;border-top:1px solid #eee;font-size:11px;color:#888">Clog Busterz Plumbing</div></div></div></body></html>`;
-      const r = isEmailConfigured ? await sendOne({ to: email, cc: email2 || undefined, subject, html }) : { ok: false, error: 'no email key' };
+      const r = isEmailConfigured ? await sendOne({ to: email, cc: email2 || undefined, subject, html, meta: { customerId, purpose: 'booking', ref: String(job.id) } }) : { ok: false, error: 'no email key' };
       await log('email', email2 ? `${email}, ${email2}` : email, subject, r);
       sentBits.push(r.ok ? 'email sent' : 'email not sent');
     }

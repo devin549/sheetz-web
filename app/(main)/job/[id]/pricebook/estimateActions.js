@@ -315,7 +315,7 @@ export async function sendEstimateEmail(token) {
     <p style="margin:0 0 8px"><a href="${esc(url)}" style="display:inline-block;background:#3fb56a;color:#06210f;font-weight:800;text-decoration:none;padding:13px 22px;border-radius:10px">View your estimate →</a></p>
     <p style="margin:14px 0 0;font-size:12px;color:#888">Or paste this link: ${esc(url)}</p></div>
     <div style="padding:14px 20px;border-top:1px solid #eee;font-size:11px;color:#888">Clog Busterz Plumbing · (859) 408-3382 · Prices held for this visit.</div></div></div></body></html>`;
-  const r = await sendOne({ to: email, subject, html, cc: email2 || undefined });
+  const r = await sendOne({ to: email, subject, html, cc: email2 || undefined, meta: { customerId: est.customer_id || null, purpose: 'estimate', ref: est.job_number || est.token } });
   if (!r.ok) return { ok: false, msg: 'Email didn’t send: ' + (r.error || 'unknown') };
   try { await c.sb.from('pricebook_estimate_events').insert({ estimate_id: est.id, token: est.token, event_type: 'sent', method: 'email', actor: est.tech_name, actor_role: 'tech', note: `Emailed to ${email}`, amount: Number(est.subtotal) || null }); } catch (_) {}
   try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: est.tech_name, role: c.profile.role, action: 'estimate.send.email', entity: 'pricebook_estimate', entity_id: est.token, detail: { to: email } }); } catch (_) {}

@@ -25,8 +25,13 @@ export async function setCustomerEmails(customerId, email, email2) {
   if (!isEmail(e2)) return { ok: false, msg: 'Secondary email looks invalid.' };
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Server not configured.' };
-  let { error } = await sb.from('customers').update({ email: e1 || null, email2: e2 || null }).eq('id', id);
-  if (error && /email2|column|schema cache/i.test(error.message || '')) { ({ error } = await sb.from('customers').update({ email: e1 || null }).eq('id', id)); if (!error) return { ok: false, msg: 'Primary saved — run supabase/157_customer_email2.sql to enable the secondary email.' }; }
+  // Saving a fixed email clears any bounce flag (the office just corrected it).
+  let { error } = await sb.from('customers').update({ email: e1 || null, email2: e2 || null, email_status: null, email_bounced_at: null }).eq('id', id);
+  if (error && /email2|email_status|email_bounced_at|column|schema cache/i.test(error.message || '')) {
+    let { error: e2err } = await sb.from('customers').update({ email: e1 || null, email2: e2 || null }).eq('id', id);
+    if (e2err && /email2|column|schema cache/i.test(e2err.message || '')) { ({ error: e2err } = await sb.from('customers').update({ email: e1 || null }).eq('id', id)); if (!e2err) return { ok: false, msg: 'Primary saved — run supabase/157_customer_email2.sql to enable the secondary email.' }; }
+    error = e2err;
+  }
   if (error) return { ok: false, msg: error.message };
   try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'customer.emails_set', entity: 'customer', entity_id: id, detail: { email: e1 || null, email2: e2 || null } }); } catch (_) {}
   revalidatePath(`/customers/${id}`);

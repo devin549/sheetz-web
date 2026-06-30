@@ -47,7 +47,7 @@ export async function emailStatement(customerId) {
   const { data: invs } = await sb.from('invoices').select('invoice_number, invoice_date, balance').eq('customer_id', customerId).eq('status', 'open');
   const list = (invs || []).map((i) => ({ num: i.invoice_number, date: i.invoice_date, bal: Number(i.balance) || 0 })).sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
   const total = list.reduce((a, i) => a + i.bal, 0);
-  const r = await sendOne({ to: cust.email, cc: cust.email2 || undefined, subject: `Statement of Account — ${COMPANY.name} — ${fmtUsd(total)} due`, html: renderStatementHtml({ name: cust.name, list, total }) });
+  const r = await sendOne({ to: cust.email, cc: cust.email2 || undefined, subject: `Statement of Account — ${COMPANY.name} — ${fmtUsd(total)} due`, html: renderStatementHtml({ name: cust.name, list, total }), meta: { customerId, purpose: 'statement', ref: fmtUsd(total) } });
   if (!r.ok) return { ok: false, msg: r.error };
   try { await sb.from('collections_log').insert({ customer_id: customerId, channel: 'email', direction: 'out', note: `Statement emailed (${fmtUsd(total)})`, amount: Math.round(total), by_email: email }); } catch (_) {}
   try { await sb.from('ar_activity').insert({ action: 'statement_emailed', customer_id: customerId, customer_name: cust.name, amount: Math.round(total), by_email: email }); } catch (_) {}
