@@ -102,19 +102,26 @@ export default function CustomerMemory({ mem, customer = {}, job = {} }) {
         </div>
       )}
 
-      {/* Equipment */}
+      {/* Equipment on file — scanned data plates (brand · fuel · age) */}
       {mem.equipment.length > 0 && (
         <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><Wrench size={16} style={{ color: 'var(--amber)' }} /><span style={{ fontWeight: 800 }}>Equipment on file</span><span className="muted" style={{ fontSize: 10, marginLeft: 'auto' }}>from photos</span></div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><Wrench size={16} style={{ color: 'var(--amber)' }} /><span style={{ fontWeight: 800 }}>Equipment on file</span><span className="muted" style={{ fontSize: 10, marginLeft: 'auto' }}>from data plates</span></div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 8 }}>
             {mem.equipment.map((e, i) => (
               <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: 8 }}>
-                {e.url ? <img src={e.url} alt="" style={{ width: 42, height: 42, borderRadius: 6, objectFit: 'cover' }} /> : <span style={{ fontSize: 24 }}>🔧</span>}
-                <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</div><div className="muted" style={{ fontSize: 10 }}>{fmt(e.date)} · {e.photos} 📷</div></div>
+                <span style={{ fontSize: 24 }}>{/electric/i.test(e.fuel) ? '⚡' : /gas|propane|lp/i.test(e.fuel) ? '🔥' : '🔧'}</span>
+                <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</div><div className="muted" style={{ fontSize: 10.5 }}>{e.sub || fmt(e.date)}</div></div>
               </div>
             ))}
           </div>
+          {job.id && <Link href={`/job/${job.id}/equipment`} className="muted" style={{ fontSize: 11, display: 'inline-block', marginTop: 8 }}>＋ Scan another unit →</Link>}
         </div>
+      )}
+      {mem.equipment.length === 0 && mem.equipmentUnscanned && job.id && (
+        <Link href={`/job/${job.id}/equipment`} className="card" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', color: 'inherit', borderLeft: '3px solid var(--amber-dim)' }}>
+          <Wrench size={16} style={{ color: 'var(--amber)' }} />
+          <span style={{ fontSize: 12.5 }}><strong>📷 Scan the water heater’s data plate</strong> <span className="muted">— grab the brand, fuel (gas / propane / electric) &amp; age so it’s on file.</span></span>
+        </Link>
       )}
     </div>
   );
