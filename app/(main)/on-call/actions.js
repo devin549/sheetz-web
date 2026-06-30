@@ -4,7 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { postToDiscord } from '@/lib/discord';
-import { etWeekday, announceText } from '@/lib/onCall';
+import { etWeekday, announceText, weeklyText } from '@/lib/onCall';
 import { revalidatePath } from 'next/cache';
 
 const EDITORS = ['owner', 'admin', 'gm', 'om'];
@@ -33,8 +33,12 @@ export async function saveOnCall(formData) {
   };
   const { error } = await g.sb.from('on_call_schedule').upsert(row, { onConflict: 'slot' });
   if (error) return { ok: false, msg: /on_call_schedule|does not exist|schema cache/i.test(error.message) ? 'Run migration 65 first.' : error.message };
+  // Ship the full-week breakdown to #sheetz when the office sets the week (the manual post, automated). Then
+  // each night the cron posts that night's tech + helper + supervisor. Best-effort — never fail the save.
+  let posted = false;
+  try { const wk = weeklyText(row); if (wk) { const r = await postToDiscord(wk); posted = !!(r && r.ok); } } catch (_) {}
   revalidatePath('/on-call');
-  return { ok: true, msg: 'On-call schedule saved.' };
+  return { ok: true, msg: posted ? 'Saved — week posted to #sheetz.' : 'On-call schedule saved.' };
 }
 
 // Post tonight's on-call to #sheetz right now (also runs automatically at 4:30pm ET).
