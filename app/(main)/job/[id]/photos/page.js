@@ -13,7 +13,7 @@ import { CircleCheck, CircleAlert, ArrowLeft } from 'lucide-react';
 export const dynamic = 'force-dynamic';
 
 async function loadPhotos(sb, jobId) {
-  const COLS = 'id, job_id, storage_bucket, storage_path, file_name, mime_type, size_bytes, kind, caption, tags, customer_visible, uploaded_by, uploaded_by_email, uploaded_by_name, created_at';
+  const COLS = 'id, job_id, storage_bucket, storage_path, file_name, mime_type, size_bytes, kind, caption, tags, customer_visible, uploaded_by, uploaded_by_email, uploaded_by_name, created_at, lat, lng';
   let { data, error } = await sb.from('job_photos').select(COLS + ', ai_flagged, ai_flag_reason').eq('job_id', jobId).is('deleted_at', null).order('created_at', { ascending: false });
   if (error && /column|schema cache|does not exist/i.test(error.message || '')) {
     ({ data, error } = await sb.from('job_photos').select(COLS).eq('job_id', jobId).is('deleted_at', null).order('created_at', { ascending: false })); // pre-131 fallback

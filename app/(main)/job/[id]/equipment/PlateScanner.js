@@ -24,7 +24,8 @@ function fileToScaledDataUrl(file, max = 1100) {
   });
 }
 
-const FUEL_COLOR = { 'NATURAL GAS': '#4f9bff', 'LP / PROPANE': '#ff8a3d', 'ELECTRIC': '#4caf50', 'UNKNOWN': 'var(--fg-3)' };
+const FUEL_COLOR = { 'NATURAL GAS': '#4f9bff', 'LP / PROPANE': '#ff8a3d', 'ELECTRIC': '#4caf50', 'N/A': 'var(--fg-3)', 'UNKNOWN': 'var(--fg-3)' };
+const APPLIANCE_LABEL = { water_heater: 'Water heater', tankless: 'Tankless', garbage_disposal: 'Garbage disposal', water_softener: 'Water softener', sump_pump: 'Sump pump', furnace: 'Furnace', boiler: 'Boiler', other: 'Equipment' };
 
 export default function PlateScanner({ jobType = '', jobId = '' }) {
   const inputRef = useRef();
@@ -64,14 +65,15 @@ export default function PlateScanner({ jobType = '', jobId = '' }) {
       <input ref={inputRef} type="file" accept="image/*" capture="environment" onChange={onFile} style={{ display: 'none' }} />
       <button onClick={() => inputRef.current && inputRef.current.click()} disabled={pending}
         style={{ width: '100%', padding: '12px', borderRadius: 10, border: '1px solid var(--purple)', background: 'color-mix(in oklab, var(--purple) 10%, var(--surface-1))', color: 'var(--purple)', fontWeight: 800, fontSize: 13, cursor: 'pointer', opacity: pending ? 0.6 : 1 }}>
-        {pending ? '✨ Reading the plate…' : '📷 Read data plate (AI)'}
+        {pending ? '✨ Reading the plate…' : '📷 Read data plate (AI) — heater, disposal, softener…'}
       </button>
       {err && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{err}</div>}
 
       {plate && (
         <div className="card" style={{ marginTop: 10, borderLeft: `3px solid ${FUEL_COLOR[plate.fuelType]}` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 14, fontWeight: 800, color: FUEL_COLOR[plate.fuelType] }}>⛽ {plate.fuelType}</span>
+            <span style={{ fontSize: 13, fontWeight: 800 }}>🔧 {APPLIANCE_LABEL[plate.appliance] || 'Equipment'}</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: FUEL_COLOR[plate.fuelType] }}>⛽ {plate.fuelType}</span>
             <span style={{ fontSize: 9, fontWeight: 800, color: 'var(--purple)', background: 'color-mix(in oklab, var(--purple) 16%, var(--surface-1))', border: '1px solid var(--purple)', padding: '1px 6px', borderRadius: 20 }}>✨ CLAUDE READ</span>
             <span className="pill" style={{ marginLeft: 'auto', fontSize: 10, color: plate.confidence === 'high' ? 'var(--green)' : plate.confidence === 'medium' ? 'var(--amber)' : 'var(--fg-3)' }}>{plate.confidence} confidence</span>
           </div>
@@ -81,7 +83,7 @@ export default function PlateScanner({ jobType = '', jobId = '' }) {
             </div>
           )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 8, marginTop: 10 }}>
-            {[['Brand', plate.brand], ['Model', plate.model], ['Serial', plate.serial], ['Capacity', plate.capacityGallons ? `${plate.capacityGallons} gal` : '—'], ['Year', plate.year || '—']].map(([k, v]) => (
+            {[['Brand', plate.brand], ['Model', plate.model], ['Serial', plate.serial], plate.horsepower ? ['HP', plate.horsepower] : ['Capacity', plate.capacityGallons ? `${plate.capacityGallons} gal` : '—'], ['Year', plate.year || '—']].map(([k, v]) => (
               <div key={k}><div className="muted" style={{ fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.05em' }}>{k}</div><div style={{ fontWeight: 700, fontSize: 13, wordBreak: 'break-word' }}>{v || '—'}</div></div>
             ))}
           </div>

@@ -8,6 +8,7 @@ import { canUploadPhotos } from '../jobAccess';
 
 const clean = (v, n = 120) => String(v == null ? '' : v).trim().slice(0, n);
 const intOrNull = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
+const APPLIANCE_LABEL = { water_heater: 'Water heater', tankless: 'Tankless water heater', garbage_disposal: 'Garbage disposal', water_softener: 'Water softener', sump_pump: 'Sump pump', furnace: 'Furnace', boiler: 'Boiler', other: 'Equipment' };
 const missing = (e) => /relation|column|schema cache|does not exist/i.test(e?.message || '');
 
 // 🔎 Quick search saved equipment by BRAND (or model/serial) — "type Rheem, see every unit on file." Fast
@@ -48,7 +49,12 @@ export async function saveEquipment(jobId, plate = {}, type = '') {
 
   // Resolve the customer from the job so the record follows the address, not the visit.
   let customerId = null;
-  try { const { data: j } = await sb.from('jobs').select('customer_id, job_type').eq('id', jobId).maybeSingle(); customerId = j?.customer_id || null; if (!type) type = j?.job_type || ''; } catch (_) {}
+  try { const { data: j } = await sb.from('jobs').select('customer_id').eq('id', jobId).maybeSingle(); customerId = j?.customer_id || null; } catch (_) {}
+  // Type comes from the APPLIANCE the AI detected — never the job description (that's the "Drain unclog · kitchen"
+  // bug). Fall back to a passed type → generic "Equipment".
+  const apptype = clean(type, 60) || APPLIANCE_LABEL[plate.appliance] || 'Equipment';
+  const hp = clean(plate.horsepower, 12);
+  const notesCombined = [clean(plate.notes, 360), hp ? `${hp} HP` : ''].filter(Boolean).join(' · ');
 
   // ⚠ Gas vs propane is a HARD safety rule — NEVER swap them (different supply line + orifice; the wrong unit
   // is dangerous). If this address's last water heater was the other gas type, flag it loudly.
@@ -65,10 +71,10 @@ export async function saveEquipment(jobId, plate = {}, type = '') {
   }
 
   const row = {
-    customer_id: customerId, job_id: jobId || null, type: clean(type, 60) || 'Equipment',
+    customer_id: customerId, job_id: jobId || null, type: apptype,
     brand: clean(plate.brand, 80) || null, model: clean(plate.model, 80) || null, serial: clean(plate.serial, 80) || null,
     fuel_type: clean(plate.fuelType, 40) || null, capacity_gallons: intOrNull(plate.capacityGallons),
-    year: intOrNull(plate.year), notes: clean(plate.notes, 400) || null, confidence: clean(plate.confidence, 20) || null,
+    year: intOrNull(plate.year), notes: notesCombined || null, confidence: clean(plate.confidence, 20) || null,
     created_by: user.id, created_by_name: profile.name || user.email,
   };
   const { error } = await sb.from('customer_equipment').insert(row);

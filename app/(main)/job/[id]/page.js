@@ -94,7 +94,7 @@ function statusLabel(value) {
 async function loadPhotos(sb, jobId) {
   const { data, error } = await sb
     .from('job_photos')
-    .select('id, job_id, storage_bucket, storage_path, file_name, mime_type, size_bytes, kind, caption, tags, customer_visible, uploaded_by, uploaded_by_email, uploaded_by_name, created_at')
+    .select('id, job_id, storage_bucket, storage_path, file_name, mime_type, size_bytes, kind, caption, tags, customer_visible, uploaded_by, uploaded_by_email, uploaded_by_name, created_at, lat, lng')
     .eq('job_id', jobId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false });

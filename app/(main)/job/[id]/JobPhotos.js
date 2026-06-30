@@ -34,14 +34,20 @@ export default function JobPhotos({ jobId, photos, reviewByPhoto = {}, closeout,
   const [ovrOpen, setOvrOpen] = useState(false);
   const [ovrReason, setOvrReason] = useState('');
   const [prefill, setPrefill] = useState(null);    // {kind, caption} for a corrected re-shoot
+  const [coords, setCoords] = useState(null);      // device GPS stamped onto the next upload (timestamp = created_at)
 
   const run = (fn) => { setMsg(null); start(async () => { const res = await fn(); setMsg(res); if (res?.ok) router.refresh(); }); };
+  // Grab the device location when the tech picks a photo, so every shot is stamped WHERE + WHEN it was taken.
+  const grabLocation = () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((p) => setCoords({ lat: p.coords.latitude, lng: p.coords.longitude }), () => {}, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+  };
 
   function onSubmit(e) {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
     setMsg(null);
-    start(async () => { const res = await uploadJobPhoto(data); setMsg(res); if (res.ok) { e.currentTarget.reset(); setPrefill(null); router.refresh(); } });
+    start(async () => { const res = await uploadJobPhoto(data); setMsg(res); if (res.ok) { e.currentTarget.reset(); setPrefill(null); setCoords(null); router.refresh(); } });
   }
   const onArchive = (photoId) => run(() => archiveJobPhoto(photoId, jobId));
   const onPass = (photoId) => run(() => reviewPhoto(photoId, jobId, 'pass'));
@@ -102,7 +108,10 @@ export default function JobPhotos({ jobId, photos, reviewByPhoto = {}, closeout,
               <button className="btn" type="submit" disabled={pending} style={{ opacity: pending ? 0.65 : 1 }}>{pending ? 'Saving…' : 'Upload'}</button>
             </div>
           </div>
-          <input name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" required style={input} />
+          <input name="photo" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" required onChange={grabLocation} style={input} />
+          <input type="hidden" name="lat" value={coords?.lat ?? ''} />
+          <input type="hidden" name="lng" value={coords?.lng ?? ''} />
+          <div className="muted" style={{ fontSize: 11, marginTop: -2 }}>{coords ? '📍 Location + time will be stamped on this photo.' : '📍 Time is stamped automatically; allow location to also stamp where it was taken.'}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 180px) 1fr', gap: 8 }}>
             <select name="kind" defaultValue={prefill?.kind || 'job_photo'} style={input}>{KIND_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
             <input name="tags" defaultValue={prefill ? 'corrected' : ''} placeholder="tags: before, heater, damage" style={input} />
@@ -168,7 +177,7 @@ export default function JobPhotos({ jobId, photos, reviewByPhoto = {}, closeout,
                 {photo.tags?.length > 0 && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>{photo.tags.map((t) => <span key={t} className="pill" style={{ fontSize: 10 }}>{t}</span>)}</div>
                 )}
-                <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>{photo.uploaded_by_name || photo.uploaded_by_email || 'Unknown'} · {fmtDate(photo.created_at)}</div>
+                <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>{photo.uploaded_by_name || photo.uploaded_by_email || 'Unknown'} · {fmtDate(photo.created_at)}{Number.isFinite(Number(photo.lat)) && Number.isFinite(Number(photo.lng)) ? <> · <a href={`https://www.google.com/maps?q=${photo.lat},${photo.lng}`} target="_blank" rel="noreferrer" style={{ color: 'var(--amber)' }}>📍 GPS</a></> : ''}</div>
 
                 {/* QA review state — the tech sees the fail + reason + note (circle is on the image above) */}
                 {rev && (
