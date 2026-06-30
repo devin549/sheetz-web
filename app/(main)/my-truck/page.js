@@ -12,6 +12,7 @@ import ShopSelfCheckout from './ShopSelfCheckout';
 import StockVan from './StockVan';
 import TruckWideSearch from './TruckWideSearch';
 import UsePartBtn from './UsePartBtn';
+import EquipmentScan from './EquipmentScan';
 import { fleetSummary } from '@/lib/assetLearn';
 
 export const dynamic = 'force-dynamic';
@@ -241,36 +242,59 @@ export default async function MyTruck({ searchParams }) {
       {sub === 'equip' && (<>
         <div className="card" style={{ borderLeft: '3px solid var(--amber)' }}>
           <div style={{ fontWeight: 800 }}>🚜 Find the equipment</div>
-          <div className="muted" style={{ fontSize: 12 }}>Latest known spot for each machine, learned from the #general channel. Once the tags are on, a scan pins the exact unit.</div>
+          <div className="muted" style={{ fontSize: 12 }}>Scan a ShareMyToolbox tag to check a machine out, check it in, or drop a location pin. #general posts fill in anything not scanned yet.</div>
         </div>
+        <div style={{ marginTop: 10 }}><EquipmentScan /></div>
         {!fleet.length && <div className="card" style={{ marginTop: 8 }}><span className="muted">No fleet yet — run <code>supabase/146_equipment_fleet.sql</code>.</span></div>}
-        {fleet.map((m) => (
-          <div key={m.model} className="card" style={{ marginTop: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-              <strong style={{ fontSize: 14 }}>{m.model}</strong>
-              <span className="pill" style={{ fontSize: 10 }}>own {m.count}</span>
-              {m.tagged > 0 && <span className="pill" style={{ fontSize: 10 }}>🏷 {m.tagged}/{m.count} tagged</span>}
-              <span className="muted" style={{ marginLeft: 'auto', fontSize: 11 }}>{m.seen ? `${m.seen} location${m.seen === 1 ? '' : 's'} posted` : 'none posted lately'}</span>
-            </div>
-            {m.locations.length > 0 ? (
-              <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
-                {m.locations.map((l, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, background: 'var(--surface-2)', padding: '7px 10px', borderRadius: 6 }}>
-                    <span style={{ fontSize: 14 }}>📍</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700 }}>{l.location || 'location not given'}</div>
-                      <div className="muted" style={{ fontSize: 11 }}>{[l.said, l.by && `posted by ${l.by}`, l.when && timeAgo(l.when)].filter(Boolean).join(' · ')}</div>
-                    </div>
-                    {l.location && <a href={mapsUrl(l.location)} target="_blank" rel="noreferrer" className="pill" style={{ fontSize: 10, color: 'var(--amber)', border: '1px solid var(--amber-dim)', textDecoration: 'none', whiteSpace: 'nowrap' }}>🗺 Map</a>}
-                  </div>
-                ))}
+        {fleet.map((m) => {
+          const scanned = (m.units || []).filter((un) => un.status === 'out' || un.location);
+          return (
+            <div key={m.model} className="card" style={{ marginTop: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: 14 }}>{m.model}</strong>
+                <span className="pill" style={{ fontSize: 10 }}>own {m.count}</span>
+                {m.tagged > 0 && <span className="pill" style={{ fontSize: 10 }}>🏷 {m.tagged}/{m.count} tagged</span>}
               </div>
-            ) : (
-              <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Nobody&apos;s posted where these are lately — drop a line in #general when you move one.</div>
-            )}
-            {m.seen > 0 && m.seen < m.count && <div className="muted" style={{ marginTop: 6, fontSize: 11 }}>⚠ {m.count - m.seen} of {m.count} not posted recently.</div>}
-          </div>
-        ))}
+
+              {/* Per-unit scan state (precise — from tag scans) */}
+              {scanned.length > 0 && (
+                <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+                  {scanned.map((un, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, background: 'var(--surface-2)', padding: '7px 10px', borderRadius: 6 }}>
+                      <span style={{ fontSize: 14 }}>{un.status === 'out' ? '🟢' : '📍'}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700 }}>{un.label} <span className="muted" style={{ fontWeight: 400, fontSize: 11 }}>{un.status === 'out' ? `· out${un.heldBy ? ' to ' + un.heldBy : ''}` : '· in'}</span></div>
+                        <div className="muted" style={{ fontSize: 11 }}>{[un.location || 'no pin', un.scannedAt && timeAgo(un.scannedAt), un.scannedBy && 'by ' + un.scannedBy].filter(Boolean).join(' · ')}</div>
+                      </div>
+                      {(un.location || (un.lat != null && un.lng != null)) && <a href={un.lat != null ? mapsUrl(un.lat + ',' + un.lng) : mapsUrl(un.location)} target="_blank" rel="noreferrer" className="pill" style={{ fontSize: 10, color: 'var(--amber)', border: '1px solid var(--amber-dim)', textDecoration: 'none', whiteSpace: 'nowrap' }}>🗺 Map</a>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Chat-learned (#general) model-level locations — fills in untagged/unscanned */}
+              {m.locations.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>From #general</div>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    {m.locations.map((l, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)' }}>
+                        <span style={{ fontSize: 13 }}>💬</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600 }}>{l.location || 'location not given'}</div>
+                          <div className="muted" style={{ fontSize: 11 }}>{[l.said, l.by && `by ${l.by}`, l.when && timeAgo(l.when)].filter(Boolean).join(' · ')}</div>
+                        </div>
+                        {l.location && <a href={mapsUrl(l.location)} target="_blank" rel="noreferrer" className="pill" style={{ fontSize: 10, color: 'var(--amber)', border: '1px solid var(--amber-dim)', textDecoration: 'none', whiteSpace: 'nowrap' }}>🗺 Map</a>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!scanned.length && !m.locations.length && <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>Not scanned or posted yet — scan a tag above, or drop a line in #general.</div>}
+            </div>
+          );
+        })}
       </>)}
 
       {/* ───────── SHOP INVENTORY + after-hours self-checkout ───────── */}
