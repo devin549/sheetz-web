@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { ALL_SCANS } from '@/lib/alertScans';
-import { createAlert } from '@/lib/alerts';
+import { createAlert, escalateStaleAlerts } from '@/lib/alerts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,5 +35,9 @@ export async function GET(request) {
     }
     summary[scan.name] = hits.length;
   }
-  return NextResponse.json({ ok: true, created, bumped, scanned: summary, at: new Date(now).toISOString() });
+  // ESCALATION TIER — after creating/bumping tasks, push any HIGH-sev one that's sat unclaimed past the
+  // threshold to the office (#dispatch) so a late/silent-tech alert can't go all day unseen. Best-effort.
+  let escalation = null;
+  try { escalation = await escalateStaleAlerts(sb, { nowISO: new Date(now).toISOString() }); } catch (_) {}
+  return NextResponse.json({ ok: true, created, bumped, escalation, scanned: summary, at: new Date(now).toISOString() });
 }

@@ -38,9 +38,16 @@ export async function scanTag(rawCode) {
   try { const { data, error } = await c.sb.from('equipment_fleet').select(UNIT_COLS).eq('active', true); if (error) throw error; units = data || []; }
   catch (e) { return { ok: false, msg: /equipment_fleet|does not exist|column/i.test(String(e?.message || e)) ? 'Run supabase/146 + 147 first.' : String(e?.message || e).slice(0, 140) }; }
   const cd = digits(code);
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const unit = units.find((u) => {
-    const tc = String(u.tag_code || ''); if (!tc) return false;
-    return tc === code || code.includes(tc) || tc.includes(code) || (cd && digits(tc) === cd);
+    const tc = String(u.tag_code || '').trim(); if (!tc) return false;
+    if (tc === code) return true;                 // exact (typed id or a bare-number QR)
+    if (cd && digits(tc) === cd) return true;     // exact digits (formatting differences only)
+    // URL-wrapped QR (e.g. ".../148983"): the scan CONTAINS the FULL tag as a delimited token. Boundary +
+    // min-length so a short/partial code can't collide ("148" must NOT match tag "1489" — the old loose
+    // bidirectional includes() did). Never substring-match in the other direction.
+    if (tc.length >= 4 && new RegExp(`(^|[^a-z0-9])${esc(tc)}([^a-z0-9]|$)`, 'i').test(code)) return true;
+    return false;
   }) || null;
   return { ok: true, found: !!unit, unit, code, canManage: c.canManage, unregistered: !unit ? units.filter((u) => !u.tag_code).map((u) => ({ id: u.id, unit_label: u.unit_label, model: u.model })) : [] };
 }
