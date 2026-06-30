@@ -58,7 +58,7 @@ export async function POST(request) {
 
   // Office ping (Discord / Captain Hook).
   try {
-    await postToDiscord(`🌊 **FloodBusterz lead** (web) · 🚨 dry-out\n${name || 'Customer'} · ${phone}${where ? ` · ${where}` : ''}${unit ? `\nUnit: ${unit}` : ''}${attachments.length ? `\n📸 ${attachments.length} damage photo${attachments.length > 1 ? 's' : ''} emailed to FloodBusterz` : ''}${notes ? `\n📝 ${notes.slice(0, 200)}` : ''}\nReview in Sales → Referrals. (Customer not auto-contacted.)`);
+    await postToDiscord(`🌊 **FloodBusterz lead** (web) · 🚨 dry-out\n${name || 'Customer'} · ${phone}${where ? ` · ${where}` : ''}${unit ? `\nUnit: ${unit}` : ''}${attachments.length ? `\n📸 ${attachments.length} damage photo${attachments.length > 1 ? 's' : ''} emailed to FloodBusterz` : ''}${notes ? `\n📝 ${notes.slice(0, 200)}` : ''}\nReview in Sales → Referrals. (Customer not auto-contacted.)`, { to: 'office' });
   } catch (_) {}
 
   // Notify the FloodBusterz salesperson directly — INTERNAL staff only. Customer is not contacted.

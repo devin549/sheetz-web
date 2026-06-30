@@ -81,8 +81,10 @@ export default async function MainLayout({ children }) {
       return <HelperShell name={name} activeJob={activeJob} wmId={wmId}>{children}</HelperShell>;
     }
 
-    // Live rank + on-time streak in the ribbon (real data); Power Plunger Hour / level stay sample.
-    let game;
+    // Live rank + on-time streak + level in the ribbon — REAL data only. A stat with no data yet stays
+    // null and its chip is hidden (techs never see a placeholder number). Power Plunger Hour isn't wired
+    // to a real timer yet, so it stays null/hidden until it is.
+    let game = { rank: null, rankDelta: 0, streak: null, powerHour: null, level: null, levelPct: null };
     try {
       const sbAdmin = getSupabaseAdmin();
       const [lb, st, xp] = await Promise.all([
@@ -91,9 +93,14 @@ export default async function MainLayout({ children }) {
         techXp(sbAdmin, { techId: profile.tech_id, name }),
       ]);
       const haveRank = lb.available && lb.you;
-      if (haveRank || st.available || xp.available) {
-        game = { rank: haveRank ? lb.you.rank : 2, rankDelta: 0, streak: st.available ? st.streak : 6, powerHour: 47, level: xp.available ? xp.level : 7, levelPct: xp.available ? xp.pct : 84 };
-      }
+      game = {
+        rank: haveRank ? lb.you.rank : null,
+        rankDelta: 0,
+        streak: st.available ? st.streak : null,
+        powerHour: null,
+        level: xp.available ? xp.level : null,
+        levelPct: xp.available ? xp.pct : null,
+      };
     } catch (_) {}
 
     // Unread team-chat count for the sidebar Chat badge/blink — #sheetz messages newer than the tech's

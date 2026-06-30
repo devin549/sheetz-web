@@ -25,7 +25,7 @@ export async function GET(request) {
   const swings = aggregateTerritory(jobs).filter((a) => a.deltaPct != null && Math.abs(a.deltaPct) >= VOLUME_ALERT_PCT);
   if (swings.length) {
     const lines = swings.map((a) => `${a.deltaPct >= 0 ? '📈' : '📉'} **${a.city}** ${a.deltaPct >= 0 ? '+' : ''}${a.deltaPct}% — ${a.jobs30} this month vs ${a.jobsPrev30} prior`).join('\n');
-    try { await postToDiscord(`🗺️ **Territory volume check**\n${lines}`); } catch (_) {}
+    try { await postToDiscord(`🗺️ **Territory volume check**\n${lines}`, { to: 'office' }); } catch (_) {}
   }
   return NextResponse.json({ ok: true, swings: swings.length });
 }

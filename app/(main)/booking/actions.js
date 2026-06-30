@@ -306,7 +306,7 @@ export async function createBooking(formData) {
   try {
     let nm2 = newName;
     if (!nm2) { const { data: cn } = await sb.from('customers').select('name').eq('id', customerId).maybeSingle(); nm2 = (cn && cn.name) || 'Customer'; }
-    await postToDiscord(`📋 New job: ${nm2} · ${jobType}${whenStr ? ` · ${whenStr}` : ''} · ${techName || 'unassigned'}${priority !== 'normal' ? ` · ${priority.toUpperCase()}` : ''}${claimReq ? ` · ${warrantyProvider || jobClass}` : ''}`);
+    await postToDiscord(`📋 New job: ${nm2} · ${jobType}${whenStr ? ` · ${whenStr}` : ''} · ${techName || 'unassigned'}${priority !== 'normal' ? ` · ${priority.toUpperCase()}` : ''}${claimReq ? ` · ${warrantyProvider || jobClass}` : ''}`, { to: 'office' });
   } catch (_) { /* discord best-effort */ }
 
   // Warranty/dispatch.me jobs → text the assigned tech the app link to tap "On My Way" when they head

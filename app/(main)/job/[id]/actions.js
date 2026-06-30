@@ -324,7 +324,8 @@ export async function setJobStatus(jobId, status) {
 const custName = (job) => (job.customers && job.customers.name) || 'the customer';
 async function pingOffice(ctx, action, message, detail = {}) {
   try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action, entity: 'job', entity_id: String(ctx.job.id), detail }); } catch (_) {}
-  try { await postToDiscord(message); } catch (_) {}
+  // Status pings (en route / lunch / need-a-hand / rollover) are for dispatch, not the whole crew → #dispatch.
+  try { await postToDiscord(message, { to: 'office' }); } catch (_) {}
 }
 
 // "You're marked EN ROUTE" → Notify. Marks en route (stamps enroute_at) + pings the office to text the

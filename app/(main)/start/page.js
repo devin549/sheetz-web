@@ -120,12 +120,28 @@ export default async function Start() {
 
   const rankings = ranks.available ? ranks.metrics : null;
   // Active bounties from the office (same catalog the Races board uses) — surfaced here to chase at sign-in.
+  // Expired ones (expires_at in the past) auto-drop; evergreen ones (null) always show. Falls back to the
+  // pre-144 query if the expires_at column isn't migrated yet.
   let bounties = [];
-  try { const { data } = await sb.from('awards').select('id, title, icon, amount_cents, points, description').eq('active', true).in('kind', ['bounty', 'weekly']).order('sort', { ascending: true }).limit(6); bounties = data || []; } catch (_) {}
+  try {
+    const nowISO = new Date(nowMs).toISOString();
+    let q = await sb.from('awards').select('id, title, icon, amount_cents, points, description, expires_at')
+      .eq('active', true).in('kind', ['bounty', 'weekly']).or(`expires_at.is.null,expires_at.gt.${nowISO}`)
+      .order('sort', { ascending: true }).limit(6);
+    if (q.error && /expires_at/i.test(q.error.message || '')) {
+      q = await sb.from('awards').select('id, title, icon, amount_cents, points, description')
+        .eq('active', true).in('kind', ['bounty', 'weekly']).order('sort', { ascending: true }).limit(6);
+    }
+    bounties = q.data || [];
+  } catch (_) {}
   // Weekly challenge bounties (sample seam until the challenges feed wires) — the chase list lives on Start now.
+  // The "expires in N days" counts to the end of the pay week (Sat night) so it's truthful, not a fixed string.
+  const dow = new Date(nowMs).getDay(); // 0 Sun … 6 Sat
+  const toSat = (6 - dow + 7) % 7;
+  const weekExpiry = toSat === 0 ? '⏳ Ends today · open to all' : `⏳ Expires in ${toSat} day${toSat > 1 ? 's' : ''} · open to all`;
   const challenges = [
     { icon: '🍔', title: 'First to $1K Today', prize: "Lunch · Devin's tab", desc: 'First tech to clear $1,000 NET today (after parts + pay). Counts profit, not the sale. Resets 6am.', progress: 'You (net): $680 / $1,000 · $320 to go' },
-    { icon: '💧', title: 'Hybrid Heater Bounty', prize: '+$100', desc: 'Sell a hybrid water heater this week. First to log + manager-approve gets $100.', progress: '⏳ Expires in 6 days · open to all' },
+    { icon: '💧', title: 'Hybrid Heater Bounty', prize: '+$100', desc: 'Sell a hybrid water heater this week. First to log + manager-approve gets $100.', progress: weekExpiry },
   ];
   // ⚡ Power Plunger pulls (earned 5★/memberships) + budget state — the roll-for-a-bonus slot lives on Start now.
   let pp = { active: false, pulls: 0, budgetTapped: false, topPrize: 15 };

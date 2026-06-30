@@ -18,7 +18,8 @@ async function loadByToken(token) {
   if (error || !data) return { sb, est: null };
   return { sb, est: data };
 }
-const notify = async (msg) => { try { await postToDiscord(msg); } catch (_) {} };
+// Customer-side estimate events (viewed / approved / declined) are dispatch/sales signals → #dispatch.
+const notify = async (msg) => { try { await postToDiscord(msg, { to: 'office' }); } catch (_) {} };
 
 // 🔒 Atomic first-write-wins lock. The same estimate token can be open on the tech's iPad AND texted AND
 // emailed at once. To make a terminal close (approve/decline) un-double-bookable, we move the status with a

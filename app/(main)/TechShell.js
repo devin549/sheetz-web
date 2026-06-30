@@ -94,7 +94,9 @@ function switchShell(s) {
   window.location.href = s === 'office' ? '/' : s === 'shop' ? '/shop' : '/my-day';
 }
 
-const GAME = { rank: 2, rankDelta: 1, streak: 6, powerHour: 47, level: 7, levelPct: 84 };
+// Honest empty default — the real figures come from the server (layout.js). A null stat hides its chip
+// rather than showing a placeholder number, so a brand-new tech never sees invented rank/streak/level.
+const GAME = { rank: null, rankDelta: 0, streak: null, powerHour: null, level: null, levelPct: null };
 
 export default function TechShell({ name, photoUrl = null, shells = ['tech'], activeJob = null, game = GAME, wmId = '', chatUnread = 0, onCallPending = 0, children }) {
   const path = usePathname();
@@ -221,7 +223,7 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
 
       {/* ── ENGAGEMENT RIBBON (tech-only) ────────────────────────── */}
       {!cust && !quiet && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '8px 16px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'var(--fg-2)', overflowX: 'auto',
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, rowGap: 6, flexWrap: 'wrap', padding: '8px 16px', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'var(--fg-2)',
           background: 'linear-gradient(90deg, #3a1d00 0%, #0e3a5c 28%, #0c402e 52%, #3a124a 76%, #3a1d00 100%)', borderTop: '2px solid #ffc400', borderBottom: '2px solid #ff8f00' }}>
           {peek && (onSite || atHouse || inJob) && (
             <button onClick={() => setPeek(false)} title="Hide again (customer could be looking)" style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(76,175,80,0.18)', border: '1px solid #4caf50', color: '#a5d6a7', borderRadius: 12, padding: '3px 9px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>🤫 Hide</button>
@@ -229,27 +231,39 @@ export default function TechShell({ name, photoUrl = null, shells = ['tech'], ac
           <Link href="/my-day?tab=money" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(105,240,174,0.12)', border: '1px solid #2ee6a0', borderRadius: 14, padding: '4px 11px' }}>
             💰 <span style={{ color: '#69f0ae', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 800 }}>My Day $</span><span style={{ color: '#a5d6a7', fontWeight: 800 }}>›</span>
           </Link>
-          <span style={{ color: 'rgba(255,196,60,0.5)' }}>│</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>🏆 <span style={{ color: '#c3cbd5', fontSize: 10, textTransform: 'uppercase' }}>Rank</span>
-            <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 16 }}>#{game.rank}</span>
-            {game.rankDelta ? <span style={{ color: '#8ef0a0', fontWeight: 800, fontSize: 11, background: 'rgba(76,175,80,0.25)', border: '1px solid #6ddc84', borderRadius: 10, padding: '2px 6px' }}>▲{game.rankDelta}</span> : null}
-          </span>
-          <span style={{ color: 'rgba(255,196,60,0.5)' }}>│</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>🔥 <span style={{ color: '#ff9e6b', fontWeight: 800, fontSize: 14 }}>{game.streak}</span><span style={{ color: '#c3cbd5', fontSize: 10, textTransform: 'uppercase' }}>day on-time</span></span>
-          <span style={{ color: 'rgba(255,196,60,0.5)' }}>│</span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,179,0,0.18)', padding: '4px 10px', borderRadius: 14, border: '1px solid #ffc44d' }}>
-            ⚡ <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 11, textTransform: 'uppercase' }}>Power Plunger Hour</span><span style={{ color: '#ffeb3b', fontWeight: 800 }}>{game.powerHour}m</span>
-          </span>
+          {/* Each stat chip carries its own leading divider and renders ONLY when it has real data — so a
+              brand-new tech (no rank/streak/level yet) sees a clean ribbon, never invented numbers. */}
+          {game.rank != null && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ color: 'rgba(255,196,60,0.5)' }}>│</span>
+              🏆 <span style={{ color: '#c3cbd5', fontSize: 10, textTransform: 'uppercase' }}>Rank</span>
+              <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 16 }}>#{game.rank}</span>
+              {game.rankDelta ? <span style={{ color: '#8ef0a0', fontWeight: 800, fontSize: 11, background: 'rgba(76,175,80,0.25)', border: '1px solid #6ddc84', borderRadius: 10, padding: '2px 6px' }}>▲{game.rankDelta}</span> : null}
+            </span>
+          )}
+          {game.streak != null && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ color: 'rgba(255,196,60,0.5)' }}>│</span>
+              🔥 <span style={{ color: '#ff9e6b', fontWeight: 800, fontSize: 14 }}>{game.streak}</span><span style={{ color: '#c3cbd5', fontSize: 10, textTransform: 'uppercase' }}>day on-time</span>
+            </span>
+          )}
+          {game.powerHour != null && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,179,0,0.18)', padding: '4px 10px', borderRadius: 14, border: '1px solid #ffc44d' }}>
+              ⚡ <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 11, textTransform: 'uppercase' }}>Power Plunger Hour</span><span style={{ color: '#ffeb3b', fontWeight: 800 }}>{game.powerHour}m</span>
+            </span>
+          )}
           {/* 👑 Level + 🎰 PULL jackpot, grouped on the right (Devin: "the pull jackpot needs to be in the LVL") */}
           <span style={{ marginLeft: 'auto', paddingRight: 6, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
             <RibbonPull />
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>👑
-              <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
-                <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Plunger · Lvl {game.level}</span>
-                <span style={{ background: 'rgba(255,255,255,0.22)', width: 80, height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 2 }}><span style={{ display: 'block', width: `${game.levelPct}%`, height: '100%', background: '#ffc44d' }} /></span>
-                <span style={{ color: '#c3cbd5', fontSize: 8 }}>{game.levelPct}% to next</span>
+            {game.level != null && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>👑
+                <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+                  <span style={{ color: '#ffc44d', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Plunger · Lvl {game.level}</span>
+                  <span style={{ background: 'rgba(255,255,255,0.22)', width: 80, height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 2 }}><span style={{ display: 'block', width: `${game.levelPct ?? 0}%`, height: '100%', background: '#ffc44d' }} /></span>
+                  <span style={{ color: '#c3cbd5', fontSize: 8 }}>{game.levelPct ?? 0}% to next</span>
+                </span>
               </span>
-            </span>
+            )}
           </span>
         </div>
       )}

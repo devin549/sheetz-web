@@ -346,7 +346,7 @@ export async function logManualApproval(token, opts = {}) {
   try { await createInvoiceFromEstimate(c.sb, { customerId: est.customer_id, jobId: est.job_id, jobNumber: est.job_number, total }); } catch (_) {}
   try { await c.sb.from('pricebook_estimate_events').insert({ estimate_id: est.id, token: tk, event_type: 'phone_approval', method, actor: name, actor_role: 'customer', note: consentText, amount: total }); } catch (_) {}
   try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'estimate.manual_approval', entity: 'pricebook_estimate', entity_id: tk, detail: { name, method, total } }); } catch (_) {}
-  try { await postToDiscord(`✅ **Approval logged (${methodLabel})** — ${name}${est.job_number ? ` · job ${est.job_number}` : ''} approved $${total.toLocaleString()}, witnessed by ${c.profile.name || ''}.`); } catch (_) {}
+  try { await postToDiscord(`✅ **Approval logged (${methodLabel})** — ${name}${est.job_number ? ` · job ${est.job_number}` : ''} approved $${total.toLocaleString()}, witnessed by ${c.profile.name || ''}.`, { to: 'office' }); } catch (_) {}
   revalidatePath(`/job/${est.job_id}/pricebook`);
   return { ok: true, msg: `Logged — ${name}'s ${methodLabel} approval is on record.` };
 }

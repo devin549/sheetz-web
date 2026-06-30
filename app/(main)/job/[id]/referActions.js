@@ -57,7 +57,7 @@ export async function submitReferral({ jobId, refType, note, urgent, photoPaths,
   // Ping the office (Captain Hook). No-ops gracefully if Discord isn't configured.
   try {
     const m = TYPE[t];
-    await postToDiscord(`${m.icon} **${m.label} lead** from ${by}${row.customer_name ? ` · ${row.customer_name}` : ''}${urgent ? ' · 🚨 URGENT' : ''}\n> ${n.slice(0, 300)}${paths.length ? `\n📸 ${paths.length} photo${paths.length > 1 ? 's' : ''} attached` : ''}\nReview in Sales → Referrals.`);
+    await postToDiscord(`${m.icon} **${m.label} lead** from ${by}${row.customer_name ? ` · ${row.customer_name}` : ''}${urgent ? ' · 🚨 URGENT' : ''}\n> ${n.slice(0, 300)}${paths.length ? `\n📸 ${paths.length} photo${paths.length > 1 ? 's' : ''} attached` : ''}\nReview in Sales → Referrals.`, { to: 'office' });
   } catch (_) {}
 
   revalidatePath('/referrals');

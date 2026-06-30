@@ -283,6 +283,13 @@ export default function StartOfDay({ name, lastWorked, scorecard, rankings, fiel
                     {(b.amount_cents != null || b.points != null) && <span style={{ marginLeft: 'auto', background: '#ba68c8', color: '#fff', padding: '1px 7px', borderRadius: 8, fontSize: 9, fontWeight: 800, whiteSpace: 'nowrap' }}>{[b.amount_cents != null ? '+$' + Math.round(b.amount_cents / 100) : '', b.points != null ? `${b.points} XP` : ''].filter(Boolean).join(' · ')}</span>}
                   </div>
                   {b.description && <div style={{ fontSize: 11.5, color: '#e8dcef' }}>{b.description}</div>}
+                  {b.expires_at && (() => {
+                    const ms = new Date(b.expires_at).getTime() - Date.now();
+                    if (!Number.isFinite(ms)) return null;
+                    const urgent = ms < 864e5; // < 1 day
+                    const label = ms <= 0 ? 'Expired' : ms < 36e5 ? `Ends in ${Math.max(1, Math.round(ms / 6e4))}m` : ms < 864e5 ? `Ends in ${Math.round(ms / 36e5)}h` : `${Math.ceil(ms / 864e5)}d left`;
+                    return <div style={{ marginTop: 6, fontSize: 10.5, fontWeight: 800, color: urgent ? '#ffb74d' : '#c2b0cf' }}>⏳ {label}</div>;
+                  })()}
                 </div>
               ))}
             </div>

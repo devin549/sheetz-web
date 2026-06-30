@@ -1,4 +1,5 @@
--- 123 — Stripe Terminal (WisePOS E) card readers. Each row is a physical reader we've registered to our
+-- 143 — Stripe Terminal (WisePOS E) card readers. (Renumbered from a duplicate 123; already applied live — idempotent.)
+-- Each row is a physical reader we've registered to our
 -- Stripe account so a tech can collect IN PERSON at job close-out (tap/insert) instead of texting a link.
 -- Server-driven: the reader talks to Stripe directly — no card data ever touches us or this DB. We only
 -- keep the reader's Stripe id + a friendly label + which one is the shop default.

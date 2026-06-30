@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { syncDiscordCore } from '@/lib/discordSync';
 import { detectRescheduleProposals } from '@/lib/hankActions';
+import { runHank } from '@/lib/hank';
 import { detectCommand, resolveItemForChat } from '@/lib/chatIntents';
 import { postToDiscord } from '@/lib/discord';
 import { createAlert } from '@/lib/alerts';
@@ -44,9 +45,10 @@ async function answerChatCommands(sb) {
         // Pass job context so size-dependent slang ("cable machine" on a kitchen vs a main) resolves right.
         const wj = await whoAndJob(sb, m.from_name);
         const hit = await resolveItemForChat(sb, cmd.query, { message: m.body, jobType: wj.job?.job_type || '' });
-        text = hit ? `🪠 ${hit.kind === 'tool' ? 'Tool' : 'Part'} found — **${hit.name}** is ${hit.locLabel}${hit.qty != null ? ` (qty ${hit.qty})` : ''}.${hit.mapsUrl ? ` 🗺 ${hit.mapsUrl}` : ''}`
-          : `🪠 Couldn't locate "${cmd.query}" on a van, shop, or vendor — check the shop counter.`;
-        if (hit) done.tool++;
+        // Only speak on a HIT. On a miss, stay quiet here and leave the message for Hank — he has crew/van
+        // context and can answer naturally ("Kota's got the camera but he's headed to Frankfort") instead of
+        // Captain Hook echoing a useless "couldn't locate '<garbled query>'." (Not marking it seen lets Hank take it.)
+        if (hit) { text = `🪠 ${hit.kind === 'tool' ? 'Tool' : 'Part'} found — **${hit.name}** is ${hit.locLabel}${hit.qty != null ? ` (qty ${hit.qty})` : ''}.${hit.mapsUrl ? ` 🗺 ${hit.mapsUrl}` : ''}`; done.tool++; }
       } else {
         const { tech, job, name } = await whoAndJob(sb, m.from_name);
         const jobLabel = job?.job_number ? `job ${job.job_number}` : (job?.customers?.name ? job.customers.name : 'their job');
@@ -70,6 +72,8 @@ async function answerChatCommands(sb) {
       if (!text) continue;
       const r = await postToDiscord(text);
       try { await sb.from('cb_comms').insert({ channel: 'discord', direction: 'out', to_addr: '#sheetz', body: text, status: r.ok ? 'sent' : 'failed', from_name: 'Hank', provider_id: replyKey }); } catch (_) {}
+      // A keyword command answered this one → mark it Hank-seen so the AI layer (runHank) doesn't double-reply.
+      try { await sb.from('cb_comms').update({ hank_seen_at: new Date().toISOString() }).eq('id', m.id); } catch (_) {}
     }
   } catch (_) {}
   return done;
@@ -93,10 +97,13 @@ export async function GET(request) {
   const sb = getSupabaseAdmin();
   if (!sb) return NextResponse.json({ ok: false, error: 'No admin client' }, { status: 500 });
   const r = await syncDiscordCore(sb);
-  // After pulling new chatter: (1) Hank proposes reschedule actions, (2) Hank answers tool/part requests
-  // with where the item is. Both best-effort — never block the sync.
-  let actions = null, commands = null;
+  // After pulling new chatter: (1) Hank proposes reschedule actions, (2) keyword commands answer tool/part
+  // requests + late/help/parts, (3) Hank fields everything the keywords didn't — conversationally — in this
+  // SAME 2-min pass so replies are snappy (was a separate 10-min cron). All best-effort; never block the sync.
+  let actions = null, commands = null, hank = null;
   try { actions = await detectRescheduleProposals(sb); } catch (_) {}
   try { commands = await answerChatCommands(sb); } catch (_) {}
-  return NextResponse.json({ ...r, actions, commands }, { status: r.ok ? 200 : 500 });
+  // skipSync: we just synced above. autoPost gated by HANK_AUTOREPLY, same as the standalone hank cron.
+  try { const autoPost = String(process.env.HANK_AUTOREPLY || '').toLowerCase() === 'on'; hank = await runHank(sb, { autoPost, skipSync: true }); } catch (_) {}
+  return NextResponse.json({ ...r, actions, commands, hank }, { status: r.ok ? 200 : 500 });
 }
