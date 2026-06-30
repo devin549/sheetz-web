@@ -40,13 +40,14 @@ export async function emailStatement(customerId) {
   try { ({ sb, email } = await assertCanMark()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
   if (!customerId) return { ok: false, msg: 'No customer.' };
   if (!isEmailConfigured) return { ok: false, msg: 'Add EMAIL_API_KEY (Resend) + EMAIL_FROM in Vercel to email statements.' };
-  const { data: cust } = await sb.from('customers').select('name, email').eq('id', customerId).maybeSingle();
+  let { data: cust, error: custErr } = await sb.from('customers').select('name, email, email2').eq('id', customerId).maybeSingle();
+  if (custErr) ({ data: cust } = await sb.from('customers').select('name, email').eq('id', customerId).maybeSingle());
   if (!cust) return { ok: false, msg: 'Customer not found.' };
   if (!cust.email) return { ok: false, msg: 'This customer has no email on file.' };
   const { data: invs } = await sb.from('invoices').select('invoice_number, invoice_date, balance').eq('customer_id', customerId).eq('status', 'open');
   const list = (invs || []).map((i) => ({ num: i.invoice_number, date: i.invoice_date, bal: Number(i.balance) || 0 })).sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
   const total = list.reduce((a, i) => a + i.bal, 0);
-  const r = await sendOne({ to: cust.email, subject: `Statement of Account — ${COMPANY.name} — ${fmtUsd(total)} due`, html: renderStatementHtml({ name: cust.name, list, total }) });
+  const r = await sendOne({ to: cust.email, cc: cust.email2 || undefined, subject: `Statement of Account — ${COMPANY.name} — ${fmtUsd(total)} due`, html: renderStatementHtml({ name: cust.name, list, total }) });
   if (!r.ok) return { ok: false, msg: r.error };
   try { await sb.from('collections_log').insert({ customer_id: customerId, channel: 'email', direction: 'out', note: `Statement emailed (${fmtUsd(total)})`, amount: Math.round(total), by_email: email }); } catch (_) {}
   try { await sb.from('ar_activity').insert({ action: 'statement_emailed', customer_id: customerId, customer_name: cust.name, amount: Math.round(total), by_email: email }); } catch (_) {}

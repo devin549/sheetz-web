@@ -231,16 +231,18 @@ export async function sendRescheduleNotice(actionId) {
   const sb = g.sb;
   const { data: a } = await sb.from('comms_actions').select('*').eq('id', actionId).maybeSingle();
   if (!a || !a.job_id) return { ok: false, msg: 'Action not found.' };
-  const { data: job } = await sb.from('jobs').select('customer_id, job_type, customers(name, phone, phones, email, sms_consent)').eq('id', a.job_id).maybeSingle();
+  let { data: job, error: jErr } = await sb.from('jobs').select('customer_id, job_type, customers(name, phone, phones, email, email2, sms_consent)').eq('id', a.job_id).maybeSingle();
+  if (jErr) ({ data: job } = await sb.from('jobs').select('customer_id, job_type, customers(name, phone, phones, email, sms_consent)').eq('id', a.job_id).maybeSingle());
   const c = (job && job.customers) || {};
   const phone = c.phone || (Array.isArray(c.phones) ? c.phones[0] : c.phones) || '';
   const email = c.email || '';
+  const email2 = c.email2 || '';
   const body = rescheduleDraft({ customerName: c.name || a.customer_name, jobType: job && job.job_type, newDate: a.new_date, reason: a.reason });
   const bits = [];
   const log = (channel, to, r) => { try { return sb.from('cb_comms').insert({ channel, direction: 'out', to_addr: to, customer_id: job && job.customer_id, job_id: a.job_id, body, status: r.ok ? 'sent' : 'failed', error: r.ok ? null : (r.msg || r.error), sent_by: g.who }); } catch (_) {} };
   if (phone && c.sms_consent) { const r = await sendSms(phone, body); await log('sms', (r && r.to) || phone, r); bits.push(r.ok ? 'text sent' : `text not sent (${r.msg})`); }
   else if (phone) bits.push('no text consent');
-  if (email) { const r = isEmailConfigured ? await sendOne({ to: email, subject: 'Appointment update — Clog Busterz Plumbing', html: `<p>${body}</p>` }) : { ok: false, error: 'no email key' }; await log('email', email, r); bits.push(r.ok ? 'email sent' : 'email not sent'); }
+  if (email) { const r = isEmailConfigured ? await sendOne({ to: email, cc: email2 || undefined, subject: 'Appointment update — Clog Busterz Plumbing', html: `<p>${body}</p>` }) : { ok: false, error: 'no email key' }; await log('email', email2 ? `${email}, ${email2}` : email, r); bits.push(r.ok ? 'email sent' : 'email not sent'); }
   if (!phone && !email) bits.push('no phone/email on file');
   revalidatePath('/messages');
   return { ok: bits.some((b) => b.includes('sent')), msg: bits.join(', ') };

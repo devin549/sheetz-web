@@ -277,10 +277,10 @@ async function loadSendCtx(token) {
   if (!est) return { err: 'Estimate not found.' };
   let cust = {};
   if (est.customer_id) {
-    try { const { data } = await c.sb.from('customers').select('name, phone, phones, email, sms_consent').eq('id', est.customer_id).maybeSingle(); cust = data || {}; } catch (_) {}
+    try { let { data, error } = await c.sb.from('customers').select('name, phone, phones, email, email2, sms_consent').eq('id', est.customer_id).maybeSingle(); if (error) ({ data } = await c.sb.from('customers').select('name, phone, phones, email, sms_consent').eq('id', est.customer_id).maybeSingle()); cust = data || {}; } catch (_) {}
   }
   const phone = cust.phone || (Array.isArray(cust.phones) ? cust.phones[0] : cust.phones) || '';
-  return { c, est, cust, phone, email: cust.email || '', smsConsent: !!cust.sms_consent };
+  return { c, est, cust, phone, email: cust.email || '', email2: cust.email2 || '', smsConsent: !!cust.sms_consent };
 }
 
 // 💬 TEXT the link — GATED ON CONSENT. We never text a customer who hasn't opted in (no-auto-send / TCPA).
@@ -302,7 +302,7 @@ export async function sendEstimateText(token) {
 // only send to the address on the customer record.
 export async function sendEstimateEmail(token) {
   const x = await loadSendCtx(token); if (x.err) return { ok: false, msg: x.err };
-  const { c, est, email } = x;
+  const { c, est, email, email2 } = x;
   if (!email) return { ok: false, msg: 'No email on file for this customer.' };
   if (!isEmailConfigured) return { ok: false, msg: 'Email isn’t set up yet (EMAIL_API_KEY) — text it or present on the iPad.' };
   const url = estimateUrl(est.token);
@@ -315,7 +315,7 @@ export async function sendEstimateEmail(token) {
     <p style="margin:0 0 8px"><a href="${esc(url)}" style="display:inline-block;background:#3fb56a;color:#06210f;font-weight:800;text-decoration:none;padding:13px 22px;border-radius:10px">View your estimate →</a></p>
     <p style="margin:14px 0 0;font-size:12px;color:#888">Or paste this link: ${esc(url)}</p></div>
     <div style="padding:14px 20px;border-top:1px solid #eee;font-size:11px;color:#888">Clog Busterz Plumbing · (859) 408-3382 · Prices held for this visit.</div></div></div></body></html>`;
-  const r = await sendOne({ to: email, subject, html });
+  const r = await sendOne({ to: email, subject, html, cc: email2 || undefined });
   if (!r.ok) return { ok: false, msg: 'Email didn’t send: ' + (r.error || 'unknown') };
   try { await c.sb.from('pricebook_estimate_events').insert({ estimate_id: est.id, token: est.token, event_type: 'sent', method: 'email', actor: est.tech_name, actor_role: 'tech', note: `Emailed to ${email}`, amount: Number(est.subtotal) || null }); } catch (_) {}
   try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: est.tech_name, role: c.profile.role, action: 'estimate.send.email', entity: 'pricebook_estimate', entity_id: est.token, detail: { to: email } }); } catch (_) {}

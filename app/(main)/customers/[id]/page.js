@@ -4,8 +4,10 @@ import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
 import { requireHref } from '@/lib/guard';
 import { loadCustomerMemory } from '@/lib/customerMemory';
 import { canOverrideCreditHold } from '@/lib/creditHold';
+import { can } from '@/lib/roles';
 import CreditHoldToggle from './CreditHoldToggle';
 import NetTermsToggle from './NetTermsToggle';
+import CustomerEmailEditor from './CustomerEmailEditor';
 
 export const dynamic = 'force-dynamic';
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -23,6 +25,10 @@ export default async function CustomerProfile({ params }) {
   let creditHold = false, creditHoldReason = null, creditHoldBy = null;
   try { const { data: ch } = await sb.from('customers').select('credit_hold, credit_hold_reason, credit_hold_by').eq('id', c.id).maybeSingle(); if (ch) { creditHold = !!ch.credit_hold; creditHoldReason = ch.credit_hold_reason || null; creditHoldBy = ch.credit_hold_by || null; } } catch (_) { /* pre-130 */ }
   const canHold = canOverrideCreditHold(role);
+  // Secondary email (mig 157) — best-effort so the profile loads pre-migration.
+  let custEmail2 = '';
+  try { const { data: e2 } = await sb.from('customers').select('email2').eq('id', c.id).maybeSingle(); if (e2) custEmail2 = e2.email2 || ''; } catch (_) { /* pre-157 */ }
+  const canEditEmail = can(role, 'assignJobs') || can(role, 'manageUsers') || can(role, 'seeCrew') || can(role, 'createJobs') || can(role, 'contactCustomer');
   // Billing mode (migration 132 net terms + 135 bill-from-office) — best-effort, independent of credit-hold.
   let netTermsDays = 0, netTermsBy = null, officeBills = false;
   try { const { data: nt } = await sb.from('customers').select('net_terms_days, net_terms_by, bill_from_office').eq('id', c.id).maybeSingle(); if (nt) { netTermsDays = Number(nt.net_terms_days) || 0; netTermsBy = nt.net_terms_by || null; officeBills = !!nt.bill_from_office; } }
@@ -60,9 +66,9 @@ export default async function CustomerProfile({ params }) {
         <NetTermsToggle customerId={c.id} days={netTermsDays} officeBills={officeBills} by={netTermsBy} canEdit={canHold} />
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 8, fontSize: 13 }}>
           {tel && <a href={`tel:${tel}`}>📞 {c.phone}</a>}
-          {c.email && <a href={`mailto:${c.email}`}>✉️ {c.email}</a>}
           {mapHref && <a href={mapHref} target="_blank" rel="noreferrer">📍 {c.address}</a>}
         </div>
+        <CustomerEmailEditor customerId={c.id} email={c.email || ''} email2={custEmail2} canEdit={canEditEmail} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(110px,1fr))', gap: 8, marginTop: 12 }}>
           <Stat label="Lifetime" value={money(c.lifetime_revenue)} color="var(--green-bright)" />
           <Stat label="Jobs" value={c.lifetime_jobs || mem.timeline.length || 0} />

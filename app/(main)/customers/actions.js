@@ -4,9 +4,34 @@ import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { canOverrideCreditHold } from '@/lib/creditHold';
+import { can } from '@/lib/roles';
 import { revalidatePath } from 'next/cache';
 
 const clean = (v, n = 300) => String(v == null ? '' : v).trim().slice(0, n);
+const isEmail = (s) => !s || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(s).trim());
+
+// Set a customer's primary + SECONDARY email. The secondary is CC'd on every customer-facing email
+// (estimate, statement, booking, reschedule) so they don't miss it. Office-gated + audited.
+export async function setCustomerEmails(customerId, email, email2) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, msg: 'Sign in required.' };
+  const profile = await loadProfile(user);
+  if (!(can(profile.role, 'assignJobs') || can(profile.role, 'manageUsers') || can(profile.role, 'seeCrew') || can(profile.role, 'createJobs') || can(profile.role, 'contactCustomer'))) return { ok: false, msg: 'Office only.' };
+  const id = clean(customerId, 80);
+  if (!id) return { ok: false, msg: 'No customer.' };
+  const e1 = clean(email, 200), e2 = clean(email2, 200);
+  if (!isEmail(e1)) return { ok: false, msg: 'Primary email looks invalid.' };
+  if (!isEmail(e2)) return { ok: false, msg: 'Secondary email looks invalid.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  let { error } = await sb.from('customers').update({ email: e1 || null, email2: e2 || null }).eq('id', id);
+  if (error && /email2|column|schema cache/i.test(error.message || '')) { ({ error } = await sb.from('customers').update({ email: e1 || null }).eq('id', id)); if (!error) return { ok: false, msg: 'Primary saved — run supabase/157_customer_email2.sql to enable the secondary email.' }; }
+  if (error) return { ok: false, msg: error.message };
+  try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: 'customer.emails_set', entity: 'customer', entity_id: id, detail: { email: e1 || null, email2: e2 || null } }); } catch (_) {}
+  revalidatePath(`/customers/${id}`);
+  return { ok: true, msg: 'Emails saved.' };
+}
 
 // Place or lift a customer's credit hold. Owner / GM / accounting only (canOverrideCreditHold). A hold
 // blocks new bookings for everyone below that tier — the "no new work without approved terms" guardrail.
