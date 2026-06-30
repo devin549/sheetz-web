@@ -2,6 +2,7 @@ import { loadCockpit } from '../cockpit';
 import JobHeader from '../JobHeader';
 import { canSeeCost, buildTiers, marginPct, marginHealth } from '@/lib/pricebookEngine';
 import { buildCatalogRoots } from '@/lib/catalogTree';
+import { afterHoursForJob } from '@/lib/afterHours';
 import PricebookClient from './PricebookClient';
 // (Sent-estimate proof panel moved to the Estimate tab — Pricebook stays the build/sell surface.)
 
@@ -106,6 +107,16 @@ export default async function JobPricebook({ params, searchParams }) {
   let plans = [];
   try { const { data } = await c.sb.from('membership_plans').select('slug, name, discount_pct').eq('active', true).order('sort_order'); plans = (data || []).map((p) => ({ slug: p.slug, name: p.name, discount_pct: Number(p.discount_pct) || 0 })); } catch (_) {}
 
+  // 🏷️ Service/urgency tiers (Standard/Priority/Emergency) for the picker + whether THIS job is after-hours
+  // (so the tech sees the auto-markup that'll apply). Best-effort; empty/none before migration 150.
+  let serviceTiers = [], afterHours = { applies: false, pct: 0, reason: '' };
+  try { const { data: st } = await c.sb.from('service_tiers').select('key, label, surcharge_cents, sort').eq('active', true).order('sort'); serviceTiers = (st || []).map((t) => ({ key: t.key, label: t.label, surchargeCents: Number(t.surcharge_cents) || 0 })); } catch (_) {}
+  try {
+    const { data: ps } = await c.sb.from('pricing_settings').select('*').eq('id', 1).maybeSingle();
+    const { data: jrow } = await c.sb.from('jobs').select('scheduled_at, after_hours').eq('id', c.job.id).maybeSingle();
+    afterHours = afterHoursForJob(jrow || {}, ps || {});
+  } catch (_) {}
+
   return (
     <div className="wrap" style={{ maxWidth: 980 }}>
       <JobHeader job={c.job} customer={c.customer} tab="Pricebook" />
@@ -120,6 +131,7 @@ export default async function JobPricebook({ params, searchParams }) {
             tiers={tiers}
             bundle={bundle ? { slug: bundle.slug, name: bundle.name, customerDescription: bundle.customer_description, warranty: bundle.warranty_text, approveText: bundle.approval_button_text } : null}
             showMargin={showCost} plans={plans} preAdd={preAdd}
+            serviceTiers={serviceTiers} afterHours={afterHours}
           />
         </>
       )}

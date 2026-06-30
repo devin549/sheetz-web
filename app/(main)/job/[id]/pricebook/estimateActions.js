@@ -188,8 +188,8 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
   // approval→invoice path books the surcharge-inclusive subtotal; usage rows skip them (itemId null).
   let pricingSettings = {};
   try { const { data } = await c.sb.from('pricing_settings').select('*').eq('id', 1).maybeSingle(); pricingSettings = data || {}; } catch (_) {}
-  let tierRow = null;
-  if (opts.tierKey) { try { const { data } = await c.sb.from('service_tiers').select('key, label, surcharge_cents').eq('key', clean(opts.tierKey, 16)).eq('active', true).maybeSingle(); tierRow = data || null; } catch (_) {} }
+  let tierRow = null; // SERVICE/urgency tier (standard/priority/emergency) — distinct from opts.tierKey (the GBB tier good/better/best)
+  if (opts.serviceTier) { try { const { data } = await c.sb.from('service_tiers').select('key, label, surcharge_cents').eq('key', clean(opts.serviceTier, 16)).eq('active', true).maybeSingle(); tierRow = data || null; } catch (_) {} }
   const ah = afterHoursForJob(job, pricingSettings);
   const sline = (name, description, price) => ({ itemId: null, quantity: 1, name, description, price, photo: null, gallery: [], warranty: '', pdf: null, surcharge: true });
   const addSurcharges = (ls) => {

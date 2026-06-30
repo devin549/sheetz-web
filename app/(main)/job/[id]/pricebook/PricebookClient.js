@@ -19,13 +19,16 @@ const TIER_STYLE = { good: { c: 'var(--fg-2)' }, better: { c: 'var(--amber)' }, 
 // The in-job pricebook = the full drill-down catalog (browse → add to THIS estimate) + the Good/Better/Best
 // ladder + a sticky estimate cart + Present/Send. One view (no tech/customer toggle); cost shows to managers
 // only via the browse. Scan-a-part and Custom-item live at the top of the browse.
-export default function PricebookClient({ job, customer, roots = [], related = {}, upgrades = {}, total = 0, tiers = [], bundle, showMargin, plans = [], preAdd = null }) {
+export default function PricebookClient({ job, customer, roots = [], related = {}, upgrades = {}, total = 0, tiers = [], bundle, showMargin, plans = [], preAdd = null, serviceTiers = [], afterHours = { applies: false, pct: 0 } }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [cart, setCart] = useState([]);          // { id, name, price, soldPrice, min }
   const [msg, setMsg] = useState(null);
   const [approval, setApproval] = useState(null);
   const [tierKey, setTierKey] = useState(null);
+  // 🏷️ service/urgency tier (Standard/Priority/Emergency) — defaults to the first (Standard) so a tier always
+  // applies unless the tech changes it. Distinct from the GBB tierKey above.
+  const [serviceTier, setServiceTier] = useState(serviceTiers[0]?.key || null);
   const [link, setLink] = useState(null);        // shareable estimate link once sent
   const [token, setToken] = useState(null);       // the estimate token (drives send picker + live mirror)
   const [copied, setCopied] = useState(false);
@@ -119,7 +122,7 @@ export default function PricebookClient({ job, customer, roots = [], related = {
   const present = () => start(async () => {
     setMsg(null);
     const r = await createEstimate(job.id, soldLines(), {
-      tierKey, bundleSlug: bundle?.slug,
+      tierKey, serviceTier, bundleSlug: bundle?.slug,
       tiers: tiers.length ? ladderForSend() : undefined,
       headline: (memberDisc && plan ? `${plan.name} member · ` : '') + (bundle ? bundle.name : (tierKey ? tierKey : '')),
     });
@@ -235,6 +238,21 @@ export default function PricebookClient({ job, customer, roots = [], related = {
                   <button onClick={() => remove(l.id)} style={{ background: 'none', border: 'none', color: 'var(--fg-3)', cursor: 'pointer', fontSize: 15 }}>×</button>
                 </div>
               ))}
+            </div>
+          )}
+          {serviceTiers.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px 0', flexWrap: 'wrap' }}>
+              <span className="muted" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 700 }}>Service level</span>
+              {serviceTiers.map((t) => {
+                const on = serviceTier === t.key;
+                return (
+                  <button key={t.key} type="button" onClick={() => setServiceTier(on ? null : t.key)}
+                    style={{ fontSize: 11.5, fontWeight: on ? 800 : 600, padding: '4px 9px', borderRadius: 12, cursor: 'pointer', background: on ? 'var(--amber)' : 'var(--surface-2)', color: on ? '#1a1a1a' : 'var(--fg-2)', border: '1px solid ' + (on ? 'var(--amber)' : 'var(--border)') }}>
+                    {t.label}{t.surchargeCents ? ` +$${Math.round(t.surchargeCents / 100)}` : ''}
+                  </button>
+                );
+              })}
+              {afterHours.applies && <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 800, color: '#9c64f4' }}>⏰ After-hours +{afterHours.pct}% auto</span>}
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
