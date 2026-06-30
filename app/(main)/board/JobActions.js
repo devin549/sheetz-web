@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { cancelJob, setDuration } from './actions';
+import { cancelJob, setDuration, addJobTech } from './actions';
 import { CANCEL_REASONS, DURATION_PRESETS } from './boardTokens';
 
 // ─── Right-click context menu (exact item set from dispatchboard_panel.html) ───
-const MUTATE = ['duration', 'enroute', 'onsite', 'done', 'reassign', 'unassign', 'cancel'];
+const MUTATE = ['duration', 'enroute', 'onsite', 'done', 'reassign', 'addtech', 'addhelper', 'unassign', 'cancel'];
 const MENU = [
   { id: 'open', label: 'Open details', icon: '📋' },
   { id: 'duration', label: 'Set duration…', icon: '⏱' },
@@ -15,6 +15,8 @@ const MENU = [
   { id: '__sep' },
   { id: 'call', label: 'Call customer', icon: '📞' },
   { id: 'reassign', label: 'Reassign tech…', icon: '👥' },
+  { id: 'addtech', label: 'Add 2nd tech (split)…', icon: '➕' },
+  { id: 'addhelper', label: 'Add helper…', icon: '🧑‍🔧' },
   { id: '__sep' },
   { id: 'unassign', label: 'Send to queue', icon: '♻', danger: true },
   { id: 'cancel', label: 'Cancel job…', icon: '✕', danger: true },
@@ -85,6 +87,48 @@ export function CancelModal({ job, onClose, onDone }) {
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onClose} disabled={busy} style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid var(--border-strong)', background: 'transparent', color: 'var(--fg-1)', fontSize: 13, cursor: 'pointer' }}>Keep job</button>
           <button onClick={confirm} disabled={busy} style={{ padding: '8px 16px', borderRadius: 7, border: 0, background: 'var(--red)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: busy ? 0.6 : 1 }}>{busy ? 'Cancelling…' : 'Cancel job'}</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Add 2nd tech / helper modal — picks who to add to the job (a split tech or a helper) ───
+export function AddTechModal({ job, kind, techs = [], onClose, onDone }) {
+  const [err, setErr] = useState('');
+  const [busyId, setBusyId] = useState(null);
+  const [busy, start] = useTransition();
+  const isHelper = kind === 'helper';
+  const pool = (techs || []).filter((t) => String(t.id) !== String(job.techId));
+  const pick = (t) => {
+    setErr(''); setBusyId(t.id);
+    start(async () => { const res = await addJobTech(job.id, t.id, t.name, kind); setBusyId(null); if (res && !res.ok) setErr(res.msg); else onDone(); });
+  };
+  return (
+    <>
+      <div onClick={onClose} style={overlay} />
+      <div style={{ ...modal, width: 420 }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--fg-1)', marginBottom: 2 }}>{isHelper ? '🧑‍🔧 Add a helper' : '➕ Add a 2nd tech (split)'}</div>
+        <div style={{ fontSize: 12, color: 'var(--fg-3)', marginBottom: 10 }}>
+          {job.customer || 'Job'}{job.job_number ? ' · ' + job.job_number : ''}
+        </div>
+        <div style={{ fontSize: 11.5, color: isHelper ? 'var(--fg-2)' : 'var(--amber)', background: isHelper ? 'var(--surface-2)' : 'rgba(255,179,0,0.08)', border: '1px solid ' + (isHelper ? 'var(--border)' : 'var(--amber-dim)'), borderRadius: 8, padding: '8px 10px', marginBottom: 12, lineHeight: 1.45 }}>
+          {isHelper
+            ? 'Helper rides this job with the lead — paid at cost (no commission). Their time + waste log attach here.'
+            : '💰 Commission splits 50/50 between the two techs, and revenue counts 50/50 to each. A salary tech takes no commission; the other still gets their half.'}
+        </div>
+        <div style={lbl}>{isHelper ? 'Pick the helper' : 'Pick the tech to split with'}</div>
+        <div style={{ display: 'grid', gap: 6, maxHeight: 280, overflowY: 'auto', marginTop: 6 }}>
+          {pool.length ? pool.map((t) => (
+            <button key={t.id} onClick={() => pick(t)} disabled={busy} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 11px', borderRadius: 8, border: '1px solid var(--border-strong)', background: 'var(--surface-2)', color: 'var(--fg-1)', fontSize: 13, cursor: 'pointer', textAlign: 'left' }}>
+              <span>{t.name}{t.crew ? <span className="muted" style={{ fontSize: 11 }}> · {t.crew}</span> : ''}</span>
+              <span style={{ fontSize: 11, color: 'var(--amber)' }}>{busyId === t.id ? 'Adding…' : isHelper ? '+ helper' : '+ split'}</span>
+            </button>
+          )) : <div className="muted" style={{ fontSize: 12 }}>No other techs available.</div>}
+        </div>
+        {err && <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 10 }}>{err}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+          <button onClick={onClose} disabled={busy} style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid var(--border-strong)', background: 'transparent', color: 'var(--fg-1)', fontSize: 13, cursor: 'pointer' }}>Close</button>
         </div>
       </div>
     </>

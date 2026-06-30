@@ -8,6 +8,7 @@ import { closeoutReason } from '@/lib/qa';
 import { revalidatePath } from 'next/cache';
 import { CANCEL_REASONS } from './boardTokens';
 import { techUnavailabilityReason } from '@/lib/techAvailability';
+import { nextSegmentNo } from '@/lib/segments';
 
 // ET date string (YYYY-MM-DD) of an instant — the day the office is actually putting the job on.
 const nyDateOf = (iso) => { try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date(iso)); } catch { return null; } };
@@ -174,4 +175,35 @@ export async function assignTech(jobId, techId, scheduledISO) {
   } catch (_) {}
   revalidatePath('/board');
   return { ok: true };
+}
+
+// Add an ADDITIONAL person to a job from the board's right-click — a 2nd tech (SPLIT: commission splits
+// 50/50, salary takes none) or a helper (paid at cost). Creates a job_segment under the parent; the lead
+// stays put. Blocked if that tech is off that day. Mirrors the job-screen "Split / Add". Role-gated.
+export async function addJobTech(jobId, techId, techName, kind) {
+  let sb, email;
+  try { ({ sb, email } = await assertAssigner()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  if (!jobId || !techId) return { ok: false, msg: 'Pick a tech.' };
+  const k = ['second_tech', 'helper'].includes(kind) ? kind : 'second_tech';
+
+  // Don't add someone who's off that day, and don't add the lead twice.
+  const { data: job } = await sb.from('jobs').select('tech_id, scheduled_at').eq('id', jobId).maybeSingle();
+  if (!job) return { ok: false, msg: 'Job not found.' };
+  if (String(job.tech_id || '') === String(techId)) return { ok: false, msg: 'That tech is already the lead on this job.' };
+  const onDate = nyDateOf(job.scheduled_at);
+  if (onDate) { const off = await techUnavailabilityReason(sb, techId, onDate); if (off) return { ok: false, msg: `${techName || 'That tech'} is off that day (${off.label}).` }; }
+
+  // Already on the job as a segment?
+  try { const { data: dup } = await sb.from('job_segments').select('id').eq('parent_job_id', jobId).eq('assigned_tech_id', techId).neq('status', 'cancelled').limit(1); if (dup && dup.length) return { ok: false, msg: `${techName || 'That tech'} is already on this job.` }; } catch (_) {}
+
+  let parentNumber = '', count = 0;
+  try { const { data: pj } = await sb.from('jobs').select('job_number').eq('id', jobId).maybeSingle(); parentNumber = pj?.job_number || ''; } catch (_) {}
+  try { const { count: n } = await sb.from('job_segments').select('id', { count: 'exact', head: true }).eq('parent_job_id', jobId); count = n || 0; } catch (_) {}
+
+  const row = { parent_job_id: jobId, segment_no: nextSegmentNo(parentNumber, count), kind: k, assigned_tech_id: techId, assigned_tech_name: techName || null, status: 'live_not_active', created_by_name: email };
+  const { error } = await sb.from('job_segments').insert(row);
+  if (error) return { ok: false, msg: /relation|column|schema cache|does not exist/i.test(error.message || '') ? 'Run supabase/87_job_segments.sql first.' : error.message };
+  try { await sb.from('job_moves').insert({ job_id: jobId, action: k === 'helper' ? 'add_helper' : 'add_tech', to_tech_id: techId, to_tech_name: techName, by_email: email }); } catch (_) {}
+  revalidatePath('/board');
+  return { ok: true, msg: k === 'helper' ? `Helper added: ${techName || 'tech'}` : `2nd tech added — commission splits 50/50: ${techName || 'tech'}` };
 }

@@ -50,6 +50,13 @@ export default function JobSegments({ parentJobId, rollup, segments = [], canDis
         {rollup?.margin && <span className="pill" style={{ fontSize: 11, color: hcColor, border: `1px solid ${hcColor}` }}>{hc} {rollup.margin.pct}% margin</span>}
       </div>
 
+      {/* Split-job pay note — 2+ techs share the commission, exactly like the Tech Sheet "Split" rule. */}
+      {(rollup?.techCount || 0) >= 2 && (
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--amber)', background: 'rgba(255,179,0,0.08)', border: '1px solid var(--amber-dim)', borderRadius: 8, padding: '7px 10px', lineHeight: 1.45 }}>
+          💰 <strong>Split job</strong> — commission splits 50/50 across {rollup.techCount} techs, and revenue counts 50/50 to each. A salary tech takes no commission; the other still gets their half.
+        </div>
+      )}
+
       {/* add form */}
       {adding && (
         <form action={add} className="card card-amber" style={{ display: 'grid', gap: 8, marginTop: 10 }}>

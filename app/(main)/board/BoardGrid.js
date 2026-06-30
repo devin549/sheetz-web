@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { assignTech, updateJobStatus, setDuration } from './actions';
 import { ACCENT, STATUS_DOT, crewColor, initials, priorityOf, hourLabel, money, fmtTime } from './boardTokens';
 import JobPanel from './JobPanel';
-import { ContextMenu, CancelModal, DurationModal } from './JobActions';
+import { ContextMenu, CancelModal, DurationModal, AddTechModal } from './JobActions';
 import PersonCard from '@/components/PersonCard';
 import { Wrench, MapPin, Camera, Inbox } from 'lucide-react';
 
@@ -31,6 +31,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   const [menu, setMenu] = useState(null); // {x,y,job} right-click menu
   const [cancelT, setCancelT] = useState(null);
   const [durT, setDurT] = useState(null);
+  const [addT, setAddT] = useState(null); // { job, kind } → add 2nd tech / helper modal
   const [hover, setHover] = useState(null); // {job,x,y} — desktop hover info card
 
   // ── Move a job by custom mouse-drag (ported from dispatchboard_timegrid.html) — the original
@@ -87,6 +88,8 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
     else if (id === 'duration') setDurT(j);
     else if (id === 'cancel') setCancelT(j);
     else if (id === 'call') { if (j.phone) window.open('tel:' + String(j.phone).replace(/[^0-9+]/g, '')); }
+    else if (id === 'addtech') setAddT({ job: j, kind: 'second_tech' });
+    else if (id === 'addhelper') setAddT({ job: j, kind: 'helper' });
     else if (id === 'unassign') start(async () => { await assignTech(j.id, null); refresh(); });
     else if (STATUS_OF[id]) start(async () => { await updateJobStatus(j.id, STATUS_OF[id]); refresh(); });
   }
@@ -418,6 +421,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
       <ContextMenu menu={menu} onClose={() => setMenu(null)} onAction={onMenuAction} canMutate={canStatus || canAssign} />
       {cancelT && <CancelModal job={cancelT} onClose={() => setCancelT(null)} onDone={() => { setCancelT(null); refresh(); }} />}
       {durT && <DurationModal job={durT} onClose={() => setDurT(null)} onDone={() => { setDurT(null); refresh(); }} />}
+      {addT && <AddTechModal job={addT.job} kind={addT.kind} techs={techs} onClose={() => setAddT(null)} onDone={() => { setAddT(null); refresh(); }} />}
     </>
   );
 }
