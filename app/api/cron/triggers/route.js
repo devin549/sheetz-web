@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { ALL_SCANS } from '@/lib/alertScans';
-import { createAlert, escalateStaleAlerts } from '@/lib/alerts';
+import { createAlert, escalateStaleAlerts, reopenSnoozedAlerts } from '@/lib/alerts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,9 +35,11 @@ export async function GET(request) {
     }
     summary[scan.name] = hits.length;
   }
-  // ESCALATION TIER — after creating/bumping tasks, push any HIGH-sev one that's sat unclaimed past the
-  // threshold to the office (#dispatch) so a late/silent-tech alert can't go all day unseen. Best-effort.
-  let escalation = null;
+  // Reopen any snoozed task whose snooze_until has passed (so a snoozed worsening alert resurfaces), THEN
+  // escalate: push any HIGH-sev task that's sat unclaimed past the threshold to #dispatch so a late/silent-
+  // tech alert can't go all day unseen. Both best-effort.
+  let escalation = null, reopened = null;
+  try { reopened = await reopenSnoozedAlerts(sb, { nowISO: new Date(now).toISOString() }); } catch (_) {}
   try { escalation = await escalateStaleAlerts(sb, { nowISO: new Date(now).toISOString() }); } catch (_) {}
-  return NextResponse.json({ ok: true, created, bumped, escalation, scanned: summary, at: new Date(now).toISOString() });
+  return NextResponse.json({ ok: true, created, bumped, reopened, escalation, scanned: summary, at: new Date(now).toISOString() });
 }
