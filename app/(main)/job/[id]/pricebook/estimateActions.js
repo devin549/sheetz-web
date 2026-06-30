@@ -11,6 +11,7 @@ import { scopeJob } from './scope';
 import { createInvoiceFromEstimate } from '@/lib/invoiceFromEstimate';
 import { postToDiscord } from '@/lib/discord';
 import { marginPct, canOverrideMinimum } from '@/lib/pricebookEngine';
+import { afterHoursForJob } from '@/lib/afterHours';
 import { financingPartner } from '@/lib/financing';
 import { sendSms } from '@/lib/twilio';
 import { sendOne, isEmailConfigured, appBaseUrl } from '@/lib/email';
@@ -69,7 +70,8 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
   const s = await scopeJob(c, jobId); if (s.err) return { ok: false, msg: s.err };
   if (!Array.isArray(lines) || lines.length === 0) return { ok: false, msg: 'Add at least one item first.' };
 
-  const { data: job } = await c.sb.from('jobs').select('id, job_number, customer_id, tech_id, customers(name)').eq('id', jobId).maybeSingle();
+  let { data: job } = await c.sb.from('jobs').select('id, job_number, customer_id, tech_id, scheduled_at, after_hours, customers(name)').eq('id', jobId).maybeSingle();
+  if (!job) { ({ data: job } = await c.sb.from('jobs').select('id, job_number, customer_id, tech_id, customers(name)').eq('id', jobId).maybeSingle()); } // pre-150 (no after_hours column)
   if (!job) return { ok: false, msg: 'Job not found.' };
 
   // Gather every itemId referenced by the flat cart AND every tier so we fetch customer-safe data ONCE.
@@ -179,10 +181,33 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
     const mc = await mostChosenTier(c.sb, opts.bundleSlug);
     tierSnaps.forEach((t) => { t.mostChosen = !!(mc.key && t.key === mc.key); });
   }
+
+  // ── STRUCTURED SURCHARGES — after-hours markup (auto, % of the WORK) + service tier (flat $). Appended as
+  // VISIBLE lines so the customer sees WHY. Markup keys off the JOB'S scheduled time (lib/afterHours); tier
+  // from opts.tierKey. Applied PER-TIER (each GBB tier's % scales to its own price) and to the flat cart. The
+  // approval→invoice path books the surcharge-inclusive subtotal; usage rows skip them (itemId null).
+  let pricingSettings = {};
+  try { const { data } = await c.sb.from('pricing_settings').select('*').eq('id', 1).maybeSingle(); pricingSettings = data || {}; } catch (_) {}
+  let tierRow = null;
+  if (opts.tierKey) { try { const { data } = await c.sb.from('service_tiers').select('key, label, surcharge_cents').eq('key', clean(opts.tierKey, 16)).eq('active', true).maybeSingle(); tierRow = data || null; } catch (_) {} }
+  const ah = afterHoursForJob(job, pricingSettings);
+  const sline = (name, description, price) => ({ itemId: null, quantity: 1, name, description, price, photo: null, gallery: [], warranty: '', pdf: null, surcharge: true });
+  const addSurcharges = (ls) => {
+    const itemSub = (ls || []).reduce((s, l) => s + (Number(l.price) || 0), 0);
+    const extra = [];
+    if (tierRow && Number(tierRow.surcharge_cents) > 0) extra.push(sline(tierRow.label, 'Service level', Math.round(Number(tierRow.surcharge_cents)) / 100));
+    if (ah.applies && ah.pct > 0) { const amt = Math.round(itemSub * (ah.pct / 100) * 100) / 100; if (amt > 0) extra.push(sline(`After-hours service (+${ah.pct}%)`, ah.reason || 'after-hours', amt)); }
+    return extra.length ? [...ls, ...extra] : ls;
+  };
+  if (tierRow || ah.applies) {
+    tierSnaps.forEach((t) => { t.lines = addSurcharges(t.lines); t.includes = t.lines.map((l) => l.name); t.subtotal = t.lines.reduce((s, l) => s + (Number(l.price) || 0), 0); });
+  }
+
   // When a ladder exists, the flat snapshot (the approval source + the fallback view) defaults to the
   // RECOMMENDED tier — so it's coherent no matter what the cart held when Send was tapped. The customer can
   // still switch tiers at the close, which re-points lines/subtotal.
   if (tierSnaps.length) { const rec = tierSnaps.find((t) => t.recommended) || tierSnaps[0]; snapLines = rec.lines; }
+  else if (tierRow || ah.applies) { snapLines = addSurcharges(snapLines); } // flat estimate (no GBB) gets them too
 
   const subtotal = snapLines.reduce((s, l) => s + l.price, 0);
   const cardFee = Math.round(subtotal * 0.04 * 100) / 100;
