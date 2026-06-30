@@ -232,7 +232,7 @@ export default async function Pto() {
       <div className="card" style={{ marginTop: 14, background: 'rgba(255,179,0,0.06)', border: '1px solid var(--amber-dim)', fontSize: 11, color: 'var(--fg-2)', lineHeight: 1.6 }}>
         <strong style={{ color: 'var(--amber)' }}>💰 How vacation + holiday pay works:</strong><br />
         • <strong>Vacation</strong> = your allotment (5 or 10 days/yr, set by the office) · paid at <strong>your</strong> hourly base rate · <strong style={{ color: '#ff8a65' }}>NO commission on vacation pay</strong><br />
-        • <strong>Holiday</strong> = 5 days/yr · paid at <strong>8 hrs × your hourly base</strong> (no commission) — <strong>for hourly / commission techs</strong>. <strong style={{ color: '#ffb74d' }}>Salary / supervisors get their full weekly check regardless</strong> — no extra holiday pay; their 5 holidays act as PTO credits in the burn-down above.<br />
+        • <strong>Holiday</strong> = 5/yr · paid at <strong>8 hrs × the hourly rate we set you</strong>. Take it off = that 8 hr holiday pay. <strong style={{ color: 'var(--green-bright)' }}>WORK it (on-call, etc.) = your commission for the jobs PLUS the 8 hr holiday pay on top.</strong> <span style={{ color: '#ffb74d' }}>(Salary / supervisors: full weekly check regardless — no extra for holidays; their 5 holidays are PTO credits.)</span><br />
         • <strong style={{ color: '#ffb74d' }}>📅 Work the day BEFORE and AFTER:</strong> to get paid for a holiday you must work the scheduled workday on both sides of it. <strong>Holiday on a Saturday = you must work Friday AND Monday.</strong> Call out either side → <strong style={{ color: '#ff8a65' }}>that holiday isn’t paid</strong>.<br />
         • <strong style={{ color: '#ffb74d' }}>📞 On-call on a holiday = you still work it.</strong> Losing your holiday (2 unexcused) or being on for someone else’s holiday does <strong>not</strong> cancel the on-call shift.<br />
         • <strong style={{ color: '#ffb74d' }}>2+ unexcused absences/yr</strong> = ALL 5 holidays FORFEITED for the year · auto-calc via Tech Sheet · manager email + audit log<br />
@@ -291,7 +291,7 @@ export default async function Pto() {
       </div>
 
       <h3 style={{ margin: '16px 0 6px', fontSize: 13, color: 'var(--amber-dim)', textTransform: 'uppercase' }}>Holidays &amp; on-call coverage</h3>
-      <div style={{ fontSize: 10, color: 'var(--fg-3)', margin: '0 0 10px', lineHeight: 1.55 }}>OM sets the on-call roster 30+ days out. <strong style={{ color: 'var(--green-bright)' }}>Paid</strong> = 8hr hourly (no commission). <strong style={{ color: '#ffb74d' }}>Non-paid</strong> = your regular/OT rate, only for hours you actually work.</div>
+      <div style={{ fontSize: 10, color: 'var(--fg-3)', margin: '0 0 10px', lineHeight: 1.55 }}>OM sets the on-call roster 30+ days out. <strong style={{ color: 'var(--green-bright)' }}>Paid</strong> = 8hr × your hourly on top — <strong>work it and you keep your commission too</strong>. <strong style={{ color: '#ffb74d' }}>Non-paid</strong> = your regular/OT rate, only for hours you actually work.</div>
 
       <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--green-bright)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>● Paid holidays · 8hr hourly (5)</div>
       {pto.paid.map((h, i) => <HolidayRow key={i} h={h} paid />)}
