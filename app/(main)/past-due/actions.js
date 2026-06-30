@@ -101,7 +101,10 @@ export async function markInvoicePaid(invoiceId) {
   try { ({ sb, email } = await assertCanMark()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
   if (!invoiceId) return { ok: false, msg: 'No invoice.' };
   const { data: inv } = await sb.from('invoices').select('balance, customer_id, invoice_number').eq('id', invoiceId).maybeSingle();
-  const { error } = await sb.from('invoices').update({ status: 'paid' }).eq('id', invoiceId);
+  // Zero the balance too — every collect path keys on balance > 0, so leaving it would let a tech re-collect
+  // a manually-paid invoice (double-charge).
+  let { error } = await sb.from('invoices').update({ status: 'paid', balance: 0, paid_at: new Date().toISOString() }).eq('id', invoiceId);
+  if (error && /paid_at/.test(error.message || '')) ({ error } = await sb.from('invoices').update({ status: 'paid', balance: 0 }).eq('id', invoiceId));
   if (error) return { ok: false, msg: error.message };
   try {
     await sb.from('ar_activity').insert({
@@ -120,7 +123,9 @@ export async function markCustomerPaid(customerId) {
   if (!customerId) return { ok: false, msg: 'No customer.' };
   const { data: rows } = await sb.from('invoices').select('balance').eq('customer_id', customerId).eq('status', 'open');
   const amount = (rows || []).reduce((a, r) => a + (Number(r.balance) || 0), 0);
-  const { error } = await sb.from('invoices').update({ status: 'paid' }).eq('customer_id', customerId).eq('status', 'open');
+  // Zero the balances too (not just status) so these can't be re-collected. Match the open rows BEFORE flipping.
+  let { error } = await sb.from('invoices').update({ status: 'paid', balance: 0, paid_at: new Date().toISOString() }).eq('customer_id', customerId).eq('status', 'open');
+  if (error && /paid_at/.test(error.message || '')) ({ error } = await sb.from('invoices').update({ status: 'paid', balance: 0 }).eq('customer_id', customerId).eq('status', 'open'));
   if (error) return { ok: false, msg: error.message };
   try {
     await sb.from('ar_activity').insert({

@@ -28,7 +28,7 @@ async function gateJob(sb, g, jobId) {
 
 // Record a paid charge ONCE (idempotent on the PaymentIntent id) + flip the job's payment disposition to
 // paid_card so the close-out checklist reflects it. Shared by the reader + keyed-entry flows.
-async function recordPaidOnce(sb, jobId, profile, paymentIntentId, action) {
+async function recordPaidOnce(sb, jobId, profile, paymentIntentId, action, paidCents) {
   try {
     // ATOMIC CLAIM — the unique index (mig 141) rejects a duplicate/concurrent insert, so only the FIRST
     // caller gets past here. Closes the multi-tab/device reader-poll race that could double-post AR.
@@ -46,10 +46,15 @@ async function recordPaidOnce(sb, jobId, profile, paymentIntentId, action) {
     try {
       const { data: inv } = await sb.from('invoices').select('id, invoice_number, customer_id, balance').eq('job_id', String(jobId)).gt('balance', 0).order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (inv) {
-        const paid = Number(inv.balance) || 0;
-        const u = await sb.from('invoices').update({ status: 'paid', balance: 0, paid_at: new Date().toISOString() }).eq('id', inv.id);
-        if (u.error && /paid_at/.test(u.error.message || '')) await sb.from('invoices').update({ status: 'paid', balance: 0 }).eq('id', inv.id);
-        try { await sb.from('ar_activity').insert({ action: 'customer_paid', invoice_id: inv.id, invoice_number: inv.invoice_number || null, customer_id: inv.customer_id || null, amount: paid, by_email: 'field-collect' }); } catch (_) {}
+        // SUBTRACT the actual charged amount — a partial/deposit reader charge must reduce the balance, not
+        // zero it. Fall back to the full balance only if the charged amount is unknown.
+        const balDollars = Number(inv.balance) || 0;
+        const paidDollars = Number(paidCents) > 0 ? Number(paidCents) / 100 : balDollars;
+        const newBal = Math.max(0, Math.round((balDollars - paidDollars) * 100) / 100);
+        const paidOff = newBal === 0;
+        const u = await sb.from('invoices').update({ balance: newBal, ...(paidOff ? { status: 'paid', paid_at: new Date().toISOString() } : {}) }).eq('id', inv.id);
+        if (u.error && /paid_at/.test(u.error.message || '')) await sb.from('invoices').update({ balance: newBal, ...(paidOff ? { status: 'paid' } : {}) }).eq('id', inv.id);
+        try { await sb.from('ar_activity').insert({ action: 'customer_paid', invoice_id: inv.id, invoice_number: inv.invoice_number || null, customer_id: inv.customer_id || null, amount: paidDollars, by_email: 'field-collect' }); } catch (_) {}
       }
     } catch (e) { console.error(`[checkout] invoice reconcile FAILED for job ${jobId} (charge cleared, invoice may still show open):`, (e && e.message) || e); }
     revalidatePath(`/job/${jobId}`);
@@ -150,7 +155,7 @@ export async function pollReaderCharge(jobId, paymentIntentId) {
   if (!s.ok) return { ok: false, msg: s.error };
 
   if (s.paid) {
-    await recordPaidOnce(sb, jobId, g.profile, paymentIntentId, 'reader_charge_paid');
+    await recordPaidOnce(sb, jobId, g.profile, paymentIntentId, 'reader_charge_paid', s.baseCents);
     return { ok: true, status: s.status, paid: true, done: true };
   }
   const failed = s.status === 'canceled';

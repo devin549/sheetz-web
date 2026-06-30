@@ -17,8 +17,16 @@ async function reconcilePaid(sb, s) {
   const totalDollars = Math.round(totalCents) / 100;
   if (md.invoice_id) {
     try {
-      const r = await sb.from('invoices').update({ status: 'paid', balance: 0, paid_at: new Date().toISOString() }).eq('id', md.invoice_id);
-      if (r.error && /paid_at/.test(r.error.message || '')) await sb.from('invoices').update({ status: 'paid', balance: 0 }).eq('id', md.invoice_id);
+      // SUBTRACT the amount actually paid — never blindly zero the balance. A partial/deposit payment
+      // (e.g. $100 on a $2,000 invoice) must reduce the balance, NOT mark the whole thing paid; only flip
+      // to 'paid' when the balance reaches 0. If we can't read the current balance, fall back to the old
+      // mark-paid behavior (most payments ARE the full amount).
+      let newBal = 0, known = false;
+      try { const { data: inv } = await sb.from('invoices').select('balance').eq('id', md.invoice_id).maybeSingle(); if (inv && inv.balance != null) { newBal = Math.max(0, Math.round((Number(inv.balance) - paidDollars) * 100) / 100); known = true; } } catch (_) {}
+      const paidOff = !known || newBal === 0;
+      const bal = known ? newBal : 0;
+      const r = await sb.from('invoices').update({ balance: bal, ...(paidOff ? { status: 'paid', paid_at: new Date().toISOString() } : {}) }).eq('id', md.invoice_id);
+      if (r.error && /paid_at/.test(r.error.message || '')) await sb.from('invoices').update({ balance: bal, ...(paidOff ? { status: 'paid' } : {}) }).eq('id', md.invoice_id);
     } catch (_) {}
   }
   try { await sb.from('ar_activity').insert({ action: 'customer_paid', customer_id: md.customer_id || null, customer_name: md.customer_name || null, invoice_id: md.invoice_id || null, invoice_number: md.invoice_number || null, amount: paidDollars, by_email: 'stripe' }); } catch (_) {}
@@ -40,27 +48,37 @@ export async function POST(request) {
   catch (e) { return new Response('bad signature: ' + String((e && e.message) || e).slice(0, 80), { status: 400 }); }
 
   const sb = getSupabaseAdmin();
-  // Idempotency: Stripe delivers at-least-once and retries when it doesn't get a prompt 2xx. If we've already
-  // processed this event id, skip — otherwise a retried checkout.session.completed double-writes the AR ledger.
-  // Fail-soft: pre-migration 136 (table missing) the select throws → we proceed and behave exactly as before.
-  if (sb) {
-    try { const { data: seen } = await sb.from('stripe_events').select('id').eq('id', event.id).maybeSingle(); if (seen) return Response.json({ received: true, deduped: true }); } catch (_) {}
-  }
   const s = event.data && event.data.object || {};
   const md = s.metadata || {};
+  // Idempotency: Stripe delivers at-least-once and retries until it gets a 2xx. CLAIM the event id FIRST —
+  // the PK insert is the lock, so only the first delivery wins and a retry hits a duplicate and is skipped
+  // BEFORE re-processing. (The old check-then-act inserted the id AFTER reconcile, leaving a window where a
+  // retry of a slow/crashed run re-ran reconcile and double-wrote AR.) Pre-mig-136 (table missing) the insert
+  // throws → we proceed un-deduped, same as before.
+  let claimed = false;
   if (sb) {
-    if (event.type === 'checkout.session.completed') {
-      // Card = paid right now. ACH = "unpaid"/processing here → wait for async_payment_succeeded to clear.
-      if (s.payment_status === 'paid') await reconcilePaid(sb, s);
-      else await note(sb, `🏦 Bank payment initiated${md.customer_name ? ` from ${md.customer_name}` : ''}${md.invoice_number ? ` on invoice ${md.invoice_number}` : ''} — settling in a few days, not marked paid yet.`);
-    } else if (event.type === 'checkout.session.async_payment_succeeded') {
-      await reconcilePaid(sb, s); // ACH cleared → now mark it paid
-    } else if (event.type === 'checkout.session.async_payment_failed') {
-      await note(sb, `⚠️ Bank payment FAILED${md.customer_name ? ` from ${md.customer_name}` : ''}${md.invoice_number ? ` on invoice ${md.invoice_number}` : ''} — invoice stays open, follow up.`);
+    try {
+      const { error } = await sb.from('stripe_events').insert({ id: event.id, type: event.type });
+      if (!error) claimed = true;
+      else if (/duplicate|unique|23505/i.test(error.message || '')) return Response.json({ received: true, deduped: true });
+    } catch (_) { /* table missing → proceed without dedupe */ }
+  }
+  if (sb) {
+    try {
+      if (event.type === 'checkout.session.completed') {
+        // Card = paid right now. ACH = "unpaid"/processing here → wait for async_payment_succeeded to clear.
+        if (s.payment_status === 'paid') await reconcilePaid(sb, s);
+        else await note(sb, `🏦 Bank payment initiated${md.customer_name ? ` from ${md.customer_name}` : ''}${md.invoice_number ? ` on invoice ${md.invoice_number}` : ''} — settling in a few days, not marked paid yet.`);
+      } else if (event.type === 'checkout.session.async_payment_succeeded') {
+        await reconcilePaid(sb, s); // ACH cleared → now mark it paid
+      } else if (event.type === 'checkout.session.async_payment_failed') {
+        await note(sb, `⚠️ Bank payment FAILED${md.customer_name ? ` from ${md.customer_name}` : ''}${md.invoice_number ? ` on invoice ${md.invoice_number}` : ''} — invoice stays open, follow up.`);
+      }
+    } catch (e) {
+      // Processing failed AFTER claiming — release the claim so Stripe's retry re-runs it (return non-2xx).
+      if (claimed) { try { await sb.from('stripe_events').delete().eq('id', event.id); } catch (_) {} }
+      return new Response('processing error', { status: 500 });
     }
-    // Record AFTER processing (best-effort) so a delivery that errored before completing isn't marked done —
-    // Stripe's retry will then re-run it. A retry AFTER success is what gets deduped above.
-    try { await sb.from('stripe_events').insert({ id: event.id, type: event.type }); } catch (_) {}
   }
   return Response.json({ received: true });
 }
