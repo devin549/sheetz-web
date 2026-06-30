@@ -60,12 +60,30 @@ A webhook can only POST. To READ #sheetz and reply, Captain Hook needs a **bot**
 
 ---
 
+## 3. Learn asset locations from #general (stopgap until the live tracker ships)
+
+Your crew already logs where equipment is in **#general** ("17G ready for pickup at 2501 Mansion View Ct" →
+"picked up and dropped at 426 E Broadway"). Captain Hook now reads that channel and Claude pulls out
+**what / where / who** for ANY asset with a location — machines, tools, keys, materials — so **Hank can
+answer "where's the 17G?"** with the latest known spot + who moved it. Retires when the real asset tracker is live.
+
+**To turn it on:**
+1. Run `supabase/145_asset_locations.sql` (creates the learned-location table).
+2. Right-click your **#general** channel → **Copy Channel ID** (Developer Mode on).
+3. In Vercel env, add `DISCORD_GENERAL_CHANNEL_ID` = that ID. Redeploy.
+
+> Uses the same bot from step 2 above, so the bot must be invited to the server and able to view #general.
+> Runs in the same 2-min pass; a cheap text filter keeps the AI off pure banter.
+
+---
+
 ## Env var summary
 
 | Var | Purpose | Required for |
 |-----|---------|--------------|
 | `DISCORD_WEBHOOK_URL` | #sheetz (team) poster | already set |
 | `DISCORD_OFFICE_WEBHOOK_URL` | #dispatch (office) poster | the channel split |
-| `DISCORD_BOT_TOKEN` | read #sheetz | talking back |
+| `DISCORD_BOT_TOKEN` | read #sheetz + #general | talking back + asset learning |
 | `DISCORD_CHANNEL_ID` | which channel to read (#sheetz) | talking back |
+| `DISCORD_GENERAL_CHANNEL_ID` | the #general channel to learn assets from | asset learning |
 | `HANK_AUTOREPLY` = `on` | let Hank actually post | talking back |

@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { syncDiscordCore } from '@/lib/discordSync';
 import { detectRescheduleProposals } from '@/lib/hankActions';
 import { runHank } from '@/lib/hank';
+import { learnAssetLocations } from '@/lib/assetLearn';
 import { detectCommand, resolveItemForChat } from '@/lib/chatIntents';
 import { postToDiscord } from '@/lib/discord';
 import { createAlert } from '@/lib/alerts';
@@ -105,5 +106,8 @@ export async function GET(request) {
   try { commands = await answerChatCommands(sb); } catch (_) {}
   // skipSync: we just synced above. autoPost gated by HANK_AUTOREPLY, same as the standalone hank cron.
   try { const autoPost = String(process.env.HANK_AUTOREPLY || '').toLowerCase() === 'on'; hank = await runHank(sb, { autoPost, skipSync: true }); } catch (_) {}
-  return NextResponse.json({ ...r, actions, commands, hank }, { status: r.ok ? 200 : 500 });
+  // (4) Learn asset locations from #general ("17G dropped at 426 E Broadway") so Hank can answer "where's the X?".
+  let assets = null;
+  try { assets = await learnAssetLocations(sb); } catch (_) {}
+  return NextResponse.json({ ...r, actions, commands, hank, assets }, { status: r.ok ? 200 : 500 });
 }
