@@ -228,8 +228,9 @@ export default async function Pto() {
         <strong style={{ color: 'var(--amber)' }}>💰 How vacation + holiday pay works:</strong><br />
         • <strong>Vacation</strong> = 40 hrs/yr · paid at <strong>your</strong> hourly base rate · <strong style={{ color: '#ff8a65' }}>NO commission on vacation pay</strong><br />
         • <strong>Holiday</strong> = 5 days/yr · 8 hrs each · paid at <strong>your</strong> hourly base rate (8 hrs × your rate) · <strong style={{ color: '#ff8a65' }}>NO commission</strong><br />
+        • <strong style={{ color: '#ffb74d' }}>📅 Work the day BEFORE and AFTER:</strong> to get paid for a holiday you must work the scheduled workday on both sides of it. <strong>Holiday on a Saturday = you must work Friday AND Monday.</strong> Call out either side → <strong style={{ color: '#ff8a65' }}>that holiday isn’t paid</strong>.<br />
         • <strong style={{ color: '#ffb74d' }}>2+ unexcused absences/yr</strong> = ALL 5 holidays FORFEITED for the year · auto-calc via Tech Sheet · manager email + audit log<br />
-        • Excused absence (sick w/ notice, doctor note, family emergency w/ Tracey approval) does NOT count against you · UNEXCUSED = no call/no show or last-minute bail without legit reason
+        • Excused absence (sick w/ notice, doctor note, family emergency w/ Tracey approval) does NOT count against the 2-strike rule · UNEXCUSED = no call/no show or last-minute bail without legit reason
       </div>
 
       {/* Office: set hire dates — the anchor for vacation anniversary + 90-day holiday eligibility */}
