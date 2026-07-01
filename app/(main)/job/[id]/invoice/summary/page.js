@@ -23,6 +23,10 @@ export default async function InvoiceSummary({ params }) {
   try { const { data } = await c.sb.from('invoices').select('invoice_number, total, balance, status, invoice_date, due_date').eq('job_id', String(params.id)).order('created_at', { ascending: false }).limit(1).maybeSingle(); inv = data || null; } catch (_) {}
   try { const { data } = await c.sb.from('jobs').select('work_summary').eq('id', String(params.id)).maybeSingle(); workSummary = data?.work_summary || ''; } catch (_) {}
   const authTerms = await getLegalTerms(c.sb, 'work_authorization');
+  // Completion acceptance signature (the "satisfied with the work" sign-off) — carried from the job closeout onto the invoice.
+  let closeout = null;
+  try { const { data } = await c.sb.from('job_closeout').select('completion_signature, completion_signed_name, completion_signed_at').eq('job_id', String(params.id)).maybeSingle(); closeout = data || null; } catch (_) {}
+  const completionTerms = await getLegalTerms(c.sb, 'completion_acceptance');
 
   const lines = Array.isArray(est?.lines) ? est.lines : [];
   const sub = Number(est?.subtotal) || lines.reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.quantity) || 1), 0) || Number(inv?.total) || 0;
@@ -113,6 +117,21 @@ export default async function InvoiceSummary({ params }) {
                 <div style={{ fontSize: 10, color: '#888' }}>Signature</div>
                 <img src={est.signature_data} alt="Customer signature" style={{ maxHeight: 80, maxWidth: 280, background: '#fff', border: '1px solid #e3ddcf', borderRadius: 6 }} />
                 <div style={{ fontSize: 11, color: '#1a1a1a', borderTop: '1px solid #1a1a1a', width: 280, marginTop: 2, paddingTop: 2 }}>{est.approved_name}{est.signed_at ? ` · ${fmt(est.signed_at)}` : ''}</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Completion acceptance — the "satisfied with the work" sign-off, carried from the job closeout. */}
+        {closeout?.completion_signed_name && (
+          <div style={{ marginTop: 12, padding: '10px 12px', border: cardBorder, borderRadius: 8, fontSize: 12, color: '#444' }}>
+            <div style={{ fontWeight: 800, color: '#1a1a1a', marginBottom: 4 }}>Completion acceptance</div>
+            <div style={{ fontSize: 10, color: '#666', lineHeight: 1.5, whiteSpace: 'pre-wrap', marginBottom: 6 }}>{completionTerms.content}</div>
+            {closeout.completion_signature && (
+              <div style={{ marginTop: 4 }}>
+                <div style={{ fontSize: 10, color: '#888' }}>Signature</div>
+                <img src={closeout.completion_signature} alt="Completion signature" style={{ maxHeight: 80, maxWidth: 280, background: '#fff', border: '1px solid #e3ddcf', borderRadius: 6 }} />
+                <div style={{ fontSize: 11, color: '#1a1a1a', borderTop: '1px solid #1a1a1a', width: 280, marginTop: 2, paddingTop: 2 }}>{closeout.completion_signed_name}{closeout.completion_signed_at ? ` · ${fmt(closeout.completion_signed_at)}` : ''}</div>
               </div>
             )}
           </div>
