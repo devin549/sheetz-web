@@ -52,8 +52,7 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
   const [checkNo, setCheckNo] = useState('');
   const [checkId, setCheckId] = useState('');
   const [cashPhoto, setCashPhoto] = useState(null);
-  const [extraEmail, setExtraEmail] = useState(''); // a different/additional address to email the receipt to
-  const [sendOther, setSendOther] = useState(false); // "send to a different email" checkbox
+  const [extraEmail, setExtraEmail] = useState(''); // a different/additional address to email the receipt / pay link to
   const [finMsg, setFinMsg] = useState(null); // financing hand-off result
   const [netMsg, setNetMsg] = useState(null); // net-30 billing result
   const [linkMsg, setLinkMsg] = useState(null); // pay-link email result (delivery is email-only until A2P clears)
@@ -72,9 +71,10 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
   const overBy = total > 0 && valid ? Math.round((amtNum - total) * 100) / 100 : 0; // >0 = over, <0 = short
   const isCashish = tab === 'cash' || tab === 'check';
   const recordAmt = (isCashish && overBy > 0) ? total : amtNum; // cash/check: cap to total, give change back
-  // The receipt auto-goes to the customer's email on file (from booking). Only pass the typed address when they
-  // ticked "different email" — or when there's no email on file to send to.
-  const receiptExtra = (sendOther || !customerEmail) ? extraEmail.trim() : '';
+  // The receipt auto-goes to the customer's email on file (from booking). When there's NO email on file, an
+  // input appears on the cash/check tabs so the tech can type one — otherwise the typed address isn't needed
+  // here (the "Email invoice" section at the bottom handles different-address sends).
+  const receiptExtra = customerEmail ? '' : extraEmail.trim();
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
@@ -89,7 +89,9 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
     if (!link) return;
     setLinkMsg(null); setMode('emaillink');
     start(async () => {
-      const r = await emailPayLink(jobId, { url: link.url, amountDollars: amtNum, extraEmail: extraEmail.trim() });
+      // Use the LINK's base amount, not the live input — the tech may have edited the $ field after creating
+      // the link, and the email must describe what the link actually charges.
+      const r = await emailPayLink(jobId, { url: link.url, amountDollars: Number(link.baseDollars) || 0, extraEmail: extraEmail.trim() });
       setLinkMsg(r); setMode(null);
     });
   }
@@ -240,8 +242,11 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
           </div>
 
           {/* Receipt auto-emails to the customer's email on file when payment records. The one place to add a
-              different address is the "Email invoice" section at the bottom — no duplicate email box here. */}
-          {isCashish && customerEmail && <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>📧 A receipt will email to {customerEmail} automatically.</div>}
+              different address is the "Email invoice" section at the bottom — no duplicate email box here.
+              NO email on file → show an input so the receipt has somewhere to go (optional). */}
+          {isCashish && (customerEmail
+            ? <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>📧 A receipt will email to {customerEmail} automatically.</div>
+            : <input value={extraEmail} onChange={(e) => setExtraEmail(e.target.value)} inputMode="email" placeholder="⚠️ No email on file — type one to email the receipt (optional)" style={{ ...input, width: '100%', boxSizing: 'border-box', fontSize: 12.5, marginTop: 8 }} />)}
 
           <div style={{ marginTop: 10 }}>
             {tab === 'reader' && (<>

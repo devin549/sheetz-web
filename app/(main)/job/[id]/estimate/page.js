@@ -136,8 +136,17 @@ export default async function QuoteTab({ params }) {
 
           {canEditSummary && <WorkSummaryCoach jobId={params.id} jobType={c.job.job_type || ''} initial={workSummary} />}
 
-          {/* 3️⃣ COLLECTION — cash · card · financing · Net-30 (office-billed customers show the bill-to-office banner) */}
-          {canCollect && <CloseoutCheckout jobId={params.id} suggested={amount} tel={dial(c.customer.phone)} customerEmail={c.customer.email || ''} hasReader={hasReader} stripeReady={stripeReady} officeBilled={officeBilled} netDays={netDays} />}
+          {/* 3️⃣ COLLECTION — cash · card · financing · Net-30 (office-billed customers show the bill-to-office banner).
+              PAID IN FULL → no collect box at all (it used to render prefilled with the FULL job amount on a $0
+              balance — one tap from a double-collect). A green banner replaces it. */}
+          {canCollect && (paid ? (
+            <div className="card" style={{ marginTop: 10, borderLeft: '3px solid var(--green)' }}>
+              <div style={{ fontWeight: 800, color: 'var(--green)', fontSize: 15 }}>✅ Paid in full — nothing to collect</div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>This invoice has a $0.00 balance. Email the paid invoice below if the customer wants a copy.</div>
+            </div>
+          ) : (
+            <CloseoutCheckout jobId={params.id} suggested={amount} tel={dial(c.customer.phone)} customerEmail={c.customer.email || ''} hasReader={hasReader} stripeReady={stripeReady} officeBilled={officeBilled} netDays={netDays} />
+          ))}
 
           {/* 4️⃣ SIGNATURE — final acceptance ("satisfied with the work") */}
           <CompletionSignature jobId={params.id} terms={completionTerms.content} signedName={closeout?.completion_signed_name} signedAt={closeout?.completion_signed_at} />

@@ -255,6 +255,16 @@ export async function recordManualPayment(jobId, payload) {
   if (gj.err) return { ok: false, msg: gj.err };
   const job = gj.job;
 
+  // PAID-IN-FULL guard — if this job HAS invoices and every one is at $0, there is nothing to collect. Blocks
+  // the double-collect (stale tab / already-paid job still showing a prefilled amount). Jobs with no invoice
+  // rows at all (legacy / pre-invoice) still record normally.
+  try {
+    const { data: allInv } = await sb.from('invoices').select('balance').eq('job_id', String(jobId)).limit(20);
+    if ((allInv || []).length && !allInv.some((v) => Number(v.balance) > 0)) {
+      return { ok: false, msg: 'This job is already paid in full — nothing to collect. If the customer owes something new, the office can reopen the invoice.' };
+    }
+  } catch (_) { /* best-effort — never block a legit collection on a lookup hiccup */ }
+
   const p = payload || {};
   const method = p.method === 'check' ? 'check' : 'cash';
   const dollars = Number(p.amountDollars) > 0 ? Number(p.amountDollars) : await suggestedDollars(sb, jobId, job);
