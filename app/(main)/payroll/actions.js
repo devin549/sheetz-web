@@ -8,6 +8,7 @@ import { nyDayWindow } from '@/lib/day';
 import { onsiteHours } from '@/lib/hours';
 import { computeP3 } from '@/lib/payrollAdjust';
 import { holidaysForYear } from '@/lib/holidays';
+import { computeJobPay } from '@/lib/pay';
 
 const PAYROLL_ROLES = ['owner', 'admin', 'gm', 'om', 'accounting'];
 const APPROVE_ROLES = ['owner', 'admin', 'gm', 'om'];
@@ -58,9 +59,21 @@ export async function generateRun(weekStart) {
   if (existing.data) return { ok: true, runId: existing.data.id, msg: 'Draft already exists.' };
 
   const startISO = nyDayWindow(ws).startISO, endISO = nyDayWindow(weekEnd).endISO;
-  const { data: jobs } = await ctx.sb.from('jobs').select('tech_id, tech_name, amount, started_at, completed_at').not('tech_id', 'is', null).gte('completed_at', startISO).lt('completed_at', endISO);
+  // SECURITY/MONEY (audit P0-2): pull the cost inputs so commission is computed on the CB NET base (not gross),
+  // and EXCLUDE cancelled/held jobs (a completed-then-cancelled job kept its completed_at + amount and was
+  // still being paid). Fail-soft to the bare select if the cost columns aren't live yet.
+  const COST = 'material_cost_cents, dispatch_fee_cents, sub_cost_cents, sub_verified';
+  const jobsQ = () => ctx.sb.from('jobs').not('tech_id', 'is', null).gte('completed_at', startISO).lt('completed_at', endISO).not('status', 'in', '(cancelled,canceled,hold)');
+  let jr = await jobsQ().select(`tech_id, tech_name, amount, started_at, completed_at, ${COST}`);
+  if (jr.error && /column|schema cache|does not exist/i.test(jr.error.message || '')) jr = await jobsQ().select('tech_id, tech_name, amount, started_at, completed_at');
+  const jobs = jr.data || [];
   const byTech = {};
-  (jobs || []).forEach((j) => { const m = (byTech[j.tech_id] = byTech[j.tech_id] || { name: j.tech_name || '', count: 0, rev: 0, hours: 0 }); m.count++; m.rev += Number(j.amount) || 0; m.hours += onsiteHours(j.started_at, j.completed_at); if (j.tech_name) m.name = j.tech_name; });
+  (jobs || []).forEach((j) => {
+    const m = (byTech[j.tech_id] = byTech[j.tech_id] || { name: j.tech_name || '', count: 0, rev: 0, hours: 0, jobs: [] });
+    m.count++; m.rev += Number(j.amount) || 0; m.hours += onsiteHours(j.started_at, j.completed_at);
+    m.jobs.push({ revenue_cents: Math.round((Number(j.amount) || 0) * 100), material_cost_cents: j.material_cost_cents, dispatch_fee_cents: j.dispatch_fee_cents, sub_cost_cents: j.sub_cost_cents, sub_verified: j.sub_verified });
+    if (j.tech_name) m.name = j.tech_name;
+  });
 
   const { data: pays } = await ctx.sb.from('pay_profiles').select('tech_id, pay_type, commission_pct, hourly_rate, weekly_salary, hire_date');
   const payByTech = {}; (pays || []).forEach((p) => { payByTech[p.tech_id] = p; });
@@ -89,9 +102,15 @@ export async function generateRun(weekStart) {
   if (rErr) return { ok: false, msg: rErr.message };
 
   const lines = techIds.map((tid) => {
-    const j = byTech[tid] || { name: '', count: 0, rev: 0, hours: 0 };
+    const j = byTech[tid] || { name: '', count: 0, rev: 0, hours: 0, jobs: [] };
     const p = payByTech[tid] || { pay_type: 'commission', commission_pct: 0, hourly_rate: 0, weekly_salary: 0 };
-    const comm = ['commission', 'hourly_comm'].includes(p.pay_type) ? Math.round((j.rev * (Number(p.commission_pct) || 0) / 100) * 100) : 0;
+    // Commission on the CB NET base per job (revenue − dispatch − marked-up material − sub) + premium — the
+    // SAME lib/pay.js engine the tech's /pay screen uses, so payroll and /pay can't disagree. (Was gross × pct.)
+    let comm = 0, subPending = false;
+    if (['commission', 'hourly_comm'].includes(p.pay_type)) {
+      const pct = Number(p.commission_pct) || 0;
+      (j.jobs || []).forEach((job) => { const r = computeJobPay(job, pct); comm += r.commission + r.premium; if (r.subPending) subPending = true; });
+    }
     const hours = Math.round((j.hours || 0) * 100) / 100;                  // auto on-site hours from job timeline
     const isSalary = p.pay_type === 'salary';
     const salaryBase = isSalary ? cents(p.weekly_salary) : 0;
@@ -115,7 +134,8 @@ export async function generateRun(weekStart) {
       run_id: run.id, tech_id: tid, tech_name: j.name || nameById[tid] || 'Tech', pay_type: p.pay_type,
       jobs_count: j.count, revenue_cents: Math.round(j.rev * 100), commission_cents: comm,
       hours, hourly_cents: hourlyCents, bonus_cents: 0, adjust_cents: 0,
-      holiday_cents: p3.holidayCents, dock_cents, pto_note: p3.notes.join(' · ') || null,
+      holiday_cents: p3.holidayCents, dock_cents,
+      pto_note: [p3.notes.join(' · '), subPending ? '⚠ unverified sub cost' : ''].filter(Boolean).join(' · ') || null,
     };
   });
   if (lines.length) {
