@@ -179,6 +179,20 @@ export default async function Board({ searchParams }) {
     if (!sd.error) actuals.same_day_fills = sd.count || 0;
   } catch (_) { /* ignore */ }
 
+  // 🎯 Win-back opportunities waiting on the office (tech recs + declined estimates, minus ones already
+  // worked). A quick count + drill-in to /opportunities — cheap head-counts so the board stays fast.
+  let oppCount = 0;
+  if (canContact || canAssign) {
+    try {
+      const [rec, dec, closed] = await Promise.all([
+        sb.from('opportunities').select('id', { count: 'exact', head: true }).eq('kind', 'recommendation').eq('status', 'open'),
+        sb.from('pricebook_estimates').select('id', { count: 'exact', head: true }).eq('status', 'declined'),
+        sb.from('opportunities').select('id', { count: 'exact', head: true }).eq('kind', 'declined_estimate').in('status', ['won', 'dismissed', 'sent']),
+      ]);
+      oppCount = (rec.count || 0) + Math.max(0, (dec.count || 0) - (closed.count || 0));
+    } catch (_) { /* opportunities table not migrated yet */ }
+  }
+
   return (
     <div className="wrap" style={{ maxWidth: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -187,6 +201,7 @@ export default async function Board({ searchParams }) {
         <DateNav date={dateStr} today={nyTodayStr()} />
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
           <span className="muted" style={{ fontSize: 12 }}>Booked: <strong style={{ color: 'var(--green)' }}>{money(dayRevenue)}</strong></span>
+          {oppCount > 0 && <Link href="/opportunities" className="pill" title="Win-back money — tech recs + declined estimates waiting on a follow-up" style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', border: '1px solid var(--amber-dim)', textDecoration: 'none' }}>🎯 {oppCount} opportunit{oppCount === 1 ? 'y' : 'ies'}</Link>}
           <Link href="/my-day" className="muted" style={{ fontSize: 12 }}>My Day →</Link>
         </span>
       </div>
