@@ -3,6 +3,7 @@
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
 import { canCompose, canApprove, AUDIENCE_KEYS, audienceLabel, audienceBrief, WH_AGE_YEARS } from '@/lib/campaigns';
+import { openRecs, declinedEstimates, loadMarkers } from '@/lib/opportunities';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 import { isEmailConfigured, sendOne, renderEmailHtml } from '@/lib/email';
 import { loadProfile } from '@/lib/profile';
@@ -48,6 +49,13 @@ async function resolveAudience(sb, key) {
       if (match) set.add(cid);
     }
     custIds = [...set];
+    if (!custIds.length) return { recipients: [], skipped: 0 };
+  }
+  // Win-back audiences: customers with an OPEN opportunity of that kind (minus ones already won/dismissed/sent).
+  if (key === 'opp_declined' || key === 'opp_recs') {
+    const [rows, markers] = await Promise.all([key === 'opp_recs' ? openRecs(sb) : declinedEstimates(sb), loadMarkers(sb)]);
+    const closed = (ref) => { const m = markers.get(ref); return m && ['won', 'dismissed', 'sent'].includes(m.status); };
+    custIds = [...new Set(rows.filter((r) => !closed(r.ref) && r.customerId).map((r) => r.customerId))];
     if (!custIds.length) return { recipients: [], skipped: 0 };
   }
   if (key === 'pastdue' || key === 'pastdue90') {
