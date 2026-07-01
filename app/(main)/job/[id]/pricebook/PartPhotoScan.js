@@ -10,7 +10,7 @@ import { scanDataPlate } from '../equipment/visionActions';
 import { saveEquipment } from '../equipment/equipActions';
 import InAppCamera from '../InAppCamera';
 
-const EQUIP_FIXTURES = new Set(['water_heater', 'tankless', 'water_softener', 'sump_pump']);
+const EQUIP_FIXTURES = new Set(['water_heater', 'tankless', 'water_softener', 'sump_pump', 'garbage_disposal']);
 
 const money = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 const fileToDataUrl = (file) => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file); });
@@ -84,14 +84,13 @@ export default function PartPhotoScan({ onAdd, jobId, onFocus }) {
       if (r.ok) { setPlate(r.plate); setPlateMsg(null); } else setPlateMsg(r.msg);
     });
   };
-  const saveBrand = () => start(async () => {
+  const saveBrand = (label) => start(async () => {
     setPlateMsg(null);
-    const r = await saveEquipment(jobId, plate, res?.label || 'Water Heater');
+    const r = await saveEquipment(jobId, plate, label || (res?.fixtures?.[0]?.label) || 'Equipment');
     if (r.ok) { setSavedBrand(r.msg); setPlate(null); } else setPlateMsg(r.msg);
   });
 
-  const ladderHas = (l) => l && (l.good || l.better || l.best);
-  const hasResults = res && (ladderHas(res.repairs) || ladderHas(res.replacements));
+  const fixtures = res?.fixtures && res.fixtures.length ? res.fixtures : (res ? [res] : []);
 
   return (
     <div style={{ marginBottom: 10 }}>
@@ -100,43 +99,47 @@ export default function PartPhotoScan({ onAdd, jobId, onFocus }) {
       </button>
       {msg && <div style={{ fontSize: 12, marginTop: 6, color: msg.startsWith('🔎') ? 'var(--fg-2)' : 'var(--amber)' }}>{msg}</div>}
 
-      {res && (
-        <div style={{ marginTop: 8, padding: '10px 11px', borderRadius: 10, background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 10, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Looks like</div>
-          <div style={{ fontWeight: 800, fontSize: 15 }}>{res.label || res.fixture || 'Fixture'}</div>
-          {res.problem && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>💡 {res.problem}</div>}
-          {res.mainLineHint && <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(255,179,0,.12)', border: '1px solid var(--amber)', fontSize: 12, color: 'var(--amber)', fontWeight: 700, lineHeight: 1.4 }}>🚱 {res.mainLineHint}</div>}
+      {fixtures.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          {fixtures.length > 1 && <div className="muted" style={{ fontSize: 11, marginBottom: 6, fontWeight: 700 }}>📋 Found {fixtures.length} things in this photo — each broken down:</div>}
+          {fixtures.map((fxr, idx) => (
+            <div key={idx} style={{ marginTop: idx ? 10 : 0, padding: '10px 11px', borderRadius: 10, background: 'var(--surface-1)', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 10, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>{idx === 0 ? 'Looks like' : 'Also in the photo'}</div>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>{fxr.label || fxr.fixture || 'Fixture'}</div>
+              {fxr.problem && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>💡 {fxr.problem}</div>}
+              {fxr.mainLineHint && <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(255,179,0,.12)', border: '1px solid var(--amber)', fontSize: 12, color: 'var(--amber)', fontWeight: 700, lineHeight: 1.4 }}>🚱 {fxr.mainLineHint}</div>}
 
-          {!hasResults ? (
-            <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>No matching items in your book yet — try the type-in search below, or browse the categories.</div>
-          ) : (
-            <>
-              <GbbLadder title="🔧 Repairs — good · better · best" ladder={res.repairs} added={added} onPick={pick} onFocus={onFocus} />
-              <GbbLadder title="🔄 Replacements — good · better · best" ladder={res.replacements} added={added} onPick={pick} onFocus={onFocus} />
-            </>
-          )}
-          {/* 📋 Equipment → capture + save the brand off the data plate (Rheem/AO Smith/Bradford White…). */}
-          {jobId && EQUIP_FIXTURES.has(res.fixture) && (
-            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--fg-2)', marginBottom: 5 }}>📋 Save the brand</div>
-              {savedBrand ? (
-                <div style={{ fontSize: 12, color: 'var(--green)', fontWeight: 700 }}>✓ {savedBrand}</div>
-              ) : !plate ? (
-                <>
-                  <button onClick={() => setPlateCam(true)} disabled={pending} className="pill" style={{ cursor: 'pointer', border: '1px solid var(--border-strong)', fontWeight: 700 }}>📋 Snap the data plate</button>
-                  <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>Reads the brand / model / year off the label and saves it to this address’s equipment.</div>
-                </>
+              {!fxr.hasResults ? (
+                <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>No matching items in your book for this one yet.</div>
               ) : (
-                <div style={{ padding: '8px 10px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-                  <div style={{ fontWeight: 800, fontSize: 13.5 }}>{[plate.brand, plate.model].filter(Boolean).join(' · ') || 'Unit'}</div>
-                  <div className="muted" style={{ fontSize: 11.5 }}>{[plate.year, plate.fuelType && plate.fuelType !== 'UNKNOWN' ? plate.fuelType : null, plate.capacityGallons ? `${plate.capacityGallons} gal` : null].filter(Boolean).join(' · ')}</div>
-                  <button onClick={saveBrand} disabled={pending} className="btn" style={{ marginTop: 8, fontSize: 12.5 }}>💾 Save brand to this location</button>
+                <>
+                  <GbbLadder title="🔧 Repairs — good · better · best" ladder={fxr.repairs} added={added} onPick={pick} onFocus={onFocus} />
+                  <GbbLadder title="🔄 Replacements — good · better · best" ladder={fxr.replacements} added={added} onPick={pick} onFocus={onFocus} />
+                </>
+              )}
+              {/* 📋 Equipment → capture + save the brand off the data plate (Rheem/AO Smith/InSinkErator…). */}
+              {jobId && EQUIP_FIXTURES.has(fxr.fixture) && (
+                <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--fg-2)', marginBottom: 5 }}>📋 Save the brand</div>
+                  {savedBrand ? (
+                    <div style={{ fontSize: 12, color: 'var(--green)', fontWeight: 700 }}>✓ {savedBrand}</div>
+                  ) : !plate ? (
+                    <>
+                      <button onClick={() => setPlateCam(true)} disabled={pending} className="pill" style={{ cursor: 'pointer', border: '1px solid var(--border-strong)', fontWeight: 700 }}>📋 Snap the data plate</button>
+                      <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>Reads the brand / model / year off the label and saves it to this address’s equipment.</div>
+                    </>
+                  ) : (
+                    <div style={{ padding: '8px 10px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                      <div style={{ fontWeight: 800, fontSize: 13.5 }}>{[plate.brand, plate.model].filter(Boolean).join(' · ') || 'Unit'}</div>
+                      <div className="muted" style={{ fontSize: 11.5 }}>{[plate.year, plate.fuelType && plate.fuelType !== 'UNKNOWN' && plate.fuelType !== 'N/A' ? plate.fuelType : null, plate.capacityGallons ? `${plate.capacityGallons} gal` : null, plate.horsepower ? `${plate.horsepower} HP` : null].filter(Boolean).join(' · ')}</div>
+                      <button onClick={() => saveBrand(fxr.label)} disabled={pending} className="btn" style={{ marginTop: 8, fontSize: 12.5 }}>💾 Save brand to this location</button>
+                    </div>
+                  )}
+                  {plateMsg && <div style={{ fontSize: 11.5, marginTop: 5, color: plateMsg.startsWith('📋') ? 'var(--fg-2)' : 'var(--amber)' }}>{plateMsg}</div>}
                 </div>
               )}
-              {plateMsg && <div style={{ fontSize: 11.5, marginTop: 5, color: plateMsg.startsWith('📋') ? 'var(--fg-2)' : 'var(--amber)' }}>{plateMsg}</div>}
             </div>
-          )}
-
+          ))}
           <button onClick={() => setCam(true)} disabled={pending} className="pill" style={{ cursor: 'pointer', marginTop: 10, fontSize: 11 }}>📸 Scan another</button>
         </div>
       )}

@@ -6,7 +6,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { can, canAny } from '@/lib/roles';
 import { lensIdentify } from '@/lib/serpLens';
-import { identifyFixture } from '@/lib/aiVision';
+import { identifyFixture, identifyFixtures } from '@/lib/aiVision';
 import { marginPct, marginHealth } from '@/lib/pricebookEngine';
 
 // What words in a pricebook item name tie it to a fixture (so a toilet photo surfaces toilet work).
@@ -128,22 +128,15 @@ export async function identifyPart(formData) {
   return { ok: true, photoUrl, guess: lens.guess, matches: lens.matches, fixes };
 }
 
-// 📸 Scan the pricebook (Claude Vision) — identify the fixture in the photo, then surface its REPAIRS and its
-// REPLACEMENTS from OUR pricebook, with a "best" to highlight. No SerpAPI/quota — one fast Vision call.
-export async function scanFixtureRepairs(dataUrl) {
-  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
-  const fx = await identifyFixture(String(dataUrl || ''), c.profile.role);
-  if (!fx) return { ok: false, msg: 'Couldn’t read that photo — try the type-in search below, or a clearer shot. (AI may be off for your role.)' };
+const ladderHas = (l) => l && (l.good || l.better || l.best);
+
+// Build the Repairs + Replacements GBB ladders for ONE identified fixture against the (already-loaded) book.
+function buildFixtureRecs(fx, items, aliasByItem, showCost) {
   // Did the AI see a clog/stoppage? Then the FIX is clearing it (auger), so pull in the clearing words too —
   // the fixture's own part-words (flapper/fill valve) don't include them.
   const isClog = CLOG_RE.test(`${fx.problem || ''} ${fx.label || ''}`);
   const baseTerms = (FIXTURE_TERMS[fx.fixture] || []).concat(String(fx.label || '').toLowerCase().split(/\s+/).filter((w) => w.length > 2));
   const terms = isClog ? baseTerms.concat(CLEAR_TERMS) : baseTerms;
-
-  let items = [];
-  try { const { data } = await c.sb.from('pricebook_items').select('id, name, customer_name, retail_price, estimated_material_cost, target_margin_pct').eq('active', true).limit(2000); items = data || []; } catch (_) {}
-  let aliasByItem = {};
-  try { const { data } = await c.sb.from('pricebook_item_aliases').select('item_id, phrase').eq('active', true); (data || []).forEach((a) => { (aliasByItem[a.item_id] = aliasByItem[a.item_id] || []).push(String(a.phrase).toLowerCase()); }); } catch (_) {}
 
   const scored = items.map((it) => {
     const hay = `${it.name} ${it.customer_name || ''} ${(aliasByItem[it.id] || []).join(' ')}`.toLowerCase();
@@ -152,7 +145,6 @@ export async function scanFixtureRepairs(dataUrl) {
     return { it, hay, score };
   }).filter((x) => x.score >= 1).sort((a, b) => b.score - a.score);
 
-  const showCost = canAny(c.profile.role, ['seeFinancials']);
   const toLine = (it) => ({ id: it.id, name: it.customer_name || it.name, price: Number(it.retail_price) || 0, ...(showCost ? { marginPct: marginPct(it), marginHealth: marginHealth(it) } : {}) });
   const repairsAll = [], replacementsAll = [];
   for (const { it, hay } of scored) {
@@ -172,14 +164,31 @@ export async function scanFixtureRepairs(dataUrl) {
     if (!isLowPoint) clearOnly = clearOnly.filter((r) => !MAINLINE_RE.test(r.name.toLowerCase()));
     if (clearOnly.length) repairsForLadder = clearOnly;
   }
-  // Each bucket becomes a Good/Better/Best ladder (the Best glows in the UI) + "more" options.
   const repairs = gbbLadder(repairsForLadder);
   const replacements = gbbLadder(replacementsAll);
-  // Low point + a backup → almost always a MAIN-LINE blockage, not a local clog. Nudge the tech to cable/jet
-  // the main + camera it, so they don't undersell a main issue as a 6" snake.
   const mainLineHint = (isClog && isLowPoint) ? 'Low point + standing water = usually a MAIN-LINE backup, not a local clog. Cable/jet the main line + run a camera — don’t stop at a small snake.' : null;
-  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'fixture.scan', entity: 'pricebook', entity_id: '', detail: { fixture: fx.fixture, clog: isClog, mainLine: !!mainLineHint, repairs: repairsAll.length, replacements: replacementsAll.length } }); } catch (_) {}
-  return { ok: true, fixture: fx.fixture, label: fx.label, problem: fx.problem, confidence: fx.confidence, isClog, mainLineHint, repairs, replacements };
+  return { fixture: fx.fixture, label: fx.label, problem: fx.problem, confidence: fx.confidence, isClog, mainLineHint, repairs, replacements, hasResults: !!(ladderHas(repairs) || ladderHas(replacements)) };
+}
+
+// 📸 Scan the pricebook (Claude Vision) — identify EVERY fixture/component in the photo (the disposal + the
+// P-trap + supplies + shutoffs…), and surface each one's REPAIRS and REPLACEMENTS from OUR pricebook. One
+// Vision call. Returns { ok, fixtures:[…] } — one section per fixture; top-level mirrors the first for back-compat.
+export async function scanFixtureRepairs(dataUrl) {
+  const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
+  let fxList = await identifyFixtures(String(dataUrl || ''), c.profile.role);
+  if (!fxList || !fxList.length) { const one = await identifyFixture(String(dataUrl || ''), c.profile.role); fxList = one ? [one] : null; }
+  if (!fxList || !fxList.length) return { ok: false, msg: 'Couldn’t read that photo — try the type-in search below, or a clearer shot. (AI may be off for your role.)' };
+
+  let items = [];
+  try { const { data } = await c.sb.from('pricebook_items').select('id, name, customer_name, retail_price, estimated_material_cost, target_margin_pct').eq('active', true).limit(2000); items = data || []; } catch (_) {}
+  let aliasByItem = {};
+  try { const { data } = await c.sb.from('pricebook_item_aliases').select('item_id, phrase').eq('active', true); (data || []).forEach((a) => { (aliasByItem[a.item_id] = aliasByItem[a.item_id] || []).push(String(a.phrase).toLowerCase()); }); } catch (_) {}
+  const showCost = canAny(c.profile.role, ['seeFinancials']);
+
+  const fixtures = fxList.map((fx) => buildFixtureRecs(fx, items, aliasByItem, showCost));
+  try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'fixture.scan', entity: 'pricebook', entity_id: '', detail: { count: fixtures.length, fixtures: fixtures.map((f) => f.fixture) } }); } catch (_) {}
+  const primary = fixtures[0] || {};
+  return { ok: true, fixtures, ...primary }; // top-level = primary fixture, for back-compat with single-section callers
 }
 
 // 🧠 Teach the library: this Lens guess → this pricebook fix. Stored as a learned alias so next time the
