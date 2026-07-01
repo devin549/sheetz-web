@@ -193,6 +193,13 @@ export default async function Board({ searchParams }) {
     } catch (_) { /* opportunities table not migrated yet */ }
   }
 
+  // 📸 Open QA holds (failed photos) — mgt reviews pass/fail with a circled reason; a FAIL lands here until
+  // it's re-shot or a correction visit is booked. Chip → /corrections (the review + reschedule queue).
+  let qaHoldCount = 0;
+  if (canContact || canAssign) {
+    try { const { count } = await sb.from('job_corrections').select('id', { count: 'exact', head: true }).eq('status', 'open'); qaHoldCount = count || 0; } catch (_) { /* pre-corrections schema */ }
+  }
+
   return (
     <div className="wrap" style={{ maxWidth: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -202,6 +209,7 @@ export default async function Board({ searchParams }) {
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
           <span className="muted" style={{ fontSize: 12 }}>Booked: <strong style={{ color: 'var(--green)' }}>{money(dayRevenue)}</strong></span>
           {oppCount > 0 && <Link href="/opportunities" className="pill" title="Win-back money — tech recs + declined estimates waiting on a follow-up" style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', border: '1px solid var(--amber-dim)', textDecoration: 'none' }}>🎯 {oppCount} opportunit{oppCount === 1 ? 'y' : 'ies'}</Link>}
+          {qaHoldCount > 0 && <Link href="/corrections" className="pill" title="Failed closeout photos — re-shoot or book a correction visit with the customer" style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', border: '1px solid var(--red)', textDecoration: 'none' }}>📸 {qaHoldCount} QA hold{qaHoldCount === 1 ? '' : 's'}</Link>}
           <Link href="/my-day" className="muted" style={{ fontSize: 12 }}>My Day →</Link>
         </span>
       </div>

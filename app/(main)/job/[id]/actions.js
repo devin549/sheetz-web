@@ -256,6 +256,13 @@ export async function reviewPhoto(photoId, jobId, result, failReason, note, anno
       }
     } catch (_) { /* job_corrections optional → manual create/resolve still works */ }
   }
+  // 📣 A FAIL tells the OFFICE immediately — the queue existed but nobody was told. If the tech's still on
+  // site they re-shoot now; if they've left, the office schedules a correction visit with the customer.
+  if (result === 'fail') {
+    try {
+      await postToDiscord(`📸 **Photo FAILED QA** — ${custName(ctx.job)}${ctx.job.job_number ? ` · job #${ctx.job.job_number}` : ''} · reason: **${reason}**${note ? ` — “${cleanText(note, 120)}”` : ''}. Closeout is blocked until it’s fixed. Tech still on site → have them re-shoot now; tech gone → **create a correction visit + call the customer** → /corrections`, { to: 'office' });
+    } catch (_) {}
+  }
   try {
     await ctx.sb.from('audit_log').insert({
       actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role,

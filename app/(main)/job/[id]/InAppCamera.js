@@ -117,6 +117,9 @@ export default function InAppCamera({ label, onCapture, onClose, video = false, 
 
   const overlayBtn = { background: 'rgba(255,255,255,.15)', color: '#fff', border: 'none', borderRadius: 18, padding: '8px 14px', fontSize: 14, fontWeight: 700, cursor: 'pointer' };
   const photoFailed = qa && (qa.verdict === 'retake' || qa.quality === 'poor'); // AI says re-shoot
+  // 🚫 REPEAT OFFENSE — this tech has ALREADY been failed by a supervisor for this exact problem. No "use it
+  // anyway" escape hatch: they must retake it right. (First-time issues keep the override — office reviews.)
+  const hardBlocked = photoFailed && qa.repeatOffense === true;
 
   return (
     <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.88)', zIndex: 80, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
@@ -157,12 +160,13 @@ export default function InAppCamera({ label, onCapture, onClose, video = false, 
           <>
             <img src={shot} alt="preview" style={{ width: '100%', borderRadius: 14, maxHeight: '70vh', objectFit: 'contain', background: '#000' }} />
             {checking && <div style={{ textAlign: 'center', color: '#cbb6ff', fontSize: 12.5, fontWeight: 700 }}>✨ Checking the shot…</div>}
-            {!checking && photoFailed && <div style={{ background: 'rgba(239,83,80,.16)', border: '1px solid var(--red,#e53935)', borderRadius: 10, padding: '8px 11px', color: '#fff', fontSize: 12.5 }}>⚠ {qa.suggestion || 'This shot looks blurry or unclear'} — retake for a clean one.</div>}
+            {!checking && photoFailed && !hardBlocked && <div style={{ background: 'rgba(239,83,80,.16)', border: '1px solid var(--red,#e53935)', borderRadius: 10, padding: '8px 11px', color: '#fff', fontSize: 12.5 }}>⚠ {qa.suggestion || 'This shot looks blurry or unclear'} — retake for a clean one.</div>}
+            {!checking && hardBlocked && <div style={{ background: 'rgba(239,83,80,.28)', border: '2px solid var(--red,#e53935)', borderRadius: 10, padding: '10px 12px', color: '#fff', fontSize: 13, fontWeight: 700 }}>🚫 Blocked — a supervisor already failed you for this exact problem{qa.suggestion ? `: ${qa.suggestion}` : ''}. Fix the shot and retake it — this one can’t be submitted.</div>}
             {!checking && qa && !photoFailed && <div style={{ textAlign: 'center', color: '#a5d6a7', fontSize: 12.5, fontWeight: 700 }}>✓ Looks good{qa.quality ? ` · ${qa.quality}` : ''}</div>}
             {photoFailed ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <button onClick={retakePhoto} className="btn" style={{ padding: 14, fontSize: 15, background: 'var(--red,#e53935)', borderColor: 'var(--red,#e53935)' }}>↺ Retake</button>
-                <button onClick={usePhoto} style={{ background: 'transparent', color: 'rgba(255,255,255,.6)', border: '1px solid rgba(255,255,255,.25)', borderRadius: 10, padding: 9, fontSize: 12, cursor: 'pointer' }}>Use it anyway</button>
+                {!hardBlocked && <button onClick={usePhoto} style={{ background: 'transparent', color: 'rgba(255,255,255,.6)', border: '1px solid rgba(255,255,255,.25)', borderRadius: 10, padding: 9, fontSize: 12, cursor: 'pointer' }}>Use it anyway</button>}
               </div>
             ) : (
               <div style={{ display: 'flex', gap: 10 }}>
