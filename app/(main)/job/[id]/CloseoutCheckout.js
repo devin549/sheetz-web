@@ -208,20 +208,9 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
             })}
           </div>
 
-          {/* Receipt goes to the customer's email from booking; a checkbox lets them send it to a different one too. */}
-          {isCashish && (
-            <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 11.5, color: 'var(--fg-2)', lineHeight: 1.4 }}>
-                {customerEmail
-                  ? <>📧 Receipt emails to <strong style={{ color: 'var(--fg-1)' }}>{customerEmail}</strong> <span className="muted">(from booking)</span>.</>
-                  : <span style={{ color: 'var(--amber)' }}>⚠️ No email on file — add one below to send a receipt.</span>}
-              </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, cursor: 'pointer', fontSize: 12, color: 'var(--fg-2)' }}>
-                <input type="checkbox" checked={sendOther} onChange={(e) => setSendOther(e.target.checked)} /> Send to a different email{customerEmail ? ' too' : ''}
-              </label>
-              {(sendOther || !customerEmail) && <input type="email" value={extraEmail} onChange={(e) => setExtraEmail(e.target.value)} placeholder="different@email.com" style={{ ...input, width: '100%', boxSizing: 'border-box', marginTop: 6, fontSize: 12.5 }} />}
-            </div>
-          )}
+          {/* Receipt auto-emails to the customer's email on file when payment records. The one place to add a
+              different address is the "Email invoice" section at the bottom — no duplicate email box here. */}
+          {isCashish && customerEmail && <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>📧 A receipt will email to {customerEmail} automatically.</div>}
 
           <div style={{ marginTop: 10 }}>
             {tab === 'reader' && (<>
