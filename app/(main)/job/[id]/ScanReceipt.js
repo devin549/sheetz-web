@@ -6,7 +6,7 @@
 // "upload a saved photo" fallback covers the rare no-camera case.
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { scanReceipt, setJobCosts, flagFieldSubcontractor } from './actions';
+import { scanReceipt, saveMaterialReceipt, flagFieldSubcontractor } from './actions';
 import InAppCamera from './InAppCamera';
 
 function fileToScaledDataUrl(file, max = 1400) {
@@ -52,11 +52,12 @@ export default function ScanReceipt({ jobId, dispatchCents = 0 }) {
   const confirmSub = () => start(async () => { setSubMsg(null); const r = await flagFieldSubcontractor(jobId, lastUrl, { vendor: res.vendor, total: res.total, subName }); setSubMsg(r); if (r.ok) router.refresh(); });
   const onUpload = (e) => { const f = e.target.files?.[0]; if (f) scan(f); e.target.value = ''; };
 
-  // "Use" → set the material cost to the scanned total (keep the existing dispatch fee untouched).
+  // "Add + save" → STORE this receipt's photo and ADD its total to the job's material cost (sum of all
+  // receipts — a 2nd Lowe's trip no longer overwrites the 1st). Clears after so the tech can scan the next one.
   const use = () => start(async () => {
-    const r = await setJobCosts(jobId, Number(res.total) || 0, (Number(dispatchCents) || 0) / 100);
-    setSavedMsg(r.ok ? `✓ Material cost set to ${money(res.total)} from ${res.vendor || 'receipt'}.` : r.msg);
-    if (r.ok) router.refresh();
+    const r = await saveMaterialReceipt(jobId, lastUrl, { vendor: res.vendor, total: Number(res.total) || 0, date: res.date });
+    setSavedMsg(r.ok ? r.msg : r.msg);
+    if (r.ok) { setRes(null); setLastUrl(null); router.refresh(); }
   });
 
   return (
@@ -74,6 +75,7 @@ export default function ScanReceipt({ jobId, dispatchCents = 0 }) {
         <input ref={uploadRef} type="file" accept="image/*" onChange={onUpload} style={{ display: 'none' }} />
       </div>
       {err && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 8 }}>{err}</div>}
+      {savedMsg && <div style={{ fontSize: 12.5, marginTop: 8, color: 'var(--green)', fontWeight: 700 }}>{savedMsg}</div>}
 
       {camOpen && <InAppCamera label="Receipt" onClose={() => setCamOpen(false)} onCapture={(file) => { setCamOpen(false); scan(file); }} />}
 
@@ -90,12 +92,10 @@ export default function ScanReceipt({ jobId, dispatchCents = 0 }) {
             ))}
           </div>
           {res.notes && <div className="muted" style={{ fontSize: 11, marginTop: 6, fontStyle: 'italic' }}>📝 {res.notes}</div>}
-          {!savedMsg ? (
-            <button onClick={use} disabled={pending || !(Number(res.total) > 0)} className="btn btn-primary" style={{ width: '100%', marginTop: 10, opacity: (pending || !(Number(res.total) > 0)) ? 0.6 : 1 }}>
-              💵 Use {money(res.total)} as the material cost
-            </button>
-          ) : <div style={{ fontSize: 12, marginTop: 10, color: 'var(--green)', fontWeight: 700 }}>{savedMsg}</div>}
-          <div className="muted" style={{ fontSize: 10.5, marginTop: 8 }}>Review the read before you use it. This sets your material cost — it never auto-saves a blurry scan.</div>
+          <button onClick={use} disabled={pending || !(Number(res.total) > 0)} className="btn btn-primary" style={{ width: '100%', marginTop: 10, opacity: (pending || !(Number(res.total) > 0)) ? 0.6 : 1 }}>
+            🧾 Add {money(res.total)} + save this receipt
+          </button>
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 8 }}>Saves the photo + adds it to the job’s material cost. Got more? Scan each one — they add up (multiple Lowe’s trips all stored).</div>
 
           {/* 🧱 Not a parts receipt? Flag it as a subcontractor's bill → accounting verifies before pay. */}
           <div style={{ borderTop: '1px dashed var(--border)', marginTop: 10, paddingTop: 8 }}>

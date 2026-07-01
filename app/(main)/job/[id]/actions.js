@@ -409,6 +409,47 @@ export async function flagFieldSubcontractor(jobId, dataUrl, opts = {}) {
   return { ok: true, msg: 'Sent to accounting to verify before payment.' };
 }
 
+// 🧾 Save a MATERIAL (parts) receipt — Lowe's, HD, supply house. STORES the photo (so accounting sees every
+// receipt) + logs a receipt_entry, then sets the job's material cost to the SUM of all its material receipts.
+// This is the multi-receipt fix (Devin): a job with several Lowe's trips ADDS them up — scanning a 2nd receipt
+// no longer overwrites the 1st, and no receipt image is thrown away. Fail-soft to a plain add if tables are old.
+export async function saveMaterialReceipt(jobId, dataUrl, opts = {}) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'changeStatus') || can(ctx.role, 'collectPayment') || can(ctx.role, 'seeFinancials') || canUploadPhotos(ctx.role))) return { ok: false, msg: 'Not allowed.' };
+  const m = String(dataUrl || '').match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
+  if (!m) return { ok: false, msg: 'Re-scan the receipt first.' };
+  const mime = m[1]; const bytes = Buffer.from(m[2], 'base64');
+  if (!bytes.length || bytes.length > MAX_BYTES) return { ok: false, msg: 'Image too large or empty.' };
+  const total = Math.max(0, Number(opts.total) || 0);
+  const vendor = cleanText(opts.vendor, 120) || null;
+  const id = randomUUID();
+  const ext = mime === 'image/jpeg' ? 'jpg' : mime.split('/')[1];
+  const storagePath = `jobs/${ctx.job.id}/${new Date().toISOString().slice(0, 10)}/${id}-receipt.${ext}`;
+  const { error: upErr } = await ctx.sb.storage.from(BUCKET).upload(storagePath, bytes, { contentType: mime, upsert: false });
+  if (upErr) return { ok: false, msg: upErr.message };
+  const photo = { id, job_id: ctx.job.id, storage_bucket: BUCKET, storage_path: storagePath, file_name: `receipt.${ext}`, mime_type: mime, size_bytes: bytes.length, kind: 'receipt', caption: `${vendor || 'Parts'} receipt${total > 0 ? ` — $${total.toLocaleString()}` : ''}`, customer_visible: false, uploaded_by: ctx.user.id, uploaded_by_email: ctx.user.email, uploaded_by_name: ctx.profile?.name || ctx.user.email };
+  const { error: insErr } = await ctx.sb.from('job_photos').insert(photo);
+  if (insErr) return { ok: false, msg: 'Photo: ' + insErr.message };
+  const entry = { photo_id: id, job_id: ctx.job.id, vendor, amount_cents: total > 0 ? Math.round(total * 100) : null, is_subcontractor: false, status: 'logged' };
+  try { await ctx.sb.from('receipt_entries').upsert(entry, { onConflict: 'photo_id' }); } catch (_) { /* receipt_entries missing → still stored the photo; fall back to a plain add below */ }
+  // Material cost = SUM of all this job's MATERIAL receipts (source of truth — re-summing is safe, never
+  // double-counts, never loses one). Fall back to adding this receipt onto the current cost if we can't read them.
+  let matCents = null, count = 0;
+  try {
+    const { data: rows } = await ctx.sb.from('receipt_entries').select('amount_cents, is_subcontractor').eq('job_id', ctx.job.id);
+    if (rows) { matCents = 0; rows.forEach((r) => { if (!r.is_subcontractor) { matCents += Number(r.amount_cents) || 0; count++; } }); }
+  } catch (_) {}
+  if (matCents == null) { // couldn't sum → add this receipt to the existing material cost (best-effort)
+    try { const { data: j } = await ctx.sb.from('jobs').select('material_cost_cents').eq('id', ctx.job.id).maybeSingle(); matCents = (Number(j?.material_cost_cents) || 0) + Math.round(total * 100); } catch (_) { matCents = Math.round(total * 100); }
+    count = 1;
+  }
+  try { await ctx.sb.from('jobs').update({ material_cost_cents: matCents }).eq('id', ctx.job.id); } catch (_) {}
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'receipt.material_saved', entity: 'receipt', entity_id: id, detail: { job_id: ctx.job.id, vendor, total, material_total_cents: matCents } }); } catch (_) {}
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/my-day'); revalidatePath('/receipts');
+  return { ok: true, materialDollars: (matCents || 0) / 100, receiptCount: count, msg: `✓ Receipt saved${count > 1 ? ` (#${count} on this job)` : ''} — material total $${((matCents || 0) / 100).toLocaleString()}.` };
+}
+
 // ✍️ FINAL (completion) signature — the customer signs the completion-acceptance terms when the work is done
 // ("full and final acceptance of the work performed"). Stored on the job's closeout row. changeStatus-gated;
 // fail-soft pre-migration 140.
