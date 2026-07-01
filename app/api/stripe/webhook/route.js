@@ -1,6 +1,7 @@
 import { getStripe } from '@/lib/stripe';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { applyPayment, applyRefund } from '@/lib/invoiceBalance';
+import { sendOne, renderEmailHtml, isEmailConfigured } from '@/lib/email';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,17 +17,36 @@ async function reconcilePaid(sb, s) {
   const feeCents = Number(md.fee_cents) || 0;
   const paidDollars = Math.round(baseCents) / 100;
   const totalDollars = Math.round(totalCents) / 100;
+  let newBalance = null; // dollars left on the invoice after this payment (null = unknown)
   if (md.invoice_id) {
     // SUBTRACT the amount actually paid — a partial/deposit payment reduces the balance, and only reaching 0
     // flips to 'paid'. Atomic (audit P2-18): apply_invoice_delta locks the row so a concurrent card+cash or a
     // webhook retry can't lose an update or double-apply.
-    try { await applyPayment(sb, md.invoice_id, paidDollars); } catch (_) {}
+    try { const ap = await applyPayment(sb, md.invoice_id, paidDollars); if (ap?.ok && Number.isFinite(ap.balance)) newBalance = ap.balance; } catch (_) {}
   }
   try { await sb.from('ar_activity').insert({ action: 'customer_paid', customer_id: md.customer_id || null, customer_name: md.customer_name || null, invoice_id: md.invoice_id || null, invoice_number: md.invoice_number || null, amount: paidDollars, by_email: 'stripe' }); } catch (_) {}
   const feeBit = feeCents ? ` ($${paidDollars.toLocaleString()} + $${(feeCents / 100).toLocaleString()} card fee)` : '';
   const onInv = md.invoice_number ? ` on invoice ${md.invoice_number}` : '';
   const fromWho = md.customer_name ? ` from ${md.customer_name}` : '';
   await note(sb, `💳 Payment received: $${totalDollars.toLocaleString()}${feeBit}${onInv}${fromWho}.`);
+  // 📧 Email the customer OUR paid receipt — a pay-link settled at home went silent before this (the field
+  // cash/check flow already receipts; this is the online twin). Best-effort: a receipt failure must NEVER
+  // 500 the webhook (that would release the event claim and re-run reconcile on Stripe's retry).
+  try {
+    if (isEmailConfigured && md.customer_id) {
+      const { data: cust } = await sb.from('customers').select('name, email, email2').eq('id', md.customer_id).maybeSingle();
+      const emails = [...new Set([cust?.email, cust?.email2].map((e) => String(e || '').trim().toLowerCase()).filter((e) => /.+@.+\..+/.test(e)))];
+      if (emails.length) {
+        const first = String(cust?.name || md.customer_name || 'there').trim().split(/\s+/)[0] || 'there';
+        const feeLine = feeCents ? ` (includes the $${(feeCents / 100).toFixed(2)} card fee)` : '';
+        const balNote = newBalance == null ? 'Thank you for your business!'
+          : newBalance > 0 ? `Remaining balance on this invoice: $${newBalance.toFixed(2)}.`
+          : 'Your invoice is now paid in full. Thank you!';
+        const body = `Hi ${first},\n\nThank you! This confirms we received your online payment of $${totalDollars.toFixed(2)}${feeLine}${md.invoice_number ? ` on invoice ${md.invoice_number}` : ''}.\n\n${balNote}`;
+        await sendOne({ to: emails[0], cc: emails.slice(1).join(',') || undefined, subject: 'Payment receipt — Clog Busterz Plumbing', html: renderEmailHtml({ subject: 'Payment receipt — Clog Busterz Plumbing', body }), meta: { customerId: md.customer_id, purpose: 'receipt', ref: md.invoice_number || null } });
+      }
+    }
+  } catch (_) { /* receipt is best-effort */ }
 }
 
 // Money going BACK OUT — a refund or a chargeback (dispute). Reverses what reconcilePaid did: RE-OPENS the
