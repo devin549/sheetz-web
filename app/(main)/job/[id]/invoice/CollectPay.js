@@ -3,7 +3,7 @@
 // Collect payment for THIS job — fires a Stripe pay-link (customer pays + card fee on a secure page).
 import { useState, useRef, useTransition } from 'react';
 import { createJobPayLink } from '../../../my-day/actions';
-import { recordManualPayment } from '../checkoutActions';
+import { recordManualPayment, emailPayLink } from '../checkoutActions';
 
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 const fld = { flex: 1, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 15 };
@@ -28,6 +28,7 @@ export default function CollectPay({ jobId, defaultAmount, tel }) {
   const [extraEmail, setExtraEmail] = useState('');
   const cashRef = useRef();
   const [paid, setPaid] = useState(null); // { method, total, checkNumber }
+  const [linkMsg, setLinkMsg] = useState(null); // pay-link email result (email-only until A2P clears)
   const [pending, start] = useTransition();
   const amtNum = Number(amt);
   const valid = amtNum > 0;
@@ -36,7 +37,9 @@ export default function CollectPay({ jobId, defaultAmount, tel }) {
   const overBy = total > 0 && valid ? Math.round((amtNum - total) * 100) / 100 : 0;
   const isCashish = tab === 'cash' || tab === 'check';
   const recordAmt = (isCashish && overBy > 0) ? total : amtNum;
-  const make = () => { setErr(null); start(async () => { const r = await createJobPayLink(jobId, amtNum); if (r.ok) setLink(r); else setErr(r.msg); }); };
+  const make = () => { setErr(null); setLinkMsg(null); start(async () => { const r = await createJobPayLink(jobId, amtNum); if (r.ok) setLink(r); else setErr(r.msg); }); };
+  // Deliver the link by EMAIL only — texting is paused until the A2P/10DLC registration clears.
+  const emailIt = () => { if (!link) return; setLinkMsg(null); start(async () => { const r = await emailPayLink(jobId, { url: link.url, amountDollars: amtNum, extraEmail: extraEmail.trim() }); setLinkMsg(r); }); };
   const pickCash = async (e) => { const f = e.target.files && e.target.files[0]; if (!f) return; const url = await fileToScaledDataUrl(f); setCashPhoto(url); e.target.value = ''; };
   const takeCash = () => { setErr(null); if (!cashPhoto) { setErr('Take a photo of the cash fanned out first.'); return; } start(async () => { const r = await recordManualPayment(jobId, { method: 'cash', amountDollars: recordAmt, cashPhoto, extraEmail }); if (r.ok) setPaid({ method: 'cash', total: r.totalDollars, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); }); };
   const takeCheck = () => { setErr(null); if (!checkNo.trim() || !checkId.trim()) { setErr('Enter the check number and the ID written on the check.'); return; } start(async () => { const r = await recordManualPayment(jobId, { method: 'check', amountDollars: recordAmt, checkNumber: checkNo, idOnCheck: checkId, extraEmail }); if (r.ok) setPaid({ method: 'check', total: r.totalDollars, checkNumber: r.checkNumber, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); }); };
@@ -95,7 +98,7 @@ export default function CollectPay({ jobId, defaultAmount, tel }) {
               </div>
             )}
             {tab === 'link' && (<>
-              <button onClick={make} disabled={pending || !valid} className="btn" style={{ width: '100%', opacity: (pending || !valid) ? 0.55 : 1 }}>{pending ? '…' : '✉️ Send a pay link (card)'}</button>
+              <button onClick={make} disabled={pending || !valid} className="btn" style={{ width: '100%', opacity: (pending || !valid) ? 0.55 : 1 }}>{pending ? '…' : '✉️ Create a pay link (emailed)'}</button>
               <div className="muted" style={{ fontSize: 10.5, marginTop: 6, textAlign: 'center' }}>Customer pays on a secure Stripe page (+4% card fee).</div>
             </>)}
           </div>
@@ -105,10 +108,15 @@ export default function CollectPay({ jobId, defaultAmount, tel }) {
         <>
           <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--purple)', marginBottom: 6 }}>Ready — customer pays {money(link.totalDollars)} ({money(link.baseDollars)} + {money(link.feeDollars)} fee)</div>
           <input readOnly value={link.url} onFocus={(e) => e.target.select()} style={{ width: '100%', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '8px 10px', fontSize: 12, marginBottom: 8 }} />
+          {/* EMAIL delivery only — texting is paused until the A2P/10DLC registration clears. Sends to the
+              customer's email on file; the field below adds/overrides with a different address. */}
+          <input type="email" value={extraEmail} onChange={(e) => setExtraEmail(e.target.value)} placeholder="Customer email — or leave blank to use the one on file" style={{ width: '100%', boxSizing: 'border-box', background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 12.5, marginBottom: 8 }} />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {tel && <a href={`sms:${tel}?body=${encodeURIComponent('Pay your Clog Busterz invoice here: ' + link.url)}`} className="btn" style={{ flex: 1, textAlign: 'center', minWidth: 120, textDecoration: 'none' }}>✉️ Text customer</a>}
+            <button onClick={emailIt} disabled={pending} className="btn" style={{ flex: 1, textAlign: 'center', minWidth: 120, opacity: pending ? 0.6 : 1 }}>{pending ? '…' : '✉️ Email the link'}</button>
             <a href={link.url} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ textDecoration: 'none' }}>Open ↗</a>
           </div>
+          {linkMsg && <div style={{ fontSize: 12, marginTop: 8, fontWeight: 700, color: linkMsg.ok ? 'var(--green)' : 'var(--red)' }}>{linkMsg.msg}</div>}
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 6 }}>📵 Texting is paused until our A2P registration clears — send the link by email for now.</div>
         </>
       )}
     </div>
