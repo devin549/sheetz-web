@@ -103,7 +103,28 @@ async function matchFixes(sb, guess, showCost) {
   }));
 }
 
-// 📸 Identify a part from a photo → Lens matches + the matching pricebook fixes.
+// 🏪 Adaptive part sourcing — where can they get this RIGHT NOW, closest-first: the scanning tech's OWN van,
+// then the shop (Reid's), then other vans. Live qty from truck_inventory. Beats an Amazon link on a same-day
+// job. Re-runs every scan against current stock, so it always reflects what's actually on hand.
+async function findInStock(sb, guess, myName) {
+  const words = String(guess || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !STOP.has(w));
+  if (!words.length) return [];
+  let rows = [];
+  try { const { data } = await sb.from('truck_inventory').select('tech_name, sku, name, qty').gt('qty', 0).limit(3000); rows = data || []; } catch (_) { return []; }
+  const myFirst = String(myName || '').toLowerCase().split(/\s+/)[0] || '';
+  const isShop = (t) => /shop|reed|reid|warehouse|\bdc\b|main office/i.test(String(t || ''));
+  const isMine = (t) => myFirst && String(t || '').toLowerCase().includes(myFirst);
+  const scored = rows.map((r) => {
+    const hay = `${r.name || ''} ${r.sku || ''}`.toLowerCase();
+    let s = 0; words.forEach((w) => { if (hay.includes(w)) s += 1; });
+    return { r, s };
+  }).filter((x) => x.s >= 1);
+  const rank = (r) => (isMine(r.tech_name) ? 0 : isShop(r.tech_name) ? 1 : 2); // own van → shop → other vans
+  scored.sort((a, b) => rank(a.r) - rank(b.r) || b.s - a.s || (Number(b.r.qty) || 0) - (Number(a.r.qty) || 0));
+  return scored.slice(0, 8).map(({ r }) => ({ where: r.tech_name || 'Stock', name: r.name, sku: r.sku || null, qty: Number(r.qty) || 0, mine: isMine(r.tech_name), shop: isShop(r.tech_name) }));
+}
+
+// 📸 Identify a part from a photo → Lens matches + the matching pricebook fixes + who's got it in stock.
 export async function identifyPart(formData) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
   const file = formData.get('photo');
@@ -123,9 +144,10 @@ export async function identifyPart(formData) {
 
   const showCost = canAny(c.profile.role, ['seeFinancials']);
   const fixes = await matchFixes(c.sb, lens.guess, showCost);
+  const inStock = await findInStock(c.sb, lens.guess, c.profile.name); // 🏪 your van → shop → other vans (live)
 
   try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'part.identify', entity: 'pricebook', entity_id: '', detail: { guess: lens.guess, fixes: fixes.length } }); } catch (_) {}
-  return { ok: true, photoUrl, guess: lens.guess, matches: lens.matches, fixes };
+  return { ok: true, photoUrl, guess: lens.guess, matches: lens.matches, fixes, inStock };
 }
 
 const ladderHas = (l) => l && (l.good || l.better || l.best);

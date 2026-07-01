@@ -62,11 +62,31 @@ export default function IdentifyClient({ activeJobId, activeJobNumber, showCost 
             <div className="card" style={{ clear: 'both', marginTop: 14 }}><span className="muted">No direct pricebook match — check the catalog, or it may be a part to order (see matches below).</span></div>
           )}
 
-          {/* Raw Lens matches — what it is / where to buy */}
-          {res.matches && res.matches.length > 0 && (
+          {/* 🏪 Where to get it RIGHT NOW — our own stock, closest-first: your van → shop → other vans (live qty). */}
+          {res.inStock && res.inStock.length > 0 && (
             <div style={{ marginTop: 16 }}>
-              <div className="h2" style={{ fontSize: 14 }}>What it is · where to get it</div>
+              <div className="h2" style={{ fontSize: 14 }}>🏪 In stock — grab it now</div>
               <div style={{ display: 'grid', gap: 6 }}>
+                {res.inStock.map((s, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 11px', borderRadius: 9, background: s.mine ? 'color-mix(in oklab, var(--amber) 9%, var(--surface-2))' : 'var(--surface-2)', border: `1px solid ${s.mine ? 'var(--amber)' : 'var(--border)'}` }}>
+                    <span style={{ fontSize: 18 }}>{s.mine ? '🚐' : s.shop ? '🏭' : '🚚'}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}{s.sku ? <span className="muted" style={{ fontWeight: 400 }}> · {s.sku}</span> : null}</div>
+                      <div className="muted" style={{ fontSize: 10.5 }}>{s.mine ? 'On your van' : s.shop ? `Shop · ${s.where}` : s.where}</div>
+                    </div>
+                    <span className="pill" style={{ fontSize: 11, fontWeight: 800, color: s.qty > 0 ? 'var(--green)' : 'var(--fg-3)', whiteSpace: 'nowrap' }}>{s.qty} on hand</span>
+                  </div>
+                ))}
+              </div>
+              <div className="muted" style={{ fontSize: 10.5, marginTop: 5 }}>Live from Reid’s shop sheet + the vans — closest to you first.</div>
+            </div>
+          )}
+
+          {/* Not on any truck/shelf → fall back to ordering it online (Lens marketplace matches). */}
+          {res.matches && res.matches.length > 0 && (
+            <details style={{ marginTop: 14 }}>
+              <summary style={{ cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: 'var(--fg-2)' }}>{res.inStock && res.inStock.length > 0 ? '📦 Not on a truck? Order it online' : '📦 Where to buy it'}</summary>
+              <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
                 {res.matches.slice(0, 6).map((m, i) => (
                   <a key={i} href={m.link || '#'} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--border)', textDecoration: 'none', color: 'inherit' }}>
                     {m.thumbnail && <img src={m.thumbnail} alt="" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, background: '#fff' }} />}
@@ -75,7 +95,7 @@ export default function IdentifyClient({ activeJobId, activeJobNumber, showCost 
                   </a>
                 ))}
               </div>
-            </div>
+            </details>
           )}
 
           <button onClick={() => setCam(true)} disabled={pending} className="pill" style={{ cursor: 'pointer', marginTop: 14 }}>📸 Try another</button>
