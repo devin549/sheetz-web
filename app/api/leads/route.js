@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { postToDiscord } from '@/lib/discord';
+import { limitOr429 } from '@/lib/rateLimit';
 
 // Public lead-intake endpoint. The website form POSTs here; leads land in web_leads → /web-leads.
 // Self-authenticates via an optional shared secret (no user cookie). Honeypot + validation guard
@@ -20,6 +21,7 @@ export async function OPTIONS() {
 }
 
 export async function POST(req) {
+  const _rl = await limitOr429(req, 'leads', { limit: 15, windowSec: 60 }); if (_rl) return _rl; // audit: throttle unauth intake spam
   let data = {};
   const ct = req.headers.get('content-type') || '';
   try {

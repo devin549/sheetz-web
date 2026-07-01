@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { getAnthropic, isAiConfigured, AI_MODEL } from '@/lib/anthropic';
 import { COMPANY } from '@/lib/company';
 import { LOCATIONS } from '@/lib/rankConfig';
+import { limitOr429 } from '@/lib/rateLimit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,6 +16,7 @@ const STOP = new Set(['the', 'and', 'for', 'with', 'how', 'much', 'cost', 'does'
 export function OPTIONS() { return new NextResponse(null, { headers: CORS }); }
 
 export async function POST(request) {
+  const _rl = await limitOr429(request, 'ask', { limit: 20, windowSec: 60 }); if (_rl) return _rl; // audit: throttle unauth AI spend
   let body = {}; try { body = await request.json(); } catch {}
   const question = String(body.question || '').trim().slice(0, 500);
   if (!question) return NextResponse.json({ ok: false, error: 'Ask a question.' }, { status: 400, headers: CORS });

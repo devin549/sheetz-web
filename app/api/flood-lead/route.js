@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { postToDiscord } from '@/lib/discord';
 import { sendOne, isEmailConfigured, renderEmailHtml } from '@/lib/email';
 import { sendSms, smsConfigured } from '@/lib/twilio';
+import { limitOr429 } from '@/lib/rateLimit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,6 +18,7 @@ const dial = (p) => String(p || '').replace(/[^0-9+]/g, '');
 export function OPTIONS() { return new NextResponse(null, { headers: CORS }); }
 
 export async function POST(request) {
+  const _rl = await limitOr429(request, 'flood-lead', { limit: 8, windowSec: 60 }); if (_rl) return _rl; // audit: throttle unauth spend
   let body = {};
   try { body = await request.json(); } catch { return NextResponse.json({ ok: false, error: 'Bad request.' }, { status: 400, headers: CORS }); }
   if (clean(body.company)) return NextResponse.json({ ok: true }, { headers: CORS }); // honeypot

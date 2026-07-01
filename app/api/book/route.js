@@ -6,6 +6,7 @@ import { windowOpen, windowByLabel, BOOKING_BETA } from '@/lib/availability';
 import { rankTechs } from '@/lib/dispatch';
 import { geocodeFull, mapsConfigured } from '@/lib/maps';
 import { assessServiceArea, servedCitySet } from '@/lib/serviceArea';
+import { limitOr429 } from '@/lib/rateLimit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,6 +21,7 @@ const dial = (p) => String(p || '').replace(/[^0-9+]/g, '');
 export function OPTIONS() { return new NextResponse(null, { headers: CORS }); }
 
 export async function POST(request) {
+  const _rl = await limitOr429(request, 'book', { limit: 8, windowSec: 60 }); if (_rl) return _rl; // audit: throttle unauth vision/DB spend
   let body = {};
   try { body = await request.json(); } catch { return NextResponse.json({ ok: false, error: 'Bad request.' }, { status: 400, headers: CORS }); }
   if (clean(body.company)) return NextResponse.json({ ok: true }, { headers: CORS }); // honeypot field filled = bot, silently accept

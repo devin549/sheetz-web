@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { geocodeFull, mapsConfigured } from '@/lib/maps';
 import { assessServiceArea, servedCitySet, MAX_MILES } from '@/lib/serviceArea';
 import { COMPANY } from '@/lib/company';
+import { limitOr429 } from '@/lib/rateLimit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,6 +16,7 @@ const clean = (v, n = 200) => String(v == null ? '' : v).trim().slice(0, n);
 export function OPTIONS() { return new NextResponse(null, { headers: CORS }); }
 
 export async function POST(request) {
+  const _rl = await limitOr429(request, 'validate-address', { limit: 30, windowSec: 60 }); if (_rl) return _rl; // audit: throttle unauth geocode spend
   let body = {};
   try { body = await request.json(); } catch { return NextResponse.json({ ok: false }, { status: 400, headers: CORS }); }
   const q = [clean(body.address || body.street, 200), clean(body.city, 80), clean(body.state, 20), clean(body.zip, 12)].filter(Boolean).join(', ');

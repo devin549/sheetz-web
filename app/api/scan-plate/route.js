@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { readDataPlate } from '@/lib/aiVision';
+import { limitOr429 } from '@/lib/rateLimit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,7 @@ const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods
 export function OPTIONS() { return new NextResponse(null, { headers: CORS }); }
 
 export async function POST(request) {
+  const _rl = await limitOr429(request, 'scan-plate', { limit: 15, windowSec: 60 }); if (_rl) return _rl; // audit: throttle unauth vision spend
   let body = {};
   try { body = await request.json(); } catch { return NextResponse.json({ ok: false }, { status: 400, headers: CORS }); }
   const photo = String(body.photo || body.platePhoto || '');
