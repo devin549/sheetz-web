@@ -7,6 +7,7 @@ import CloseoutCheckout from '../CloseoutCheckout';
 import WorkSummaryCoach from '../WorkSummaryCoach';
 import CompletionSignature from '../CompletionSignature';
 import SendInvoice from './SendInvoice';
+import FinishJob from './FinishJob';
 import { can } from '@/lib/roles';
 import { isStripeConfigured } from '@/lib/stripe';
 import { getLegalTerms } from '@/lib/estimateTerms';
@@ -160,6 +161,10 @@ export default async function QuoteTab({ params }) {
 
           {/* 6️⃣ EMAIL — send the invoice (or paid receipt) to the customer + a different address */}
           {canCollect && <SendInvoice jobId={params.id} customerEmail={c.customer.email || ''} paid={paid} balance={balance} />}
+
+          {/* 7️⃣ FINISH — mark it DONE (or roll it) RIGHT HERE, no bouncing back to Overview. Collected →
+              signed → emailed → closed, one thumb, one screen. Server still enforces the closeout gate. */}
+          <FinishJob jobId={params.id} isDone={/done|complete|closed/.test(String(c.job.status || '').toLowerCase())} canAct={canEditSummary} />
 
           {custId && <div style={{ marginTop: 8 }}><Link href={`/invoices?customer=${custId}`} className="pill">All of {c.customer?.name || 'this customer'}’s invoices →</Link></div>}
         </>
