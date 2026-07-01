@@ -9,10 +9,12 @@ function norm(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+// SECURITY: exact normalized match ONLY. A substring match ("aa.includes(bb)") let a tech who renamed
+// themselves to a single letter pass the own-job check for nearly every job in the fleet (audit P0-1).
 function sameName(a, b) {
   const aa = norm(a);
   const bb = norm(b);
-  return Boolean(aa && bb && (aa === bb || aa.includes(bb) || bb.includes(aa)));
+  return Boolean(aa && bb && aa === bb);
 }
 
 // A missing column shows up two different ways depending on PG vs PostgREST's cache:
@@ -66,7 +68,9 @@ export async function canViewJob(sb, user, profile, role, job) {
   if (can(role, 'seeAllJobs') || can(role, 'seeQueue') || can(role, 'seeCrew')) return true;
 
   const email = norm(user.email || profile?.email);
-  const name = norm(user.user_metadata?.name || profile?.name);
+  // SECURITY: use ONLY the server-authoritative profile name. user.user_metadata is self-writable by the
+  // signed-in user (supabase.auth.updateUser), so trusting it here was an own-job authorization bypass (P0-1).
+  const name = norm(profile?.name);
   const techName = job.tech_name || job.techs?.name;
   const myTechId = profile?.tech_id || null;
 
