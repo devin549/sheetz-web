@@ -19,6 +19,7 @@ import JobVideo from './JobVideo';
 import CustomerMemory from './CustomerMemory';
 import LinkToProject from './LinkToProject';
 import JobActionCards from './JobActionCards';
+import JobThread from './JobThread';
 import RollOverCard from './RollOverCard';
 import OfficeTags from './OfficeTags';
 import JobHeader from './JobHeader';
@@ -187,6 +188,10 @@ export default async function JobDetail({ params }) {
   // Crew & segments rollup (P8) — fail-soft if migration 87 isn't applied yet.
   let segments = [], jobReceipts = [];
   try { const { data } = await sb.from('job_segments').select('*').eq('parent_job_id', id).order('created_at', { ascending: true }); segments = data || []; } catch (_) {}
+
+  // 💬 The job's two-way thread (tech notes + office replies + step-away pings). Best-effort (pre-161 → []).
+  let jobMessages = [];
+  try { const { data } = await sb.from('job_messages').select('id, kind, body, author_name, author_role, created_at').eq('job_id', id).order('created_at', { ascending: true }).limit(200); jobMessages = data || []; } catch (_) {}
   try { const { data } = await sb.from('job_receipts').select('id, total_cents, billable, segment_id').eq('parent_job_id', id); jobReceipts = data || []; } catch (_) {}
   const rollup = rollupJob({ job, segments, receipts: jobReceipts, photos, now: Date.now() });
   const canDispatchSeg = can(role, 'assignJobs') || can(role, 'manageUsers') || can(role, 'seeCrew') || can(role, 'reassignJobs');
@@ -290,6 +295,9 @@ export default async function JobDetail({ params }) {
       <div id="customer" style={{ scrollMarginTop: 70 }}><CustomerMemory mem={memory} customer={customer} job={job} /></div>
 
       <JobActionCards jobId={id} jobNumber={job.job_number} customerName={customer.name} jobType={job.job_type} status={job.status} canAct={canAct} />
+
+      {/* 💬 Two-way job thread — office ↔ tech, plus the step-away pings all in one timeline. */}
+      <JobThread jobId={id} messages={jobMessages} canReply={can(role, 'seeAllJobs') || can(role, 'assignJobs')} />
 
       {/* 🏷 Office tags — dispatch sets them (tech sees on My Day; ✨ tags attach a form). Read-only for techs. */}
       <OfficeTags jobId={id} tags={job.office_tags || []} canEdit={can(role, 'assignJobs') || can(role, 'manageUsers') || can(role, 'seeCrew') || can(role, 'createJobs')} />

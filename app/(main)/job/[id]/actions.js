@@ -328,6 +328,17 @@ async function pingOffice(ctx, action, message, detail = {}) {
   try { await postToDiscord(message, { to: 'office' }); } catch (_) {}
 }
 
+// Append a row to the job's message thread (the persistent office↔tech timeline). Best-effort: a missing
+// table (pre-161) never blocks the underlying action. kind: message | office_reply | parts_run | lunch | …
+async function threadPost(ctx, kind, body) {
+  try {
+    await ctx.sb.from('job_messages').insert({
+      job_id: ctx.job.id, author_id: ctx.user.id, author_name: ctx.profile?.name || ctx.user.email,
+      author_role: ctx.role, kind, body: body ? cleanText(body, 500) : null,
+    });
+  } catch (_) { /* pre-161 → thread just doesn't capture it */ }
+}
+
 // "You're marked EN ROUTE" → Notify. Marks en route (stamps enroute_at) + pings the office to text the
 // customer the ETA. One tap, no back-and-forth — but the customer text is office-relayed, never auto-sent.
 export async function notifyEnRoute(jobId) {
@@ -442,6 +453,7 @@ export async function stepAway(jobId, reason, note) {
   const label = STEP_REASONS[key];
   const n = cleanText(note, 200);
   await pingOffice(ctx, 'job.step_away', `🚶 **${ctx.profile?.name || 'Tech'} — ${label}** on ${custName(ctx.job)}${ctx.job.job_number ? ` · job ${ctx.job.job_number}` : ''}${n ? `: ${n}` : ''}. Job stays open.`, { reason: key, note: n });
+  await threadPost(ctx, key, n || label); // lands in the job thread alongside messages
   revalidatePath(`/job/${ctx.job.id}`);
   return { ok: true, msg: key === 'help' ? 'Office pinged — help is on the way.' : `Office knows you're on ${label.toLowerCase()} — job stays open.` };
 }
@@ -452,6 +464,7 @@ export async function backOnSite(jobId) {
   if (!ctx.ok) return ctx;
   if (!(can(ctx.role, 'changeStatus') || can(ctx.role, 'seeOwnOnly'))) return { ok: false, msg: 'Not allowed.' };
   await pingOffice(ctx, 'job.back_onsite', `🔧 **${ctx.profile?.name || 'Tech'} back on site** — ${custName(ctx.job)}${ctx.job.job_number ? ` · job ${ctx.job.job_number}` : ''}.`, {});
+  await threadPost(ctx, 'back', 'Back on site');
   revalidatePath(`/job/${ctx.job.id}`);
   return { ok: true, msg: 'Back on site — office notified.' };
 }
@@ -645,16 +658,25 @@ export async function scheduleCorrectionVisit(correctionId) {
 }
 
 // Tech → office message from the cockpit (e.g. "photo failed, need help"). Internal only; logged.
+// Post to the job's two-way thread. A field tech's note goes to the office (kind 'message'); an office/
+// supervisor reply goes back to the tech (kind 'office_reply'). Both persist to job_messages AND ping the
+// other side on Discord, so nothing gets lost. Internal only — never the customer.
 export async function messageOffice(jobId, text) {
   const ctx = await getActionContext(cleanText(jobId, 80));
   if (!ctx.ok) return ctx;
   const body = cleanText(text, 500);
   if (body.length < 2) return { ok: false, msg: 'Type a short message.' };
+  const isOffice = can(ctx.role, 'seeAllJobs') || can(ctx.role, 'assignJobs'); // office/supervisor vs field tech
+  const kind = isOffice ? 'office_reply' : 'message';
+  const who = ctx.profile?.name || ctx.user.email;
+  await threadPost(ctx, kind, body);
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: who, role: ctx.role, action: isOffice ? 'office.job_reply' : 'tech.message', entity: 'job', entity_id: String(ctx.job.id), detail: { text: body } }); } catch (_) {}
   try {
-    await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'tech.message', entity: 'job', entity_id: String(ctx.job.id), detail: { text: body } });
-  } catch (e) { return { ok: false, msg: 'Could not send.' }; }
+    const ref = `${custName(ctx.job)}${ctx.job.job_number ? ` · job ${ctx.job.job_number}` : ''}`;
+    await postToDiscord(isOffice ? `💬 **Office → ${ctx.job.tech_name || 'tech'}** on ${ref}: ${body}` : `💬 **${who}** on ${ref}: ${body}`, { to: 'office' });
+  } catch (_) {}
   revalidatePath(`/job/${ctx.job.id}`);
-  return { ok: true, msg: 'Sent to the office.' };
+  return { ok: true, msg: isOffice ? 'Reply sent to the tech.' : 'Sent to the office.' };
 }
 
 // Set the per-job financial inputs the pay formula needs: material cost + dispatch fee (dollars in).
