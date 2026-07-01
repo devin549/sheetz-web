@@ -17,6 +17,7 @@ import { canViewJob } from './jobAccess';
 import { applyPayment } from '@/lib/invoiceBalance';
 import { sendOne, renderEmailHtml, isEmailConfigured } from '@/lib/email';
 import { sendSms, smsConfigured } from '@/lib/twilio';
+import { postToDiscord } from '@/lib/discord';
 
 const money2 = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -303,5 +304,24 @@ export async function recordManualPayment(jobId, payload) {
   await sendPaymentReceipt(sb, { job, method, paidDollars: dollars, balanceDollars, extraEmail: String(p.extraEmail || '') });
   revalidatePath(`/job/${jobId}`);
   return { ok: true, method, totalDollars: dollars, balanceDollars, checkNumber: method === 'check' ? checkNumber : null };
+}
+
+// 💳 FINANCING — placeholder until a financing provider is integrated. The tech taps it and the OFFICE runs the
+// financing (their words), so this just flags the office (Discord ping + AR activity + audit) that this customer
+// wants financing on this job. Nothing is charged; the office sets it up and reaches out to the customer.
+export async function requestFinancing(jobId, opts = {}) {
+  const g = await gateCollect();
+  if (g.err) return { ok: false, msg: g.err };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const gj = await gateJob(sb, g, jobId);
+  if (gj.err) return { ok: false, msg: gj.err };
+  const job = gj.job;
+  const amt = Math.max(0, Number(opts.amountDollars) || 0);
+  const name = (job.customers && job.customers.name) || 'Customer';
+  try { await postToDiscord(`💳 **Financing requested** — ${name}${job.job_number ? ` · job #${job.job_number}` : ''}${amt ? ` for $${amt.toLocaleString()}` : ''} wants financing. Run it from the office + reach out to the customer.`, { to: 'office' }); } catch (_) {}
+  try { await sb.from('ar_activity').insert({ action: 'financing_requested', customer_id: job.customer_id || null, customer_name: name, invoice_number: job.job_number || null, amount: amt || null, by_email: g.profile.email || 'field' }); } catch (_) {}
+  try { await sb.from('audit_log').insert({ actor_id: g.user.id, actor_name: g.profile.name || g.user.email, role: g.profile.role, action: 'financing.requested', entity: 'job', entity_id: String(jobId), detail: { amount: amt } }); } catch (_) {}
+  return { ok: true, msg: 'Sent to the office — they’ll set up financing and reach out to the customer.' };
 }
 
