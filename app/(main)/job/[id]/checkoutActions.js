@@ -325,3 +325,29 @@ export async function requestFinancing(jobId, opts = {}) {
   return { ok: true, msg: 'Sent to the office — they’ll set up financing and reach out to the customer.' };
 }
 
+// 📅 NET-30 — don't collect now; the OFFICE bills the customer, due in 30 days. Sets the invoice's due date +30
+// and leaves it OPEN (so it rides the AR aging the office watches), flags the closeout as net-30, and pings the
+// office. Nothing is charged. This is the per-job version of a "bill from office" customer.
+export async function billNet30(jobId, opts = {}) {
+  const g = await gateCollect();
+  if (g.err) return { ok: false, msg: g.err };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const gj = await gateJob(sb, g, jobId);
+  if (gj.err) return { ok: false, msg: gj.err };
+  const job = gj.job;
+  const days = Math.max(1, Math.min(120, Number(opts.days) || 30));
+  const due = new Date(); due.setDate(due.getDate() + days);
+  const dueISO = due.toISOString().slice(0, 10);
+  let inv = null;
+  try { const { data } = await sb.from('invoices').select('id, invoice_number, balance').eq('job_id', String(jobId)).order('created_at', { ascending: false }).limit(1).maybeSingle(); inv = data || null; } catch (_) {}
+  if (inv) { let u = await sb.from('invoices').update({ status: 'open', due_date: dueISO }).eq('id', inv.id); if (u.error && /due_date|column/i.test(u.error.message || '')) await sb.from('invoices').update({ status: 'open' }).eq('id', inv.id); }
+  try { await sb.from('job_closeout').upsert({ job_id: jobId, payment_disposition: 'net_30', invoice_status: 'billed', updated_by: g.profile.name || g.profile.email || 'field', updated_at: new Date().toISOString() }, { onConflict: 'job_id' }); } catch (_) {}
+  const name = (job.customers && job.customers.name) || 'Customer';
+  try { await postToDiscord(`📅 **Net-${days} billed** — ${name}${job.job_number ? ` · job #${job.job_number}` : ''}. Office invoices; **due ${dueISO}**. Riding AR until paid — remind + collect.`, { to: 'office' }); } catch (_) {}
+  try { await sb.from('ar_activity').insert({ action: 'net_30_billed', customer_id: job.customer_id || null, customer_name: name, invoice_number: inv?.invoice_number || job.job_number || null, amount: (inv?.balance != null ? Number(inv.balance) : Math.max(0, Number(opts.amountDollars) || 0)) || null, by_email: g.profile.email || 'field' }); } catch (_) {}
+  try { await sb.from('audit_log').insert({ actor_id: g.user.id, actor_name: g.profile.name || g.user.email, role: g.profile.role, action: 'invoice.net30', entity: 'job', entity_id: String(jobId), detail: { due: dueISO, days } }); } catch (_) {}
+  revalidatePath(`/job/${jobId}`);
+  return { ok: true, dueDate: dueISO, days, msg: `Billed Net-${days} — due ${due.toLocaleDateString()}. The office collects; it’s tracked in AR.` };
+}
+

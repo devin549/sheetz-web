@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createJobPayLink } from '../../my-day/actions';
-import { startReaderCharge, pollReaderCharge, cancelReaderCharge, createJobAchLink, recordManualPayment, requestFinancing } from './checkoutActions';
+import { startReaderCharge, pollReaderCharge, cancelReaderCharge, createJobAchLink, recordManualPayment, requestFinancing, billNet30 } from './checkoutActions';
 
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -31,6 +31,7 @@ const PAY_TABS = [
   { id: 'link', label: '✉️ Link' },
   { id: 'ach', label: '🏦 Bank' },
   { id: 'financing', label: '📆 Financing' },
+  { id: 'net30', label: '📅 Net-30' },
 ];
 
 export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail = '', hasReader, stripeReady, officeBilled = false, netDays = 0 }) {
@@ -49,6 +50,7 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
   const [extraEmail, setExtraEmail] = useState(''); // a different/additional address to email the receipt to
   const [sendOther, setSendOther] = useState(false); // "send to a different email" checkbox
   const [finMsg, setFinMsg] = useState(null); // financing hand-off result
+  const [netMsg, setNetMsg] = useState(null); // net-30 billing result
   const cashRef = useRef();
   const [manualPaid, setManualPaid] = useState(null); // { method, total }
   const [pending, start] = useTransition();
@@ -111,6 +113,7 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
     start(async () => { const r = await recordManualPayment(jobId, { method: 'check', amountDollars: recordAmt, checkNumber: checkNo, idOnCheck: checkId, extraEmail: receiptExtra }); if (r.ok) setManualPaid({ method: 'check', total: r.totalDollars, checkNumber: r.checkNumber, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); });
   }
   function sendFinancing() { setErr(null); start(async () => { const r = await requestFinancing(jobId, { amountDollars: amtNum }); setFinMsg(r); }); }
+  function billNet() { setErr(null); start(async () => { const r = await billNet30(jobId, { amountDollars: amtNum }); setNetMsg(r); if (r.ok) router.refresh(); }); }
 
   async function cancelReader() {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -254,6 +257,14 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
                 <div style={{ fontSize: 11.5, color: 'var(--fg-2)', lineHeight: 1.45 }}>📆 <strong>Financing is run from the office</strong> for now (provider integration coming). Tap below — the office gets pinged, sets up the financing, and reaches out to the customer.</div>
                 <button onClick={sendFinancing} disabled={pending} className="btn" style={{ opacity: pending ? 0.6 : 1 }}>{pending ? '…' : `🏛 Send to office for financing${amtNum > 0 ? ` · ${money(amtNum)}` : ''}`}</button>
                 {finMsg && <div style={{ fontSize: 12, color: finMsg.ok ? 'var(--green)' : 'var(--red)', fontWeight: 700 }}>{finMsg.msg}</div>}
+              </div>
+            )}
+
+            {tab === 'net30' && (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ fontSize: 11.5, color: 'var(--fg-2)', lineHeight: 1.45 }}>📅 <strong>Don’t collect now — bill Net-30.</strong> The office invoices this customer, <strong>due in 30 days</strong>. It rides your AR (aging) until they pay, so nothing slips.</div>
+                <button onClick={billNet} disabled={pending || !valid} className="btn" style={{ opacity: (pending || !valid) ? 0.6 : 1 }}>{pending ? '…' : `🏛 Bill Net-30 · due in 30 days${amtNum > 0 ? ` · ${money(amtNum)}` : ''}`}</button>
+                {netMsg && <div style={{ fontSize: 12, color: netMsg.ok ? 'var(--green)' : 'var(--red)', fontWeight: 700 }}>{netMsg.msg}</div>}
               </div>
             )}
           </div>
