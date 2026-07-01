@@ -14,6 +14,7 @@ import {
 } from '@/lib/stripe';
 import { revalidatePath } from 'next/cache';
 import { canViewJob } from './jobAccess';
+import { applyPayment } from '@/lib/invoiceBalance';
 
 // Ownership gate — closes the payment IDOR. A field tech may only collect on THEIR OWN job; office/crew/
 // financials roles may collect on any. Loads the job WITH the tech fields canViewJob needs, then checks it.
@@ -47,14 +48,11 @@ async function recordPaidOnce(sb, jobId, profile, paymentIntentId, action, paidC
     try {
       const { data: inv } = await sb.from('invoices').select('id, invoice_number, customer_id, balance').eq('job_id', String(jobId)).gt('balance', 0).order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (inv) {
-        // SUBTRACT the actual charged amount — a partial/deposit reader charge must reduce the balance, not
-        // zero it. Fall back to the full balance only if the charged amount is unknown.
+        // SUBTRACT the actual charged amount — a partial/deposit reader charge reduces the balance, not zero it.
+        // Atomic (audit P2-18): apply_invoice_delta locks the row so a concurrent card+cash can't lose an update.
         const balDollars = Number(inv.balance) || 0;
         const paidDollars = Number(paidCents) > 0 ? Number(paidCents) / 100 : balDollars;
-        const newBal = Math.max(0, Math.round((balDollars - paidDollars) * 100) / 100);
-        const paidOff = newBal === 0;
-        const u = await sb.from('invoices').update({ balance: newBal, ...(paidOff ? { status: 'paid', paid_at: new Date().toISOString() } : {}) }).eq('id', inv.id);
-        if (u.error && /paid_at/.test(u.error.message || '')) await sb.from('invoices').update({ balance: newBal, ...(paidOff ? { status: 'paid' } : {}) }).eq('id', inv.id);
+        await applyPayment(sb, inv.id, paidDollars);
         try { await sb.from('ar_activity').insert({ action: 'customer_paid', invoice_id: inv.id, invoice_number: inv.invoice_number || null, customer_id: inv.customer_id || null, amount: paidDollars, by_email: 'field-collect' }); } catch (_) {}
       }
     } catch (e) { console.error(`[checkout] invoice reconcile FAILED for job ${jobId} (charge cleared, invoice may still show open):`, (e && e.message) || e); }
@@ -251,10 +249,8 @@ export async function recordManualPayment(jobId, payload) {
   try {
     const { data: inv } = await sb.from('invoices').select('id, invoice_number, customer_id, balance').eq('job_id', String(jobId)).gt('balance', 0).order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (inv) {
-      const newBal = Math.max(0, Math.round(((Number(inv.balance) || 0) - dollars) * 100) / 100);
-      const paidOff = newBal === 0;
-      const u = await sb.from('invoices').update({ balance: newBal, ...(paidOff ? { status: 'paid', paid_at: new Date().toISOString() } : {}) }).eq('id', inv.id);
-      if (u.error && /paid_at/.test(u.error.message || '')) await sb.from('invoices').update({ balance: newBal, ...(paidOff ? { status: 'paid' } : {}) }).eq('id', inv.id);
+      // Atomic (audit P2-18) — same row-locking apply as the card path, so a concurrent cash+card can't lose an update.
+      await applyPayment(sb, inv.id, dollars);
       try { await sb.from('ar_activity').insert({ action: 'customer_paid', invoice_id: inv.id, invoice_number: inv.invoice_number || null, customer_id: inv.customer_id || null, amount: dollars, by_email: g.profile.email || 'field-collect' }); } catch (_) {}
     }
   } catch (_) {}

@@ -14,8 +14,7 @@ function authed(request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
   const auth = request.headers.get('authorization') || '';
-  const key = new URL(request.url).searchParams.get('key') || '';
-  return auth === `Bearer ${secret}` || key === secret;
+  return auth === `Bearer ${secret}`; // header-only (audit P2-13): ?key= leaked the CRON_SECRET into access logs
 }
 
 export async function GET(request) {

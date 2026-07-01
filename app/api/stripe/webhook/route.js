@@ -1,5 +1,6 @@
 import { getStripe } from '@/lib/stripe';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { applyPayment, applyRefund } from '@/lib/invoiceBalance';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,18 +17,10 @@ async function reconcilePaid(sb, s) {
   const paidDollars = Math.round(baseCents) / 100;
   const totalDollars = Math.round(totalCents) / 100;
   if (md.invoice_id) {
-    try {
-      // SUBTRACT the amount actually paid — never blindly zero the balance. A partial/deposit payment
-      // (e.g. $100 on a $2,000 invoice) must reduce the balance, NOT mark the whole thing paid; only flip
-      // to 'paid' when the balance reaches 0. If we can't read the current balance, fall back to the old
-      // mark-paid behavior (most payments ARE the full amount).
-      let newBal = 0, known = false;
-      try { const { data: inv } = await sb.from('invoices').select('balance').eq('id', md.invoice_id).maybeSingle(); if (inv && inv.balance != null) { newBal = Math.max(0, Math.round((Number(inv.balance) - paidDollars) * 100) / 100); known = true; } } catch (_) {}
-      const paidOff = !known || newBal === 0;
-      const bal = known ? newBal : 0;
-      const r = await sb.from('invoices').update({ balance: bal, ...(paidOff ? { status: 'paid', paid_at: new Date().toISOString() } : {}) }).eq('id', md.invoice_id);
-      if (r.error && /paid_at/.test(r.error.message || '')) await sb.from('invoices').update({ balance: bal, ...(paidOff ? { status: 'paid' } : {}) }).eq('id', md.invoice_id);
-    } catch (_) {}
+    // SUBTRACT the amount actually paid — a partial/deposit payment reduces the balance, and only reaching 0
+    // flips to 'paid'. Atomic (audit P2-18): apply_invoice_delta locks the row so a concurrent card+cash or a
+    // webhook retry can't lose an update or double-apply.
+    try { await applyPayment(sb, md.invoice_id, paidDollars); } catch (_) {}
   }
   try { await sb.from('ar_activity').insert({ action: 'customer_paid', customer_id: md.customer_id || null, customer_name: md.customer_name || null, invoice_id: md.invoice_id || null, invoice_number: md.invoice_number || null, amount: paidDollars, by_email: 'stripe' }); } catch (_) {}
   const feeBit = feeCents ? ` ($${paidDollars.toLocaleString()} + $${(feeCents / 100).toLocaleString()} card fee)` : '';
@@ -43,12 +36,9 @@ async function reconcilePaid(sb, s) {
 async function reverseCharge(sb, md = {}, baseCents = 0, kind = 'refund') {
   const dollars = Math.round(Number(baseCents) || 0) / 100;
   if (md.invoice_id) {
-    try {
-      const { data: inv } = await sb.from('invoices').select('balance').eq('id', md.invoice_id).maybeSingle();
-      const newBal = Math.round(((Number(inv && inv.balance) || 0) + dollars) * 100) / 100;
-      const r = await sb.from('invoices').update({ balance: newBal, status: 'open' }).eq('id', md.invoice_id);
-      if (r.error) { /* status/balance column variance — best-effort */ }
-    } catch (_) {}
+    // Re-open the invoice for the refunded base — atomic add (audit P2-18), row-locked so it can't race a
+    // concurrent payment on the same invoice.
+    try { await applyRefund(sb, md.invoice_id, dollars); } catch (_) {}
   }
   try { await sb.from('ar_activity').insert({ action: kind === 'chargeback' ? 'customer_chargeback' : 'customer_refunded', customer_id: md.customer_id || null, customer_name: md.customer_name || null, invoice_id: md.invoice_id || null, invoice_number: md.invoice_number || null, amount: -dollars, by_email: 'stripe' }); } catch (_) {}
   const onInv = md.invoice_number ? ` on invoice ${md.invoice_number}` : '';
