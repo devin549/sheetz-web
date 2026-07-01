@@ -45,6 +45,7 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
   const [checkNo, setCheckNo] = useState('');
   const [checkId, setCheckId] = useState('');
   const [cashPhoto, setCashPhoto] = useState(null);
+  const [extraEmail, setExtraEmail] = useState(''); // optional extra address to also email the receipt to
   const cashRef = useRef();
   const [manualPaid, setManualPaid] = useState(null); // { method, total }
   const [pending, start] = useTransition();
@@ -96,12 +97,12 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
   function takeCash() {
     setErr(null);
     if (!cashPhoto) { setErr('Take a photo of the cash fanned out first.'); return; }
-    start(async () => { const r = await recordManualPayment(jobId, { method: 'cash', amountDollars: recordAmt, cashPhoto }); if (r.ok) setManualPaid({ method: 'cash', total: r.totalDollars, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); });
+    start(async () => { const r = await recordManualPayment(jobId, { method: 'cash', amountDollars: recordAmt, cashPhoto, extraEmail }); if (r.ok) setManualPaid({ method: 'cash', total: r.totalDollars, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); });
   }
   function takeCheck() {
     setErr(null);
     if (!checkNo.trim() || !checkId.trim()) { setErr('Enter the check number and the ID written on the check.'); return; }
-    start(async () => { const r = await recordManualPayment(jobId, { method: 'check', amountDollars: recordAmt, checkNumber: checkNo, idOnCheck: checkId }); if (r.ok) setManualPaid({ method: 'check', total: r.totalDollars, checkNumber: r.checkNumber, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); });
+    start(async () => { const r = await recordManualPayment(jobId, { method: 'check', amountDollars: recordAmt, checkNumber: checkNo, idOnCheck: checkId, extraEmail }); if (r.ok) setManualPaid({ method: 'check', total: r.totalDollars, checkNumber: r.checkNumber, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); });
   }
 
   async function cancelReader() {
@@ -199,6 +200,9 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
               return <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: '1 1 auto', minWidth: 62, padding: '8px 6px', borderRadius: 9, fontSize: 12.5, fontWeight: on ? 800 : 600, cursor: 'pointer', textAlign: 'center', background: on ? 'var(--amber)' : 'var(--surface-2)', color: on ? '#1a1206' : 'var(--fg-2)', border: '1px solid ' + (on ? 'var(--amber)' : 'var(--border)') }}>{t.label}</button>;
             })}
           </div>
+
+          {/* Auto-receipt goes to the customer's email/phone on file; this adds one more address (spouse, office…). */}
+          {isCashish && <input type="email" value={extraEmail} onChange={(e) => setExtraEmail(e.target.value)} placeholder="📧 Also email the receipt to… (optional)" style={{ ...input, width: '100%', boxSizing: 'border-box', marginTop: 10, fontSize: 12.5 }} />}
 
           <div style={{ marginTop: 10 }}>
             {tab === 'reader' && (<>

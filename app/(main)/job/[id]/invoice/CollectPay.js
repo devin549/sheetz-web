@@ -25,6 +25,7 @@ export default function CollectPay({ jobId, defaultAmount, tel }) {
   const [checkNo, setCheckNo] = useState('');
   const [checkId, setCheckId] = useState('');
   const [cashPhoto, setCashPhoto] = useState(null);
+  const [extraEmail, setExtraEmail] = useState('');
   const cashRef = useRef();
   const [paid, setPaid] = useState(null); // { method, total, checkNumber }
   const [pending, start] = useTransition();
@@ -37,8 +38,8 @@ export default function CollectPay({ jobId, defaultAmount, tel }) {
   const recordAmt = (isCashish && overBy > 0) ? total : amtNum;
   const make = () => { setErr(null); start(async () => { const r = await createJobPayLink(jobId, amtNum); if (r.ok) setLink(r); else setErr(r.msg); }); };
   const pickCash = async (e) => { const f = e.target.files && e.target.files[0]; if (!f) return; const url = await fileToScaledDataUrl(f); setCashPhoto(url); e.target.value = ''; };
-  const takeCash = () => { setErr(null); if (!cashPhoto) { setErr('Take a photo of the cash fanned out first.'); return; } start(async () => { const r = await recordManualPayment(jobId, { method: 'cash', amountDollars: recordAmt, cashPhoto }); if (r.ok) setPaid({ method: 'cash', total: r.totalDollars, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); }); };
-  const takeCheck = () => { setErr(null); if (!checkNo.trim() || !checkId.trim()) { setErr('Enter the check number and the ID written on the check.'); return; } start(async () => { const r = await recordManualPayment(jobId, { method: 'check', amountDollars: recordAmt, checkNumber: checkNo, idOnCheck: checkId }); if (r.ok) setPaid({ method: 'check', total: r.totalDollars, checkNumber: r.checkNumber, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); }); };
+  const takeCash = () => { setErr(null); if (!cashPhoto) { setErr('Take a photo of the cash fanned out first.'); return; } start(async () => { const r = await recordManualPayment(jobId, { method: 'cash', amountDollars: recordAmt, cashPhoto, extraEmail }); if (r.ok) setPaid({ method: 'cash', total: r.totalDollars, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); }); };
+  const takeCheck = () => { setErr(null); if (!checkNo.trim() || !checkId.trim()) { setErr('Enter the check number and the ID written on the check.'); return; } start(async () => { const r = await recordManualPayment(jobId, { method: 'check', amountDollars: recordAmt, checkNumber: checkNo, idOnCheck: checkId, extraEmail }); if (r.ok) setPaid({ method: 'check', total: r.totalDollars, checkNumber: r.checkNumber, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); }); };
 
   if (paid) return (
     <div className="card" style={{ borderLeft: '3px solid var(--green)', marginTop: 10 }}>
@@ -75,6 +76,7 @@ export default function CollectPay({ jobId, defaultAmount, tel }) {
               return <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: '8px 6px', borderRadius: 9, fontSize: 12.5, fontWeight: on ? 800 : 600, cursor: 'pointer', textAlign: 'center', background: on ? 'var(--amber)' : 'var(--surface-2)', color: on ? '#1a1206' : 'var(--fg-2)', border: '1px solid ' + (on ? 'var(--amber)' : 'var(--border)') }}>{label}</button>;
             })}
           </div>
+          {isCashish && <input type="email" value={extraEmail} onChange={(e) => setExtraEmail(e.target.value)} placeholder="📧 Also email the receipt to… (optional)" style={{ width: '100%', boxSizing: 'border-box', marginTop: 10, background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 8, padding: '9px 11px', fontSize: 12.5 }} />}
           <div style={{ marginTop: 10 }}>
             {tab === 'cash' && (
               <div style={{ display: 'grid', gap: 8 }}>

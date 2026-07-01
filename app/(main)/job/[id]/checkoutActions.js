@@ -15,6 +15,37 @@ import {
 import { revalidatePath } from 'next/cache';
 import { canViewJob } from './jobAccess';
 import { applyPayment } from '@/lib/invoiceBalance';
+import { sendOne, renderEmailHtml, isEmailConfigured } from '@/lib/email';
+import { sendSms, smsConfigured } from '@/lib/twilio';
+
+const money2 = (n) => '$' + (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// 📧 Auto-send a PAID receipt to the customer after an in-person payment. Best-effort (never blocks/​fails the
+// payment): emails the customer + their 2nd email on file + any extra email the tech typed, and texts if they've
+// consented. This is a transactional receipt for a payment they just made — set to auto-send by the office.
+async function sendPaymentReceipt(sb, { job, method, paidDollars, balanceDollars = 0, extraEmail = '' }) {
+  try {
+    let cust = {};
+    if (job.customer_id) {
+      try { const { data } = await sb.from('customers').select('name, email, email2, phone, phones, sms_consent').eq('id', job.customer_id).maybeSingle(); cust = data || {}; }
+      catch (_) { try { const { data } = await sb.from('customers').select('name, email, phone, sms_consent').eq('id', job.customer_id).maybeSingle(); cust = data || {}; } catch (_2) {} }
+    }
+    const name = cust.name || (job.customers && job.customers.name) || 'there';
+    const first = String(name).trim().split(/\s+/)[0] || name;
+    const methodLabel = method === 'check' ? 'check' : method === 'cash' ? 'cash' : 'card';
+    const dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const emails = [...new Set([cust.email, cust.email2, extraEmail].map((e) => String(e || '').trim().toLowerCase()).filter((e) => /.+@.+\..+/.test(e)))];
+    if (emails.length && isEmailConfigured) {
+      const balanceNote = balanceDollars > 0 ? `Remaining balance on this job: ${money2(balanceDollars)}.` : 'Your balance is now paid in full. Thank you!';
+      const body = `Hi ${first},\n\nThank you! This confirms we received ${money2(paidDollars)} by ${methodLabel}${job.job_number ? ` for job #${job.job_number}` : ''} on ${dateStr}.\n\n${balanceNote}`;
+      await sendOne({ to: emails[0], cc: emails.slice(1).join(',') || undefined, subject: 'Payment receipt — Clog Busterz Plumbing', html: renderEmailHtml({ subject: 'Payment receipt — Clog Busterz Plumbing', body }), meta: { customerId: job.customer_id, purpose: 'receipt', ref: job.job_number || null } });
+    }
+    const phone = cust.phone || (Array.isArray(cust.phones) ? cust.phones[0] : cust.phones) || '';
+    if (phone && cust.sms_consent && smsConfigured()) {
+      await sendSms(phone, `Clog Busterz: received your ${money2(paidDollars)} ${methodLabel} payment${job.job_number ? ` on job #${job.job_number}` : ''}. Thank you!${balanceDollars > 0 ? ` Balance left: ${money2(balanceDollars)}.` : ' Paid in full.'} Reply STOP to opt out.`);
+    }
+  } catch (_) { /* receipt is best-effort — never fail a payment over it */ }
+}
 
 // Ownership gate — closes the payment IDOR. A field tech may only collect on THEIR OWN job; office/crew/
 // financials roles may collect on any. Loads the job WITH the tech fields canViewJob needs, then checks it.
@@ -255,18 +286,22 @@ export async function recordManualPayment(jobId, payload) {
   if (up.error) return { ok: false, msg: up.error.message };
 
   // Reconcile the open invoice (subtract the amount), same as the card flow.
+  let balanceDollars = 0;
   try {
     const { data: inv } = await sb.from('invoices').select('id, invoice_number, customer_id, balance').eq('job_id', String(jobId)).gt('balance', 0).order('created_at', { ascending: false }).limit(1).maybeSingle();
     if (inv) {
       // Atomic (audit P2-18) — same row-locking apply as the card path, so a concurrent cash+card can't lose an update.
-      await applyPayment(sb, inv.id, dollars);
+      const ap = await applyPayment(sb, inv.id, dollars);
+      balanceDollars = Number(ap?.balance) || 0;
       try { await sb.from('ar_activity').insert({ action: 'customer_paid', invoice_id: inv.id, invoice_number: inv.invoice_number || null, customer_id: inv.customer_id || null, amount: dollars, by_email: g.profile.email || 'field-collect' }); } catch (_) {}
     }
   } catch (_) {}
 
   const name = (job.customers && job.customers.name) || '';
   try { await sb.from('ar_activity').insert({ action: method === 'cash' ? 'cash_collected' : 'check_collected', customer_id: job.customer_id || null, customer_name: name || null, invoice_number: method === 'check' ? `check #${checkNumber}` : (job.job_number || null), amount: dollars, by_email: g.profile.email || 'field-collect' }); } catch (_) {}
+  // 📧 Auto-send the customer a paid receipt (email on file + 2nd email + any extra the tech typed; text if opted in).
+  await sendPaymentReceipt(sb, { job, method, paidDollars: dollars, balanceDollars, extraEmail: String(p.extraEmail || '') });
   revalidatePath(`/job/${jobId}`);
-  return { ok: true, method, totalDollars: dollars, checkNumber: method === 'check' ? checkNumber : null };
+  return { ok: true, method, totalDollars: dollars, balanceDollars, checkNumber: method === 'check' ? checkNumber : null };
 }
 
