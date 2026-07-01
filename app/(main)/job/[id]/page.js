@@ -6,16 +6,11 @@ import { can } from '@/lib/roles';
 import { computeCloseout, getDispo, getParts, getForms, isEstimateJob, ruleForJob } from '@/lib/qa';
 import JobPhotos from './JobPhotos';
 import CloseoutV2 from './CloseoutV2';
-import CompletionSignature from './CompletionSignature';
-import { getLegalTerms } from '@/lib/estimateTerms';
-import JobParts from './JobParts';
-import JobForms from './JobForms';
 import JobFlow from './JobFlow';
 import ReferToSales from './ReferToSales';
 import EstimatePanel from './EstimatePanel';
 import DispatchMeRef from './DispatchMeRef';
 import JobCosts from './JobCosts';
-import JobVideo from './JobVideo';
 import CustomerMemory from './CustomerMemory';
 import LinkToProject from './LinkToProject';
 import JobActionCards from './JobActionCards';
@@ -139,7 +134,6 @@ export default async function JobDetail({ params }) {
   Object.values(reviewByPhoto).forEach((r) => { r.annotations = annoByPhoto[r.photo_id] || []; });
   const isEstimate = isEstimateJob(job);
   const isVid = (p) => /^video\//.test(p.mime_type || '') || p.kind === 'walkthrough';
-  const videos = photos.filter(isVid);
   const stillPhotos = photos.filter((p) => !isVid(p));
   const closeout = computeCloseout({ photos, reviews, rule: ruleForJob(job) });
   const dispo = await getDispo(sb, id, job);
@@ -205,12 +199,9 @@ export default async function JobDetail({ params }) {
     catch (_) { try { const { data: ct } = await sb.from('customers').select('net_terms_days').eq('id', job.customer_id).maybeSingle(); netDays = Number(ct?.net_terms_days) || 0; officeBilled = netDays > 0; } catch (_2) { /* pre-132 */ } }
   }
   const techName = job.tech_name || job.techs?.name || 'Unassigned';
-  let completionTerms = ''; try { completionTerms = (await getLegalTerms(sb, 'completion_acceptance')).content; } catch (_) {}
   const title = jobTitle(job);
   const canUpload = canUploadPhotos(role);
   const canArchiveAny = can(role, 'deleteJobs') || can(role, 'manageUsers') || can(role, 'assignJobs');
-  const canReview = can(role, 'qaReview');
-  const canOverride = can(role, 'qaOverride');
   const isDone = /done|complete|closed/.test(String(job.status || '').toLowerCase());
   // Gate badge reflects media/QA + outstanding rentals (the disposition checklist shows its own state below).
   const partsBlocked = (parts.outRentals || []).length > 0;
@@ -218,8 +209,6 @@ export default async function JobDetail({ params }) {
   const outcomeBlocked = isEstimate && !job.estimate_outcome;
   const gateReady = closeout.readyToClose && !partsBlocked && !formsBlocked && !outcomeBlocked;
   const gateMissing = [...(closeout.readyToClose ? [] : closeout.missing), ...parts.missing, ...(isEstimate ? [] : (forms.missing || [])), ...(outcomeBlocked ? ['estimate outcome'] : [])];
-  const canReturnRentals = can(role, 'changeStatus') || can(role, 'manageInventory') || canUpload;
-  const canAnswerForms = can(role, 'changeStatus') || can(role, 'qaReview') || canUpload;
 
   // Cockpit workflow rail — which of the 7 steps the job has reached (heuristic from real signals).
   const st = String(job.status || 'scheduled').toLowerCase();
@@ -283,27 +272,54 @@ export default async function JobDetail({ params }) {
 
       {/* Failed-QA alert — immediate, top-of-job, when a photo failed and the job isn't closed. */}
       {!photoError && closeout.openFails > 0 && !isDone && (
-        <a href="#photos" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, padding: '11px 13px', borderRadius: 10, border: '1px solid var(--red)', background: 'rgba(239,83,80,.10)' }}>
+        <Link href={`/job/${id}/photos`} style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, padding: '11px 13px', borderRadius: 10, border: '1px solid var(--red)', background: 'rgba(239,83,80,.10)' }}>
           <CircleAlert size={17} style={{ color: 'var(--red)' }} />
           <span style={{ fontWeight: 800, color: 'var(--red)', fontSize: 13 }}>{closeout.openFails} photo{closeout.openFails > 1 ? 's' : ''} failed QA</span>
-          <span className="muted" style={{ fontSize: 12 }}>— see the circle + note below, fix &amp; re-shoot.</span>
-          <span style={{ marginLeft: 'auto', color: 'var(--red)', fontWeight: 800, fontSize: 12 }}>Fix ↓</span>
-        </a>
+          <span className="muted" style={{ fontSize: 12 }}>— see the circle + note on Photos, fix &amp; re-shoot.</span>
+          <span style={{ marginLeft: 'auto', color: 'var(--red)', fontWeight: 800, fontSize: 12 }}>Fix ›</span>
+        </Link>
       )}
 
-      {/* (Customer context / notes now render inside JobHeader above — no duplicate here.) */}
-      <div id="customer" style={{ scrollMarginTop: 70 }}><CustomerMemory mem={memory} customer={customer} job={job} /></div>
+      {/* 📋 THE JOB BRIEFING — ServiceTitan-style clean call sheet: when, what, and the pinned notes the tech
+          must know. Only rows with real content render (no empty-label clutter). */}
+      {(() => {
+        const Row = ({ label, children }) => (
+          <div style={{ display: 'flex', gap: 10, padding: '6px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
+            <div className="muted" style={{ width: 108, flexShrink: 0, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.3, paddingTop: 1 }}>{label}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+          </div>
+        );
+        const pins = [
+          job.must_tell_tech ? { icon: '⚠️', text: job.must_tell_tech, hot: true } : null,
+          job.access_notes ? { icon: '🔑', text: job.access_notes } : null,
+          job.customer_promise ? { icon: '🤝', text: job.customer_promise } : null,
+        ].filter(Boolean);
+        return (
+          <div className="card" style={{ marginTop: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{ fontWeight: 800 }}>📋 Job briefing</span>
+              <span className="pill" style={{ marginLeft: 'auto' }}>{statusLabel(job.status)}</span>
+            </div>
+            <Row label="Scheduled">{fmtDate(job.scheduled_at)}{job.arrival_window ? <span className="muted"> · window {job.arrival_window}</span> : null}</Row>
+            <Row label="Type">{title}{job.job_class ? <span className="muted"> · {job.job_class}</span> : null}</Row>
+            {(job.sold_scope || job.triage) && <Row label="The work">{job.sold_scope || job.triage}</Row>}
+            {pins.length > 0 && (
+              <Row label="📌 Pinned">
+                <div style={{ display: 'grid', gap: 4 }}>
+                  {pins.map((p, i) => (
+                    <div key={i} style={{ fontSize: 12.5, fontWeight: p.hot ? 800 : 500, color: p.hot ? 'var(--amber)' : 'var(--fg-1)' }}>{p.icon} {p.text}</div>
+                  ))}
+                </div>
+              </Row>
+            )}
+          </div>
+        );
+      })()}
 
       <JobActionCards jobId={id} jobNumber={job.job_number} customerName={customer.name} jobType={job.job_type} status={job.status} canAct={canAct} />
 
-      {/* 💬 Two-way job thread — office ↔ tech, plus the step-away pings all in one timeline. */}
-      <JobThread jobId={id} messages={jobMessages} canReply={can(role, 'seeAllJobs') || can(role, 'assignJobs')} />
-
       {/* 🏷 Office tags — dispatch sets them (tech sees on My Day; ✨ tags attach a form). Read-only for techs. */}
       <OfficeTags jobId={id} tags={job.office_tags || []} canEdit={can(role, 'assignJobs') || can(role, 'manageUsers') || can(role, 'seeCrew') || can(role, 'createJobs')} />
-
-      {/* 🚫 What this customer declined before (across all jobs) — so they can't say it wasn't offered. */}
-      <PriorDeclinedEstimates items={priorDeclined} />
 
       <JobFlow jobId={id} status={st} reached={reached} gateReady={gateReady} gateMissing={gateMissing} nextHint={gateMissing[0] || ''} canAct={canAct} />
 
@@ -380,65 +396,64 @@ export default async function JobDetail({ params }) {
         </div>
       )}
 
-      {!isEstimate && <JobForms jobId={id} forms={forms} canAnswer={canAnswerForms} />}
-
-      <JobParts jobId={id} parts={parts} canReturn={canReturnRentals} />
-
-      {!isEstimate && <JobCosts jobId={id} materialCents={job.material_cost_cents} dispatchCents={job.dispatch_fee_cents} subCents={job.sub_cost_cents} subVendor={job.sub_vendor} subVerified={job.sub_verified} canEdit={canAct || can(role, 'collectPayment') || can(role, 'seeFinancials')} revenue={Number(job.amount) || 0} roastLevel={profile.roastLevel || 'PG'} name={profile.name || ''} />}
-
-      <div id="photos" style={{ scrollMarginTop: 70 }} />
-
-      {/* Guided shots — required photo kinds + walkthrough video from the job_media_rules, so the tech
-          knows shot-by-shot what gates closeout (HTML "Guided photos · X/Y" + "Video evidence REQUIRED"). */}
-      {!photoError && closeout.available !== false && (closeout.requiredKinds?.length > 0 || closeout.requireVideo || closeout.minPhotos > 0) && (() => {
-        const missing = new Set(closeout.missingKinds || []);
-        const kinds = closeout.requiredKinds || [];
-        return (
-          <div className="card" style={{ marginTop: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 16 }}>📸</span>
-              <div style={{ fontWeight: 800 }}>Required shots</div>
-              <span className="pill" style={{ marginLeft: 'auto', color: closeout.readyToClose ? 'var(--green)' : 'var(--amber)' }}>{closeout.photoCount}/{closeout.minPhotos} photos</span>
+      {/* ── WORK AREAS — clean ST-style rows. Each opens its full tab; the Overview stopped duplicating
+          photos/forms/parts inline (the old mile-long stack). Chips show the live gate state at a glance. ── */}
+      {(() => {
+        const chip = (text, tone) => ({ text, tone });
+        const photoChips = [
+          chip(`${closeout.photoCount}/${closeout.minPhotos} photos`, closeout.photoCount >= closeout.minPhotos ? 'var(--green)' : 'var(--amber)'),
+          ...(closeout.requireVideo ? [chip(closeout.haveVideo ? '🎬 ✓' : '🎬 needed', closeout.haveVideo ? 'var(--green)' : 'var(--amber)')] : []),
+          ...(closeout.openFails > 0 ? [chip(`${closeout.openFails} failed`, 'var(--red)')] : []),
+        ];
+        const formChips = !isEstimate && forms.available !== false ? [forms.ready ? chip('✓ answered', 'var(--green)') : chip(`${(forms.missing || []).length} to answer`, 'var(--amber)')] : [];
+        const partChips = (parts.outRentals || []).length ? [chip(`${parts.outRentals.length} rental${parts.outRentals.length > 1 ? 's' : ''} out`, 'var(--red)')] : [];
+        const rows = [
+          { href: `/job/${id}/photos`, icon: '📸', t: 'Photos & video', sub: 'Camera-first proof — required shots + walkthrough', chips: photoChips },
+          ...(!isEstimate ? [{ href: `/job/${id}/forms`, icon: '📝', t: 'Closeout questions', sub: 'The job-type questions that gate closing', chips: formChips }] : []),
+          { href: `/job/${id}/parts`, icon: '🔧', t: 'Parts & receipts', sub: 'Shop pulls, store receipts, rentals', chips: partChips },
+        ];
+        return rows.map((r) => (
+          <Link key={r.href} href={r.href} className="card" style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit', padding: '12px 14px' }}>
+            <span style={{ fontSize: 18 }}>{r.icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: 13 }}>{r.t}</div>
+              <div className="muted" style={{ fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.sub}</div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {kinds.map((k) => {
-                const ok = !missing.has(k);
-                return (
-                  <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
-                    {ok ? <CircleCheck size={15} style={{ color: 'var(--green)' }} /> : <CircleAlert size={15} style={{ color: 'var(--amber)' }} />}
-                    <span style={{ textTransform: 'capitalize', fontWeight: ok ? 600 : 800, color: ok ? 'var(--fg-2)' : 'var(--fg-1)' }}>{k} photo</span>
-                  </div>
-                );
-              })}
-              {closeout.requireVideo && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
-                  {closeout.haveVideo ? <CircleCheck size={15} style={{ color: 'var(--green)' }} /> : <CircleAlert size={15} style={{ color: 'var(--amber)' }} />}
-                  <span style={{ fontWeight: closeout.haveVideo ? 600 : 800, color: closeout.haveVideo ? 'var(--fg-2)' : 'var(--fg-1)' }}>🎬 Walkthrough video <span style={{ color: 'var(--red)', fontSize: 10, fontWeight: 800 }}>REQUIRED</span></span>
-                </div>
-              )}
-            </div>
-            <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>Required shots gate closeout — capture them below; the office checks each one pass/fail.</div>
-          </div>
-        );
+            {r.chips.map((c, i) => <span key={i} className="pill" style={{ color: c.tone, flexShrink: 0 }}>{c.text}</span>)}
+            <span style={{ color: 'var(--amber)', fontWeight: 800, flexShrink: 0 }}>›</span>
+          </Link>
+        ));
       })()}
 
+      {/* Disposition checklist — how the job ended (paid/billed/warranty). Not duplicated on any tab, stays. */}
       {!photoError && !isEstimate && <CloseoutV2 jobId={id} dispo={dispo} needWarranty={needWarranty} officeBilled={officeBilled} netDays={netDays} />}
-      {!photoError && !isEstimate && <CompletionSignature jobId={id} terms={completionTerms} signedName={dispo.row?.completion_signed_name} signedAt={dispo.row?.completion_signed_at} />}
 
-      <JobVideo jobId={id} videos={videos} canUpload={canUpload && !photoError} requireVideo={closeout.requireVideo} />
+      {/* Customer relationship + what they declined before — the "know who you're talking to" block. */}
+      <div id="customer" style={{ scrollMarginTop: 70 }}><CustomerMemory mem={memory} customer={customer} job={job} /></div>
+      <PriorDeclinedEstimates items={priorDeclined} />
 
-      <JobPhotos
-        jobId={id}
-        photos={stillPhotos}
-        reviewByPhoto={reviewByPhoto}
-        closeout={closeout}
-        canUpload={canUpload && !photoError}
-        canArchive={canArchiveAny}
-        canReview={canReview && !photoError}
-        canOverride={canOverride && !photoError}
-        isDone={isDone}
-        currentUserId={user.id}
-      />
+      {/* 💬 Job thread — office ↔ tech timeline, tucked behind a tap (chat lives on the bottom bar). */}
+      <details style={{ marginTop: 10 }}>
+        <summary className="card" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', listStyle: 'none' }}>
+          <span style={{ fontSize: 18 }}>💬</span>
+          <span style={{ fontWeight: 800, fontSize: 13, flex: 1 }}>Job thread — office ↔ tech</span>
+          <span className="pill" style={{ color: jobMessages.length ? 'var(--amber)' : 'var(--fg-3)' }}>{jobMessages.length || 'none'}</span>
+          <span style={{ color: 'var(--amber)', fontWeight: 800 }}>▾</span>
+        </summary>
+        <JobThread jobId={id} messages={jobMessages} canReply={can(role, 'seeAllJobs') || can(role, 'assignJobs')} />
+      </details>
+
+      {/* 💵 Job costs — material / dispatch / sub, tucked (edited occasionally, not every visit). */}
+      {!isEstimate && (
+        <details style={{ marginTop: 10 }}>
+          <summary className="card" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', listStyle: 'none' }}>
+            <span style={{ fontSize: 18 }}>💵</span>
+            <span style={{ fontWeight: 800, fontSize: 13, flex: 1 }}>Job costs — material · dispatch · sub</span>
+            <span style={{ color: 'var(--amber)', fontWeight: 800 }}>▾</span>
+          </summary>
+          <JobCosts jobId={id} materialCents={job.material_cost_cents} dispatchCents={job.dispatch_fee_cents} subCents={job.sub_cost_cents} subVendor={job.sub_vendor} subVerified={job.sub_verified} canEdit={canAct || can(role, 'collectPayment') || can(role, 'seeFinancials')} revenue={Number(job.amount) || 0} roastLevel={profile.roastLevel || 'PG'} name={profile.name || ''} />
+        </details>
+      )}
 
       {/* 🏁 End of the job — bill it out or roll it over (moved here from the top, per Devin). */}
       {!isDone && <RollOverCard jobId={id} canAct={canAct} />}
