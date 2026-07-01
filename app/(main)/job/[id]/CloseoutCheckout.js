@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { createJobPayLink } from '../../my-day/actions';
-import { startReaderCharge, pollReaderCharge, cancelReaderCharge, createJobAchLink, recordManualPayment, requestFinancing, billNet30 } from './checkoutActions';
+import { startReaderCharge, pollReaderCharge, cancelReaderCharge, createJobAchLink, recordManualPayment, requestFinancing, billNet30, emailPayLink } from './checkoutActions';
 
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -56,6 +56,7 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
   const [sendOther, setSendOther] = useState(false); // "send to a different email" checkbox
   const [finMsg, setFinMsg] = useState(null); // financing hand-off result
   const [netMsg, setNetMsg] = useState(null); // net-30 billing result
+  const [linkMsg, setLinkMsg] = useState(null); // pay-link email result (delivery is email-only until A2P clears)
   const cashRef = useRef();
   const [manualPaid, setManualPaid] = useState(null); // { method, total }
   const [pending, start] = useTransition();
@@ -78,8 +79,19 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   function makeLink() {
-    setErr(null); setMode('link');
+    setErr(null); setLinkMsg(null); setMode('link');
     start(async () => { const r = await createJobPayLink(jobId, amtNum); if (r.ok) setLink(r); else { setErr(r.msg); setMode(null); } });
+  }
+
+  // Deliver the pay link by EMAIL only — SMS is paused until the A2P/10DLC registration clears. Sends to the
+  // customer's email on file (+ any different address the tech types).
+  function emailLink() {
+    if (!link) return;
+    setLinkMsg(null); setMode('emaillink');
+    start(async () => {
+      const r = await emailPayLink(jobId, { url: link.url, amountDollars: amtNum, extraEmail: extraEmail.trim() });
+      setLinkMsg(r); setMode(null);
+    });
   }
 
   function makeAch() {
@@ -260,7 +272,7 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
             )}
 
             {tab === 'link' && (
-              <button onClick={makeLink} disabled={pending || !valid || !stripeReady} className="btn" style={{ width: '100%', opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>{pending && mode === 'link' ? '…' : '✉️ Send a pay link (text / email)'}</button>
+              <button onClick={makeLink} disabled={pending || !valid || !stripeReady} className="btn" style={{ width: '100%', opacity: (pending || !valid || !stripeReady) ? 0.55 : 1 }}>{pending && mode === 'link' ? '…' : '✉️ Create a pay link (emailed)'}</button>
             )}
 
             {tab === 'ach' && (<>
@@ -292,11 +304,16 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
           </div>
           {link.ach && <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>🏦 Bank transfer — settles in ~4 business days; the job isn’t paid until it clears.</div>}
           <input readOnly value={link.url} onFocus={(e) => e.target.select()} style={{ ...input, width: '100%', fontSize: 12, marginBottom: 8 }} />
+          {/* EMAIL delivery only — texting is paused until the A2P/10DLC registration clears. Emails to the
+              customer's address on file; the field below sends to a different/additional address if needed. */}
+          <input value={extraEmail} onChange={(e) => setExtraEmail(e.target.value)} inputMode="email" placeholder={customerEmail ? `Emails to ${customerEmail} — or type a different address` : 'Customer email to send the link to'} style={{ ...input, width: '100%', fontSize: 12.5, marginBottom: 8 }} />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {tel && <a href={`sms:${tel}?body=${encodeURIComponent((link.ach ? 'Pay your Clog Busterz invoice by bank transfer here: ' : 'Pay your Clog Busterz invoice here: ') + link.url)}`} className="btn" style={{ flex: 1, textAlign: 'center', minWidth: 120, textDecoration: 'none' }}>✉️ Text customer</a>}
+            <button onClick={emailLink} disabled={pending} className="btn" style={{ flex: 1, textAlign: 'center', minWidth: 120, opacity: pending ? 0.6 : 1 }}>{pending && mode === 'emaillink' ? '…' : '✉️ Email the link'}</button>
             <a href={link.url} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ textDecoration: 'none' }}>Open ↗</a>
-            <button onClick={() => { setLink(null); setMode(null); }} className="btn btn-ghost">↺ New</button>
+            <button onClick={() => { setLink(null); setMode(null); setLinkMsg(null); }} className="btn btn-ghost">↺ New</button>
           </div>
+          {linkMsg && <div style={{ fontSize: 12, marginTop: 8, fontWeight: 700, color: linkMsg.ok ? 'var(--green)' : 'var(--red)' }}>{linkMsg.msg}</div>}
+          <div className="muted" style={{ fontSize: 10.5, marginTop: 6 }}>📵 Texting is paused until our A2P registration clears — send the link by email for now.</div>
         </div>
       )}
 

@@ -15,7 +15,7 @@ import {
 import { revalidatePath } from 'next/cache';
 import { canViewJob } from './jobAccess';
 import { applyPayment } from '@/lib/invoiceBalance';
-import { sendOne, renderEmailHtml, isEmailConfigured } from '@/lib/email';
+import { sendOne, renderEmailHtml, isEmailConfigured, esc } from '@/lib/email';
 import { sendSms, smsConfigured } from '@/lib/twilio';
 import { postToDiscord } from '@/lib/discord';
 
@@ -349,5 +349,45 @@ export async function billNet30(jobId, opts = {}) {
   try { await sb.from('audit_log').insert({ actor_id: g.user.id, actor_name: g.profile.name || g.user.email, role: g.profile.role, action: 'invoice.net30', entity: 'job', entity_id: String(jobId), detail: { due: dueISO, days } }); } catch (_) {}
   revalidatePath(`/job/${jobId}`);
   return { ok: true, dueDate: dueISO, days, msg: `Billed Net-${days} — due ${due.toLocaleDateString()}. The office collects; it’s tracked in AR.` };
+}
+
+// ✉️ EMAIL A PAY LINK to the customer. Until the A2P/10DLC SMS registration clears we deliver pay links by
+// EMAIL only (no text). Sends to the customer's email on file (+ 2nd email + any address the tech typed). The
+// `url` is the Stripe checkout link the tech just generated; we validate it's an https URL before sending.
+export async function emailPayLink(jobId, opts = {}) {
+  const g = await gateCollect();
+  if (g.err) return { ok: false, msg: g.err };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const gj = await gateJob(sb, g, jobId);
+  if (gj.err) return { ok: false, msg: gj.err };
+  const job = gj.job;
+  const url = String(opts.url || '').trim();
+  if (!/^https:\/\/[^\s"'<>]+$/.test(url)) return { ok: false, msg: 'No valid pay link to send.' };
+  if (!isEmailConfigured) return { ok: false, msg: 'Email isn’t set up yet — copy the link and text/hand it to the customer for now.' };
+  let cust = {};
+  if (job.customer_id) {
+    try { const { data } = await sb.from('customers').select('name, email, email2').eq('id', job.customer_id).maybeSingle(); cust = data || {}; }
+    catch (_) { try { const { data } = await sb.from('customers').select('name, email').eq('id', job.customer_id).maybeSingle(); cust = data || {}; } catch (_2) {} }
+  }
+  const emails = [...new Set([cust.email, cust.email2, opts.extraEmail].map((e) => String(e || '').trim().toLowerCase()).filter((e) => /.+@.+\..+/.test(e)))];
+  if (!emails.length) return { ok: false, msg: 'No email on file — type the customer’s email to send the link.' };
+  const name = cust.name || (job.customers && job.customers.name) || 'there';
+  const first = String(name).trim().split(/\s+/)[0] || name;
+  const amt = Math.max(0, Number(opts.amountDollars) || 0);
+  const amtNote = amt > 0 ? ` for ${money2(amt)}` : '';
+  const jobNote = job.job_number ? ` (job #${esc(String(job.job_number))})` : '';
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1a1a1a;line-height:1.5">
+    <p>Hi ${esc(first)},</p>
+    <p>Here’s a secure link to pay your Clog Busterz Plumbing invoice${jobNote}${esc(amtNote)}.</p>
+    <p style="margin:18px 0"><a href="${url}" style="display:inline-block;background:#FF6B00;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:800">Pay your invoice →</a></p>
+    <p style="font-size:12px;color:#666">Or paste this into your browser:<br>${esc(url)}</p>
+    <p>Thank you!<br>Clog Busterz Plumbing</p>
+  </div>`;
+  const r = await sendOne({ to: emails[0], cc: emails.slice(1).join(',') || undefined, subject: 'Pay your invoice — Clog Busterz Plumbing', html, meta: { customerId: job.customer_id, purpose: 'pay_link', ref: job.job_number || null } });
+  if (!r.ok) return { ok: false, msg: r.error || 'Couldn’t email the link.' };
+  try { await sb.from('ar_activity').insert({ action: 'pay_link_emailed', customer_id: job.customer_id || null, customer_name: name, invoice_number: job.job_number || null, amount: amt || null, by_email: g.profile.email || 'field' }); } catch (_) {}
+  try { await sb.from('audit_log').insert({ actor_id: g.user.id, actor_name: g.profile.name || g.user.email, role: g.profile.role, action: 'paylink.emailed', entity: 'job', entity_id: String(jobId), detail: { to: emails, amount: amt } }); } catch (_) {}
+  return { ok: true, msg: `Link emailed to ${emails.join(', ')}.`, emails };
 }
 
