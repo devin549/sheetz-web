@@ -438,14 +438,19 @@ export async function saveMaterialReceipt(jobId, dataUrl, opts = {}) {
   const photo = { id, job_id: ctx.job.id, storage_bucket: BUCKET, storage_path: storagePath, file_name: `receipt.${ext}`, mime_type: mime, size_bytes: bytes.length, kind: 'receipt', caption: `${vendor || 'Parts'} receipt${total > 0 ? ` — $${total.toLocaleString()}` : ''}`, customer_visible: false, uploaded_by: ctx.user.id, uploaded_by_email: ctx.user.email, uploaded_by_name: ctx.profile?.name || ctx.user.email };
   const { error: insErr } = await ctx.sb.from('job_photos').insert(photo);
   if (insErr) return { ok: false, msg: 'Photo: ' + insErr.message };
-  const entry = { photo_id: id, job_id: ctx.job.id, vendor, amount_cents: total > 0 ? Math.round(total * 100) : null, is_subcontractor: false, status: 'logged' };
+  // status MUST be one of the 29_receipts.sql check values ('pending'|'verified'|'flagged') — the original
+  // 'logged' silently violated the constraint, so NO material entry ever landed and the re-sum read an empty
+  // table (receipts weren't accumulating at all). 'pending' = logged, awaiting accounting's verify pass.
+  const entry = { photo_id: id, job_id: ctx.job.id, vendor, amount_cents: total > 0 ? Math.round(total * 100) : null, is_subcontractor: false, status: 'pending' };
   try { await ctx.sb.from('receipt_entries').upsert(entry, { onConflict: 'photo_id' }); } catch (_) { /* receipt_entries missing → still stored the photo; fall back to a plain add below */ }
   // Material cost = SUM of all this job's MATERIAL receipts (source of truth — re-summing is safe, never
   // double-counts, never loses one). Fall back to adding this receipt onto the current cost if we can't read them.
   let matCents = null, count = 0;
   try {
     const { data: rows } = await ctx.sb.from('receipt_entries').select('amount_cents, is_subcontractor').eq('job_id', ctx.job.id);
-    if (rows) { matCents = 0; rows.forEach((r) => { if (!r.is_subcontractor) { matCents += Number(r.amount_cents) || 0; count++; } }); }
+    // rows.length guard: an EMPTY read right after our insert means the entry didn't land (constraint/limbo) —
+    // fall through to the plain-add path instead of re-summing to $0 and wiping the job's material cost.
+    if (rows && rows.length) { matCents = 0; rows.forEach((r) => { if (!r.is_subcontractor) { matCents += Number(r.amount_cents) || 0; count++; } }); }
   } catch (_) {}
   if (matCents == null) { // couldn't sum → add this receipt to the existing material cost (best-effort)
     try { const { data: j } = await ctx.sb.from('jobs').select('material_cost_cents').eq('id', ctx.job.id).maybeSingle(); matCents = (Number(j?.material_cost_cents) || 0) + Math.round(total * 100); } catch (_) { matCents = Math.round(total * 100); }
@@ -455,6 +460,33 @@ export async function saveMaterialReceipt(jobId, dataUrl, opts = {}) {
   try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: 'receipt.material_saved', entity: 'receipt', entity_id: id, detail: { job_id: ctx.job.id, vendor, total, material_total_cents: matCents } }); } catch (_) {}
   revalidatePath(`/job/${ctx.job.id}`); revalidatePath('/my-day'); revalidatePath('/receipts');
   return { ok: true, materialDollars: (matCents || 0) / 100, receiptCount: count, msg: `✓ Receipt saved${count > 1 ? ` (#${count} on this job)` : ''} — material total $${((matCents || 0) / 100).toLocaleString()}.` };
+}
+
+// 🔁 Flip a saved receipt between MATERIAL ↔ SUBCONTRACTOR after the fact (the tech taps the toggle on the
+// job's receipt list — the scan-time AI guess isn't always right). Re-sums the job's material cost from the
+// remaining material receipts so totals never drift. Sub receipts go to accounting pending verify (mig 137).
+export async function setReceiptSub(jobId, photoId, makeSub) {
+  const ctx = await getActionContext(cleanText(jobId, 80));
+  if (!ctx.ok) return ctx;
+  if (!(can(ctx.role, 'changeStatus') || can(ctx.role, 'collectPayment') || can(ctx.role, 'seeFinancials') || canUploadPhotos(ctx.role))) return { ok: false, msg: 'Not allowed.' };
+  const pid = cleanText(photoId, 80);
+  const { data: entry } = await ctx.sb.from('receipt_entries').select('photo_id, job_id, is_subcontractor, vendor').eq('photo_id', pid).maybeSingle();
+  if (!entry || String(entry.job_id) !== String(ctx.job.id)) return { ok: false, msg: 'Receipt not found on this job.' };
+  const toSub = makeSub === true;
+  const patch = toSub
+    ? { is_subcontractor: true, sub_status: 'pending_verify', sub_confirmed_by: ctx.profile?.name || ctx.user.email, sub_confirmed_at: new Date().toISOString(), status: 'pending' }
+    : { is_subcontractor: false, sub_status: null, status: 'pending' };
+  let u = await ctx.sb.from('receipt_entries').update(patch).eq('photo_id', pid);
+  // pre-137 (no sub_* columns) → flip just the flag so the material math still works
+  if (u.error && /sub_|column|schema cache|does not exist/i.test(u.error.message || '')) u = await ctx.sb.from('receipt_entries').update({ is_subcontractor: toSub }).eq('photo_id', pid);
+  if (u.error) return { ok: false, msg: u.error.message };
+  // Re-sum material = all NON-sub receipts (same source-of-truth math as saveMaterialReceipt).
+  let matCents = 0;
+  try { const { data: rows } = await ctx.sb.from('receipt_entries').select('amount_cents, is_subcontractor').eq('job_id', ctx.job.id); (rows || []).forEach((r) => { if (!r.is_subcontractor) matCents += Number(r.amount_cents) || 0; }); } catch (_) { matCents = null; }
+  if (matCents != null) { try { await ctx.sb.from('jobs').update({ material_cost_cents: matCents }).eq('id', ctx.job.id); } catch (_) {} }
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile?.name || ctx.user.email, role: ctx.role, action: toSub ? 'receipt.marked_sub' : 'receipt.marked_material', entity: 'receipt', entity_id: pid, detail: { job_id: ctx.job.id, vendor: entry.vendor } }); } catch (_) {}
+  revalidatePath(`/job/${ctx.job.id}`); revalidatePath(`/job/${ctx.job.id}/parts`); revalidatePath('/receipts');
+  return { ok: true, msg: toSub ? 'Marked as a subcontractor bill — accounting verifies before payment.' : 'Marked as a material receipt — added back into the job’s material total.' };
 }
 
 // ✍️ FINAL (completion) signature — the customer signs the completion-acceptance terms when the work is done
