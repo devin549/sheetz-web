@@ -188,7 +188,9 @@ export default function PricebookClient({ job, customer, roots = [], related = {
                     {t.includes.map((inc, i) => <div key={i} style={{ fontSize: 12.5, display: 'flex', gap: 6 }}><span style={{ color: 'var(--green)' }}>✓</span>{inc}</div>)}
                   </div>
                   <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--amber)', marginTop: 'auto' }}>{money(t.price)}</div>
-                  <button onClick={() => addTier(t)} className="btn" style={{ marginTop: 8, width: '100%' }}>Choose {t.name}</button>
+                  {/* Anti-low-ticket: the recommended (hero) tier gets the primary button; the others are
+                      secondary, so the eye lands on the RIGHT choice — not reflexively the cheapest. */}
+                  <button onClick={() => addTier(t)} className={t.recommended ? 'btn' : 'btn btn-ghost'} style={{ marginTop: 8, width: '100%', fontWeight: t.recommended ? 800 : 600 }}>{t.recommended ? `✓ Choose ${t.name}` : `Choose ${t.name}`}</button>
                 </div>
               );
             })}
