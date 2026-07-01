@@ -24,6 +24,11 @@ function fileToScaledDataUrl(file, max = 1300) {
   });
 }
 
+// 🚦 Card-reader rollout switch. FALSE = the Reader tab shows dull + "Coming soon" and can't be
+// picked (WisePOS E fleet not deployed yet — go-live next week is link/cash/check/etc.). Flip to
+// TRUE once the readers are paired and the crew is trained, and the tab lights up as preferred.
+const READERS_LIVE = false;
+
 const PAY_TABS = [
   { id: 'reader', label: '💳 Reader' },
   { id: 'cash', label: '💵 Cash' },
@@ -43,7 +48,7 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
   const [reader, setReader] = useState(null);
   const [readerState, setReaderState] = useState(null); // 'waiting' | 'paid' | 'failed'
   const [err, setErr] = useState(null);
-  const [tab, setTab] = useState(hasReader ? 'reader' : 'cash');
+  const [tab, setTab] = useState((hasReader && READERS_LIVE) ? 'reader' : 'cash');
   const [checkNo, setCheckNo] = useState('');
   const [checkId, setCheckId] = useState('');
   const [cashPhoto, setCashPhoto] = useState(null);
@@ -207,6 +212,17 @@ export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail 
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
             {PAY_TABS.map((t) => {
               const on = tab === t.id;
+              const soon = t.id === 'reader' && !READERS_LIVE;
+              if (soon) {
+                // Dull, non-clickable "Coming soon" chip — readers not deployed yet. Still shown so the
+                // crew knows it's coming and where it'll live in the flow.
+                return (
+                  <div key={t.id} title="Card readers arrive soon — coming next week" aria-disabled="true" style={{ flex: '1 1 auto', minWidth: 62, padding: '6px 6px', borderRadius: 9, textAlign: 'center', background: 'var(--surface-2)', color: 'var(--fg-2)', border: '1px dashed var(--border)', opacity: 0.5, cursor: 'not-allowed' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600 }}>{t.label}</div>
+                    <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 1 }}>Coming soon</div>
+                  </div>
+                );
+              }
               return <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: '1 1 auto', minWidth: 62, padding: '8px 6px', borderRadius: 9, fontSize: 12.5, fontWeight: on ? 800 : 600, cursor: 'pointer', textAlign: 'center', background: on ? 'var(--amber)' : 'var(--surface-2)', color: on ? '#1a1206' : 'var(--fg-2)', border: '1px solid ' + (on ? 'var(--amber)' : 'var(--border)') }}>{t.label}</button>;
             })}
           </div>
