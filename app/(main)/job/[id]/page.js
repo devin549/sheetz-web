@@ -24,6 +24,8 @@ import ScanReceipt from './ScanReceipt';
 import JobSegments from './JobSegments';
 import PriorDeclinedEstimates from './PriorDeclinedEstimates';
 import { rollupJob } from '@/lib/segments';
+import { driveMatrix } from '@/lib/maps';
+import { haversineMiles, etaMinutes } from '@/lib/geo';
 import { Lock, CircleCheck, CircleAlert } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -225,6 +227,25 @@ export default async function JobDetail({ params }) {
   const canAct = can(role, 'changeStatus');
   const urgent = /high|urgent|emergency/i.test(String(job.priority || ''));
 
+  // 🚗 LEAVE-BY — the same math as the Start-of-Day text/email nudge (home → this job + 10-min buffer), so
+  // the job screen and the message the tech got AGREE on when to leave the house. Only shows while the tech
+  // hasn't rolled yet (scheduled, no enroute/arrive stamp); office viewers have no saved home → hidden.
+  let leaveBy = null;
+  const notRolledYet = !isDone && !job.enroute_at && !job.started_at && !/enroute|rolling|on_site|onsite|cancel|hold/.test(st);
+  if (notRolledYet && job.scheduled_at && job.lat != null && job.lng != null && profile.homeLat != null && profile.homeLng != null) {
+    const targetMs = new Date(job.scheduled_at).getTime();
+    if (Number.isFinite(targetMs) && targetMs > Date.now() - 6 * 3600000) { // today's/upcoming jobs only — not stale reschedules
+      let driveMin = null;
+      try { const dm = await driveMatrix({ lat: profile.homeLat, lng: profile.homeLng }, [{ lat: job.lat, lng: job.lng }]); if (dm && dm[0] && dm[0].etaMin != null) driveMin = dm[0].etaMin; } catch (_) {}
+      if (driveMin == null) driveMin = etaMinutes(haversineMiles(profile.homeLat, profile.homeLng, job.lat, job.lng));
+      if (driveMin != null) {
+        const BUFFER = 10;
+        const leaveMs = targetMs - (driveMin + BUFFER) * 60000;
+        leaveBy = { time: new Date(leaveMs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), driveMin, buffer: BUFFER, late: leaveMs <= Date.now(), minsUntil: Math.round((leaveMs - Date.now()) / 60000) };
+      }
+    }
+  }
+
   // 2nd-tech LOCK — a tech added to this job via a segment gets photos + receipts ONLY; the lead/office own
   // status, pricing, and closeout. (Helpers are excluded — we don't hand them the photo/receipt duty, or the
   // lead gets lazy.) Deny-by-default: render just the proof tools, nothing that could change the job or sell.
@@ -301,6 +322,12 @@ export default async function JobDetail({ params }) {
               <span className="pill" style={{ marginLeft: 'auto' }}>{statusLabel(job.status)}</span>
             </div>
             <Row label="Scheduled">{fmtDate(job.scheduled_at)}{job.arrival_window ? <span className="muted"> · window {job.arrival_window}</span> : null}</Row>
+            {leaveBy && (
+              <Row label="🚗 Leave by">
+                <span style={{ fontWeight: 800, color: leaveBy.late ? 'var(--red)' : 'var(--green)' }}>{leaveBy.late ? '⚠ Leave NOW to make it' : leaveBy.time}</span>
+                <span className="muted" style={{ fontSize: 11.5 }}> · {leaveBy.driveMin} min drive + {leaveBy.buffer} buffer{!leaveBy.late && Number.isFinite(leaveBy.minsUntil) ? ` · in ${leaveBy.minsUntil} min` : ''}</span>
+              </Row>
+            )}
             <Row label="Type">{title}{job.job_class ? <span className="muted"> · {job.job_class}</span> : null}</Row>
             {(job.sold_scope || job.triage) && <Row label="The work">{job.sold_scope || job.triage}</Row>}
             {pins.length > 0 && (
@@ -317,6 +344,10 @@ export default async function JobDetail({ params }) {
       })()}
 
       <JobActionCards jobId={id} jobNumber={job.job_number} customerName={customer.name} jobType={job.job_type} status={job.status} canAct={canAct} />
+
+      {/* 🧠 Know who you're knocking for — the relationship + what they turned down before (bring it up again). */}
+      <div id="customer" style={{ scrollMarginTop: 70 }}><CustomerMemory mem={memory} customer={customer} job={job} /></div>
+      <PriorDeclinedEstimates items={priorDeclined} />
 
       {/* 🏷 Office tags — dispatch sets them (tech sees on My Day; ✨ tags attach a form). Read-only for techs. */}
       <OfficeTags jobId={id} tags={job.office_tags || []} canEdit={can(role, 'assignJobs') || can(role, 'manageUsers') || can(role, 'seeCrew') || can(role, 'createJobs')} />
@@ -349,50 +380,12 @@ export default async function JobDetail({ params }) {
         );
       })()}
 
-      {/* Crew & segments (split / second tech / helper / parts run / return visit / unit) — rolls up here. */}
-      <JobSegments parentJobId={id} rollup={rollup} segments={segments} canDispatch={canDispatchSeg} />
-
-      {(canAct || job.project_id) && <LinkToProject jobId={id} currentProjectId={job.project_id} currentProjectName={projName} currentUnitLabel={unitLabel} canLink={can(role, 'assignJobs') || can(role, 'createJobs') || can(role, 'manageUsers')} rollSignal={nonPartsRolls} rollThreshold={PROJECT_ROLL_THRESHOLD} totalRolls={totalRolls} />}
-
-      {/* 💡 Refer a bigger opportunity (FloodBusterz / Reline) to Sales — internal handoff, customer not contacted. */}
-      {canAct && !isEstimate && <ReferToSales jobId={id} customerName={(customer && customer.name) || job.customer_name || ''} />}
-
       {isEstimate && <EstimatePanel jobId={id} outcome={job.estimate_outcome} convertedToJobId={job.converted_to_job_id} canAct={canAct} />}
 
       {photoError && (
         <div className="notice">
           <strong>Photo table is not ready.</strong> Run <code>supabase/23_job_photo_spine.sql</code> in Supabase.
           <div className="muted" style={{ marginTop: 6 }}>{photoError.message}</div>
-        </div>
-      )}
-
-      {/* CLOSEOUT GATE — required media must be present + pass QA before the job can close. */}
-      {!photoError && (
-        <div id="closeout-gate" className="card" style={{ scrollMarginTop: 70, marginTop: 10, borderLeft: `3px solid ${gateReady ? 'var(--green)' : 'var(--amber)'}`, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 240px' }}>
-            <span style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: gateReady ? 'color-mix(in oklab, var(--green) 18%, transparent)' : 'color-mix(in oklab, var(--amber) 18%, transparent)' }}>
-              {gateReady ? <CircleCheck size={22} style={{ color: 'var(--green)' }} /> : <Lock size={20} style={{ color: 'var(--amber)' }} />}
-            </span>
-            <div>
-              <div style={{ fontWeight: 800 }}>Closeout Gate</div>
-              <div className="muted" style={{ fontSize: 11.5 }}>All required media must be uploaded and pass QA before this job can be marked complete.</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span className="pill" style={{ color: closeout.photoCount >= closeout.minPhotos ? 'var(--green)' : 'var(--fg-2)' }}>{closeout.photoCount}/{closeout.minPhotos} photos</span>
-            {closeout.requireVideo && <span className="pill" style={{ color: closeout.haveVideo ? 'var(--green)' : 'var(--fg-2)' }}>{closeout.haveVideo ? '1' : '0'}/1 video</span>}
-            {closeout.openFails > 0 && <span className="pill pill-red">{closeout.openFails} failed</span>}
-            {parts.outRentals && parts.outRentals.length > 0 && <span className="pill pill-red">{parts.outRentals.length} rental{parts.outRentals.length > 1 ? 's' : ''} out</span>}
-            {formsBlocked && <span className="pill pill-red">{forms.missing.length} question{forms.missing.length > 1 ? 's' : ''}</span>}
-            <span className="pill" style={{ fontWeight: 800, background: gateReady ? 'rgba(70,193,120,.16)' : 'rgba(255,179,0,.14)', color: gateReady ? 'var(--green)' : 'var(--amber)' }}>
-              {isDone ? 'Closed' : gateReady ? 'Ready to close' : 'Blocked'}
-            </span>
-          </div>
-          {!gateReady && gateMissing.length > 0 && (
-            <div className="muted" style={{ fontSize: 11.5, flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 5 }}>
-              <CircleAlert size={13} style={{ color: 'var(--amber)' }} /> Still needed: {gateMissing.join(', ')}.
-            </div>
-          )}
         </div>
       )}
 
@@ -425,12 +418,46 @@ export default async function JobDetail({ params }) {
         ));
       })()}
 
+      {/* CLOSEOUT GATE — the "can I close this?" scoreboard, right after the work rows it scores. */}
+      {!photoError && (
+        <div id="closeout-gate" className="card" style={{ scrollMarginTop: 70, marginTop: 10, borderLeft: `3px solid ${gateReady ? 'var(--green)' : 'var(--amber)'}`, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 240px' }}>
+            <span style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: gateReady ? 'color-mix(in oklab, var(--green) 18%, transparent)' : 'color-mix(in oklab, var(--amber) 18%, transparent)' }}>
+              {gateReady ? <CircleCheck size={22} style={{ color: 'var(--green)' }} /> : <Lock size={20} style={{ color: 'var(--amber)' }} />}
+            </span>
+            <div>
+              <div style={{ fontWeight: 800 }}>Closeout Gate</div>
+              <div className="muted" style={{ fontSize: 11.5 }}>All required media must be uploaded and pass QA before this job can be marked complete.</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="pill" style={{ color: closeout.photoCount >= closeout.minPhotos ? 'var(--green)' : 'var(--fg-2)' }}>{closeout.photoCount}/{closeout.minPhotos} photos</span>
+            {closeout.requireVideo && <span className="pill" style={{ color: closeout.haveVideo ? 'var(--green)' : 'var(--fg-2)' }}>{closeout.haveVideo ? '1' : '0'}/1 video</span>}
+            {closeout.openFails > 0 && <span className="pill pill-red">{closeout.openFails} failed</span>}
+            {parts.outRentals && parts.outRentals.length > 0 && <span className="pill pill-red">{parts.outRentals.length} rental{parts.outRentals.length > 1 ? 's' : ''} out</span>}
+            {formsBlocked && <span className="pill pill-red">{forms.missing.length} question{forms.missing.length > 1 ? 's' : ''}</span>}
+            <span className="pill" style={{ fontWeight: 800, background: gateReady ? 'rgba(70,193,120,.16)' : 'rgba(255,179,0,.14)', color: gateReady ? 'var(--green)' : 'var(--amber)' }}>
+              {isDone ? 'Closed' : gateReady ? 'Ready to close' : 'Blocked'}
+            </span>
+          </div>
+          {!gateReady && gateMissing.length > 0 && (
+            <div className="muted" style={{ fontSize: 11.5, flexBasis: '100%', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <CircleAlert size={13} style={{ color: 'var(--amber)' }} /> Still needed: {gateMissing.join(', ')}.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Disposition checklist — how the job ended (paid/billed/warranty). Not duplicated on any tab, stays. */}
       {!photoError && !isEstimate && <CloseoutV2 jobId={id} dispo={dispo} needWarranty={needWarranty} officeBilled={officeBilled} netDays={netDays} />}
 
-      {/* Customer relationship + what they declined before — the "know who you're talking to" block. */}
-      <div id="customer" style={{ scrollMarginTop: 70 }}><CustomerMemory mem={memory} customer={customer} job={job} /></div>
-      <PriorDeclinedEstimates items={priorDeclined} />
+      {/* Crew & segments (split / second tech / helper / parts run / return visit / unit) — rolls up here. */}
+      <JobSegments parentJobId={id} rollup={rollup} segments={segments} canDispatch={canDispatchSeg} />
+
+      {(canAct || job.project_id) && <LinkToProject jobId={id} currentProjectId={job.project_id} currentProjectName={projName} currentUnitLabel={unitLabel} canLink={can(role, 'assignJobs') || can(role, 'createJobs') || can(role, 'manageUsers')} rollSignal={nonPartsRolls} rollThreshold={PROJECT_ROLL_THRESHOLD} totalRolls={totalRolls} />}
+
+      {/* 💡 Refer a bigger opportunity (FloodBusterz / Reline) to Sales — internal handoff, customer not contacted. */}
+      {canAct && !isEstimate && <ReferToSales jobId={id} customerName={(customer && customer.name) || job.customer_name || ''} />}
 
       {/* 💬 Job thread — office ↔ tech timeline, tucked behind a tap (chat lives on the bottom bar). */}
       <details style={{ marginTop: 10 }}>
