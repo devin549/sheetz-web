@@ -119,7 +119,7 @@ export default async function QuoteTab({ params }) {
               </div>
             )}
           </div>
-          {canCollect && <CloseoutCheckout jobId={params.id} suggested={amount} tel={dial(c.customer.phone)} hasReader={hasReader} stripeReady={stripeReady} officeBilled={officeBilled} netDays={netDays} />}
+          {canCollect && <CloseoutCheckout jobId={params.id} suggested={amount} tel={dial(c.customer.phone)} customerEmail={c.customer.email || ''} hasReader={hasReader} stripeReady={stripeReady} officeBilled={officeBilled} netDays={netDays} />}
         </>
       )}
 

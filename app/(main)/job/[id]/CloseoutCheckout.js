@@ -32,7 +32,7 @@ const PAY_TABS = [
   { id: 'ach', label: '🏦 Bank' },
 ];
 
-export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, stripeReady, officeBilled = false, netDays = 0 }) {
+export default function CloseoutCheckout({ jobId, suggested, tel, customerEmail = '', hasReader, stripeReady, officeBilled = false, netDays = 0 }) {
   const router = useRouter();
   const [amt, setAmt] = useState(suggested ? String(suggested) : '');
   const [payNow, setPayNow] = useState(false); // office-billed: collection hidden until the customer chooses to pay now
@@ -45,7 +45,8 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
   const [checkNo, setCheckNo] = useState('');
   const [checkId, setCheckId] = useState('');
   const [cashPhoto, setCashPhoto] = useState(null);
-  const [extraEmail, setExtraEmail] = useState(''); // optional extra address to also email the receipt to
+  const [extraEmail, setExtraEmail] = useState(''); // a different/additional address to email the receipt to
+  const [sendOther, setSendOther] = useState(false); // "send to a different email" checkbox
   const cashRef = useRef();
   const [manualPaid, setManualPaid] = useState(null); // { method, total }
   const [pending, start] = useTransition();
@@ -61,6 +62,9 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
   const overBy = total > 0 && valid ? Math.round((amtNum - total) * 100) / 100 : 0; // >0 = over, <0 = short
   const isCashish = tab === 'cash' || tab === 'check';
   const recordAmt = (isCashish && overBy > 0) ? total : amtNum; // cash/check: cap to total, give change back
+  // The receipt auto-goes to the customer's email on file (from booking). Only pass the typed address when they
+  // ticked "different email" — or when there's no email on file to send to.
+  const receiptExtra = (sendOther || !customerEmail) ? extraEmail.trim() : '';
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
@@ -97,12 +101,12 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
   function takeCash() {
     setErr(null);
     if (!cashPhoto) { setErr('Take a photo of the cash fanned out first.'); return; }
-    start(async () => { const r = await recordManualPayment(jobId, { method: 'cash', amountDollars: recordAmt, cashPhoto, extraEmail }); if (r.ok) setManualPaid({ method: 'cash', total: r.totalDollars, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); });
+    start(async () => { const r = await recordManualPayment(jobId, { method: 'cash', amountDollars: recordAmt, cashPhoto, extraEmail: receiptExtra }); if (r.ok) setManualPaid({ method: 'cash', total: r.totalDollars, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); });
   }
   function takeCheck() {
     setErr(null);
     if (!checkNo.trim() || !checkId.trim()) { setErr('Enter the check number and the ID written on the check.'); return; }
-    start(async () => { const r = await recordManualPayment(jobId, { method: 'check', amountDollars: recordAmt, checkNumber: checkNo, idOnCheck: checkId, extraEmail }); if (r.ok) setManualPaid({ method: 'check', total: r.totalDollars, checkNumber: r.checkNumber, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); });
+    start(async () => { const r = await recordManualPayment(jobId, { method: 'check', amountDollars: recordAmt, checkNumber: checkNo, idOnCheck: checkId, extraEmail: receiptExtra }); if (r.ok) setManualPaid({ method: 'check', total: r.totalDollars, checkNumber: r.checkNumber, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); });
   }
 
   async function cancelReader() {
@@ -201,8 +205,20 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
             })}
           </div>
 
-          {/* Auto-receipt goes to the customer's email/phone on file; this adds one more address (spouse, office…). */}
-          {isCashish && <input type="email" value={extraEmail} onChange={(e) => setExtraEmail(e.target.value)} placeholder="📧 Also email the receipt to… (optional)" style={{ ...input, width: '100%', boxSizing: 'border-box', marginTop: 10, fontSize: 12.5 }} />}
+          {/* Receipt goes to the customer's email from booking; a checkbox lets them send it to a different one too. */}
+          {isCashish && (
+            <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--fg-2)', lineHeight: 1.4 }}>
+                {customerEmail
+                  ? <>📧 Receipt emails to <strong style={{ color: 'var(--fg-1)' }}>{customerEmail}</strong> <span className="muted">(from booking)</span>.</>
+                  : <span style={{ color: 'var(--amber)' }}>⚠️ No email on file — add one below to send a receipt.</span>}
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, cursor: 'pointer', fontSize: 12, color: 'var(--fg-2)' }}>
+                <input type="checkbox" checked={sendOther} onChange={(e) => setSendOther(e.target.checked)} /> Send to a different email{customerEmail ? ' too' : ''}
+              </label>
+              {(sendOther || !customerEmail) && <input type="email" value={extraEmail} onChange={(e) => setExtraEmail(e.target.value)} placeholder="different@email.com" style={{ ...input, width: '100%', boxSizing: 'border-box', marginTop: 6, fontSize: 12.5 }} />}
+            </div>
+          )}
 
           <div style={{ marginTop: 10 }}>
             {tab === 'reader' && (<>
