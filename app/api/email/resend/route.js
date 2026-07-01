@@ -8,7 +8,11 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function verify(secret, headers, body) {
-  if (!secret) return true; // not configured yet → accept (degraded; set RESEND_WEBHOOK_SECRET to lock it down)
+  // FAIL-CLOSED (audit P2-12): with no secret set, REJECT everything. Previously this accepted unsigned events,
+  // so anyone who found this URL could POST a fake email.bounced and flag a real customer's email as bad
+  // (killing their deliverability). The webhook is optional — until RESEND_WEBHOOK_SECRET is set in Vercel AND
+  // the endpoint is registered in Resend, this endpoint simply accepts nothing. No feature is lost meanwhile.
+  if (!secret) return false;
   const id = headers.get('svix-id'), ts = headers.get('svix-timestamp'), sigHeader = headers.get('svix-signature');
   if (!id || !ts || !sigHeader) return false;
   try {
