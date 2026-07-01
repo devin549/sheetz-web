@@ -53,6 +53,13 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
 
   const amtNum = Number(amt);
   const valid = amtNum > 0;
+  // Compare the entered amount to the job total so we can flag an OVERAGE (change due on cash/check) or an
+  // UNDERPAYMENT (a balance stays open). For CASH/CHECK we record the TOTAL when they hand over more — the
+  // extra is change, not a payment (recording $800 on a $325 job would falsely credit the customer $475).
+  const total = Number(suggested) || 0;
+  const overBy = total > 0 && valid ? Math.round((amtNum - total) * 100) / 100 : 0; // >0 = over, <0 = short
+  const isCashish = tab === 'cash' || tab === 'check';
+  const recordAmt = (isCashish && overBy > 0) ? total : amtNum; // cash/check: cap to total, give change back
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
@@ -89,12 +96,12 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
   function takeCash() {
     setErr(null);
     if (!cashPhoto) { setErr('Take a photo of the cash fanned out first.'); return; }
-    start(async () => { const r = await recordManualPayment(jobId, { method: 'cash', amountDollars: amtNum, cashPhoto }); if (r.ok) setManualPaid({ method: 'cash', total: r.totalDollars }); else setErr(r.msg); });
+    start(async () => { const r = await recordManualPayment(jobId, { method: 'cash', amountDollars: recordAmt, cashPhoto }); if (r.ok) setManualPaid({ method: 'cash', total: r.totalDollars, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); });
   }
   function takeCheck() {
     setErr(null);
     if (!checkNo.trim() || !checkId.trim()) { setErr('Enter the check number and the ID written on the check.'); return; }
-    start(async () => { const r = await recordManualPayment(jobId, { method: 'check', amountDollars: amtNum, checkNumber: checkNo, idOnCheck: checkId }); if (r.ok) setManualPaid({ method: 'check', total: r.totalDollars, checkNumber: r.checkNumber }); else setErr(r.msg); });
+    start(async () => { const r = await recordManualPayment(jobId, { method: 'check', amountDollars: recordAmt, checkNumber: checkNo, idOnCheck: checkId }); if (r.ok) setManualPaid({ method: 'check', total: r.totalDollars, checkNumber: r.checkNumber, change: overBy > 0 ? overBy : 0 }); else setErr(r.msg); });
   }
 
   async function cancelReader() {
@@ -123,6 +130,7 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
     return (
       <div className="card" style={{ ...card, borderLeftColor: 'var(--green)' }}>
         <div style={{ fontWeight: 800, color: 'var(--green)', fontSize: 15 }}>✅ Paid {money(manualPaid.total)} · {manualPaid.method === 'cash' ? 'cash' : `check #${manualPaid.checkNumber}`}</div>
+        {manualPaid.change > 0 && <div style={{ fontSize: 12.5, marginTop: 3, fontWeight: 700, color: 'var(--fg-1)' }}>💵 Give {money(manualPaid.change)} change back to the customer.</div>}
         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{manualPaid.method === 'cash' ? 'Recorded — marked “Paid · cash” (turn the cash in to the office).' : 'Recorded — marked “Paid · check” with the check number + ID on file.'}</div>
       </div>
     );
@@ -170,6 +178,18 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
       </div>
       <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>Customer pays this. <strong>Card</strong> adds a 4% fee; <strong>cash &amp; check</strong> don’t.</div>
 
+      {/* OVER / UNDER the total — dark text on a tinted band so it's always readable (the old green-on-green was
+          unreadable). Over on cash/check = change due (we record the total); under = a balance stays open. */}
+      {valid && total > 0 && overBy !== 0 && (
+        <div style={{ marginTop: 8, padding: '9px 11px', borderRadius: 9, fontSize: 12.5, fontWeight: 700, lineHeight: 1.45, color: 'var(--fg-1)', background: overBy > 0 ? 'rgba(63,181,106,0.16)' : 'rgba(255,179,0,0.16)', border: `1px solid ${overBy > 0 ? 'var(--green)' : 'var(--amber)'}` }}>
+          {overBy > 0
+            ? (isCashish
+                ? `💵 ${money(amtNum)} is ${money(overBy)} over the ${money(total)} total — give the customer ${money(overBy)} change. Recording ${money(total)} as paid.`
+                : `⚠️ ${money(amtNum)} is ${money(overBy)} OVER the ${money(total)} total — you’ll charge the full ${money(amtNum)}. Fix the amount if that’s not right.`)
+            : `⚠️ ${money(amtNum)} is ${money(-overBy)} SHORT of the ${money(total)} total — a ${money(-overBy)} balance stays open after this partial payment.`}
+        </div>
+      )}
+
       {!link ? (
         <>
           {/* Method tabs — pick one, only its controls show underneath (keeps it clean). */}
@@ -190,8 +210,8 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
               <div style={{ display: 'grid', gap: 8 }}>
                 <div style={{ fontSize: 11.5, color: 'var(--fg-2)', lineHeight: 1.45 }}>📸 <strong>Fan the bills out and snap a photo</strong> — proof of the cash collected. Goes to the office, not the customer.</div>
                 <input ref={cashRef} type="file" accept="image/*" capture="environment" onChange={pickCash} style={{ display: 'none' }} />
-                <button onClick={() => cashRef.current && cashRef.current.click()} className="btn btn-ghost" style={{ borderColor: cashPhoto ? 'var(--green)' : 'var(--purple)', color: cashPhoto ? 'var(--green)' : 'var(--purple)' }}>{cashPhoto ? '✓ Cash photo attached — retake' : '📷 Photo the cash (fanned out)'}</button>
-                <button onClick={takeCash} disabled={pending || !valid || !cashPhoto} className="btn" style={{ opacity: (pending || !valid || !cashPhoto) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record cash · ${money(amtNum)}`}</button>
+                <button onClick={() => cashRef.current && cashRef.current.click()} className="btn btn-ghost" style={{ borderColor: cashPhoto ? 'var(--green)' : 'var(--purple)', color: cashPhoto ? 'var(--fg-1)' : 'var(--purple)', background: cashPhoto ? 'rgba(63,181,106,0.16)' : undefined, fontWeight: cashPhoto ? 800 : 600 }}>{cashPhoto ? '✓ Cash photo attached — tap to retake' : '📷 Photo the cash (fanned out)'}</button>
+                <button onClick={takeCash} disabled={pending || !valid || !cashPhoto} className="btn" style={{ opacity: (pending || !valid || !cashPhoto) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record cash · ${money(recordAmt)}${overBy > 0 ? ` (${money(overBy)} change)` : ''}`}</button>
               </div>
             )}
 
@@ -204,7 +224,7 @@ export default function CloseoutCheckout({ jobId, suggested, tel, hasReader, str
                   <input value={checkId} onChange={(e) => setCheckId(e.target.value)} placeholder="DL # the customer wrote on it" style={{ ...input, width: '100%', marginTop: 3 }} />
                 </label>
                 <div className="muted" style={{ fontSize: 10.5 }}>CB policy: write the customer’s ID on every check before accepting it.</div>
-                <button onClick={takeCheck} disabled={pending || !valid || !checkNo.trim() || !checkId.trim()} className="btn" style={{ opacity: (pending || !valid || !checkNo.trim() || !checkId.trim()) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record check · ${money(amtNum)}`}</button>
+                <button onClick={takeCheck} disabled={pending || !valid || !checkNo.trim() || !checkId.trim()} className="btn" style={{ opacity: (pending || !valid || !checkNo.trim() || !checkId.trim()) ? 0.55 : 1 }}>{pending ? '…' : `✓ Record check · ${money(recordAmt)}${overBy > 0 ? ` (${money(overBy)} change)` : ''}`}</button>
               </div>
             )}
 
