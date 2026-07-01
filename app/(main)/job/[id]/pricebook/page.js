@@ -48,7 +48,9 @@ export default async function JobPricebook({ params, searchParams }) {
       // The Good/Better/Best bundle for this job type (first matching).
       const br = await c.sb.from('pricebook_bundles').select('*').eq('active', true);
       const bundles = br.data || [];
-      bundle = bundles.find((b) => jt && String(b.job_type || '').toLowerCase() && (jt.toLowerCase().includes(String(b.job_type).toLowerCase()) || String(b.job_type).toLowerCase().includes(jt.toLowerCase()))) || bundles[0] || null;
+      // Match the bundle to THIS job's type. No match → no ladder (flat estimate) — never fall back to an
+      // arbitrary bundles[0], which would show a wrong/random ladder (e.g. a faucet job loading the drain ladder).
+      bundle = bundles.find((b) => jt && String(b.job_type || '').trim() && (jt.toLowerCase().includes(String(b.job_type).toLowerCase()) || String(b.job_type).toLowerCase().includes(jt.toLowerCase()))) || null;
       if (bundle) {
         const bir = await c.sb.from('pricebook_bundle_items').select('quantity, tiers, sort_order, item:pricebook_items(*)').eq('bundle_id', bundle.id).order('sort_order');
         tiers = buildTiers(bundle, bir.data || []);
