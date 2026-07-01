@@ -82,12 +82,14 @@ export default function IdentifyClient({ activeJobId, activeJobNumber, showCost 
             </div>
           )}
 
-          {/* Not on any truck/shelf → fall back to ordering it online (Lens marketplace matches). */}
-          {res.matches && res.matches.length > 0 && (
-            <details style={{ marginTop: 14 }}>
-              <summary style={{ cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: 'var(--fg-2)' }}>{res.inStock && res.inStock.length > 0 ? '📦 Not on a truck? Order it online' : '📦 Where to buy it'}</summary>
+          {/* Not on a truck → order it from OUR suppliers (Home Depot / Lowe's / Ferguson / Wiseway) with real
+              live prices. Falls back to the raw Lens marketplace list only if no supplier match. */}
+          {((res.buyAt && res.buyAt.length > 0) || (res.matches && res.matches.length > 0)) && (
+            <details style={{ marginTop: 14 }} open={!res.inStock || res.inStock.length === 0}>
+              <summary style={{ cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: 'var(--fg-2)' }}>{res.inStock && res.inStock.length > 0 ? '📦 Not on a truck? Order it' : '📦 Where to buy it'}</summary>
               <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
-                {res.matches.slice(0, 6).map((m, i) => (
+                {(res.buyAt && res.buyAt.length > 0 ? res.buyAt.slice(0, 6).map((s) => ({ link: s.link, title: s.title, source: s.seller, price: s.price, thumbnail: null }))
+                  : res.matches.slice(0, 6)).map((m, i) => (
                   <a key={i} href={m.link || '#'} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--border)', textDecoration: 'none', color: 'inherit' }}>
                     {m.thumbnail && <img src={m.thumbnail} alt="" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, background: '#fff' }} />}
                     <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</div><div className="muted" style={{ fontSize: 10.5 }}>{m.source}</div></div>

@@ -6,6 +6,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
 import { can, canAny } from '@/lib/roles';
 import { lensIdentify } from '@/lib/serpLens';
+import { vendorPrices } from '@/lib/serpVendor';
 import { identifyFixture, identifyFixtures } from '@/lib/aiVision';
 import { marginPct, marginHealth } from '@/lib/pricebookEngine';
 
@@ -146,8 +147,16 @@ export async function identifyPart(formData) {
   const fixes = await matchFixes(c.sb, lens.guess, showCost);
   const inStock = await findInStock(c.sb, lens.guess, c.profile.name); // 🏪 your van → shop → other vans (live)
 
+  // Adaptive: only price it at the suppliers when it's on NOBODY's truck (saves a SerpAPI search when it's on
+  // hand). Real Home Depot / Lowe's / Ferguson prices via the SerpAPI Home Depot + Shopping engines — beats
+  // the raw Lens Amazon/eBay list. Ranked to our four suppliers first.
+  let buyAt = [];
+  if (!inStock.length && lens.guess) {
+    try { const v = await vendorPrices(lens.guess, { homeDepot: true, limit: 6 }); if (v.ok) buyAt = v.sellers || []; } catch (_) {}
+  }
+
   try { await c.sb.from('audit_log').insert({ actor_id: c.user.id, actor_name: c.profile.name || c.user.email, role: c.profile.role, action: 'part.identify', entity: 'pricebook', entity_id: '', detail: { guess: lens.guess, fixes: fixes.length } }); } catch (_) {}
-  return { ok: true, photoUrl, guess: lens.guess, matches: lens.matches, fixes, inStock };
+  return { ok: true, photoUrl, guess: lens.guess, matches: lens.matches, fixes, inStock, buyAt };
 }
 
 const ladderHas = (l) => l && (l.good || l.better || l.best);
