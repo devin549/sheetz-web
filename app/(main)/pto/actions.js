@@ -15,7 +15,11 @@ const KINDS = ['vacation', 'personal', 'unpaid'];
 const RECORDS_EMAIL = process.env.RECORDS_EMAIL || 'records@clogbusterzplumbing.com';
 const clean = (v, n = 300) => String(v || '').trim().slice(0, n);
 const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
-const canApprove = (r) => can(r, 'manageUsers') || can(r, 'assignJobs') || can(r, 'seeCrew');
+// PTO / absence approvals are OFFICE-MANAGEMENT only (Devin: GM, accounting, office manager, owner) — NOT field
+// supervisors (fs/foreman/dispatcher). And a person can never approve their OWN request — it escalates to a
+// higher-up (see the self-approval guards in decideTimeOff / overrideAbsence).
+const PTO_APPROVER_ROLES = new Set(['owner', 'admin', 'gm', 'om', 'accounting']);
+const canApprove = (r) => PTO_APPROVER_ROLES.has(String(r || '').toLowerCase());
 
 // A tech submits a time-off request → pending for a manager.
 export async function requestTimeOff(form) {
@@ -149,11 +153,12 @@ export async function overrideAbsence(id, status, reason) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, msg: 'Sign in required.' };
   const profile = await loadProfile(user);
-  if (!(can(profile.role, 'manageUsers') || can(profile.role, 'assignJobs'))) return { ok: false, msg: 'Managers only.' };
+  if (!canApprove(profile.role)) return { ok: false, msg: 'Only GM / accounting / office manager / owner decide absences.' };
   if (!['excused', 'unexcused'].includes(status)) return { ok: false, msg: 'Bad status.' };
   if (clean(reason, 200).length < 4) return { ok: false, msg: 'A reason is required for an override.' };
   const sb = getSupabaseAdmin();
-  const { data: before } = await sb.from('absences').select('status').eq('id', id).maybeSingle();
+  const { data: before } = await sb.from('absences').select('status, user_id').eq('id', id).maybeSingle();
+  if (before && String(before.user_id) === String(user.id)) return { ok: false, msg: 'You can’t decide your own absence — it goes to a higher-up.' };
   const { error } = await sb.from('absences').update({ status, decided_by: user.id, decided_by_name: profile.name || user.email, decided_at: new Date().toISOString(), decision_note: clean(reason, 200) }).eq('id', id);
   if (error) return { ok: false, msg: error.message };
   const againstPolicy = before && before.status !== 'pending' && before.status !== status;
@@ -170,7 +175,7 @@ export async function saveEmployeePto(techId, dateStr, vacationDays) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, msg: 'Sign in required.' };
   const profile = await loadProfile(user);
-  if (!(can(profile.role, 'manageUsers') || can(profile.role, 'assignJobs'))) return { ok: false, msg: 'Office only.' };
+  if (!canApprove(profile.role)) return { ok: false, msg: 'Only GM / accounting / office manager / owner set employee PTO.' };
   if (!/^[0-9a-f-]{36}$/i.test(String(techId || ''))) return { ok: false, msg: 'Bad employee.' };
   const d = clean(dateStr, 10);
   if (d && !isDate(d)) return { ok: false, msg: 'Pick a valid date (YYYY-MM-DD).' };
@@ -192,8 +197,12 @@ export async function decideTimeOff(id, approve, note) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, msg: 'Sign in required.' };
   const profile = await loadProfile(user);
-  if (!canApprove(profile.role)) return { ok: false, msg: 'Supervisors approve time off.' };
+  if (!canApprove(profile.role)) return { ok: false, msg: 'Only GM / accounting / office manager / owner approve time off.' };
   const sb = getSupabaseAdmin();
+  // Self-approval guard (Devin): even an approver can't approve THEIR OWN request — it stays pending for a
+  // higher-up. So if accounting requests off, an owner/GM/OM signs it, not accounting themselves.
+  const { data: req } = await sb.from('time_off_requests').select('user_id').eq('id', id).maybeSingle();
+  if (req && String(req.user_id) === String(user.id)) return { ok: false, msg: 'You can’t approve your own time off — it goes to a higher-up.' };
   const { error } = await sb.from('time_off_requests').update({ status: approve ? 'approved' : 'denied', decided_by: user.id, decided_by_name: profile.name || user.email, decided_at: new Date().toISOString(), decision_note: clean(note, 200) || null }).eq('id', id);
   if (error) return { ok: false, msg: error.message };
   try { await sb.from('audit_log').insert({ actor_id: user.id, actor_name: profile.name || user.email, role: profile.role, action: approve ? 'timeoff.approved' : 'timeoff.denied', entity: 'timeoff', entity_id: String(id) }); } catch (_) {}

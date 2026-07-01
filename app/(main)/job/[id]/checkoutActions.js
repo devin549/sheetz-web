@@ -25,6 +25,15 @@ async function gateJob(sb, g, jobId) {
     .eq('id', jobId).maybeSingle();
   if (!job) return { err: 'Job not found.' };
   if (!(await canViewJob(sb, g.user, g.profile, g.profile.role, job))) return { err: 'That job isn’t yours.' };
+  // PAYMENT/AR is LEAD-tech-or-office only (audit P2-17): a 2nd/segment tech or helper may VIEW the job (photos
+  // + receipts) but must NEVER collect payment or flip AR. A field role must be the LEAD tech on THIS job.
+  const isOffice = can(g.profile.role, 'seeAllJobs') || can(g.profile.role, 'assignJobs');
+  if (!isOffice) {
+    const tid = g.profile.tech_id;
+    const email = String(g.user.email || g.profile.email || '').trim().toLowerCase();
+    const isLead = (tid && job.tech_id && String(job.tech_id) === String(tid)) || (email && String(job.tech_email || '').toLowerCase() === email);
+    if (!isLead) return { err: 'Only the lead tech (or the office) can collect payment on this job.' };
+  }
   return { job };
 }
 

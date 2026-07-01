@@ -9,6 +9,7 @@ import { onsiteHours } from '@/lib/hours';
 import { computeP3 } from '@/lib/payrollAdjust';
 import { holidaysForYear } from '@/lib/holidays';
 import { computeJobPay } from '@/lib/pay';
+import { splitCommission } from '@/lib/segments';
 
 const PAYROLL_ROLES = ['owner', 'admin', 'gm', 'om', 'accounting'];
 const APPROVE_ROLES = ['owner', 'admin', 'gm', 'om'];
@@ -64,8 +65,8 @@ export async function generateRun(weekStart) {
   // still being paid). Fail-soft to the bare select if the cost columns aren't live yet.
   const COST = 'material_cost_cents, dispatch_fee_cents, sub_cost_cents, sub_verified';
   const jobsQ = () => ctx.sb.from('jobs').not('tech_id', 'is', null).gte('completed_at', startISO).lt('completed_at', endISO).not('status', 'in', '(cancelled,canceled,hold)');
-  let jr = await jobsQ().select(`tech_id, tech_name, amount, started_at, completed_at, ${COST}`);
-  if (jr.error && /column|schema cache|does not exist/i.test(jr.error.message || '')) jr = await jobsQ().select('tech_id, tech_name, amount, started_at, completed_at');
+  let jr = await jobsQ().select(`id, tech_id, tech_name, amount, started_at, completed_at, ${COST}`);
+  if (jr.error && /column|schema cache|does not exist/i.test(jr.error.message || '')) jr = await jobsQ().select('id, tech_id, tech_name, amount, started_at, completed_at');
   const jobs = jr.data || [];
   const byTech = {};
   (jobs || []).forEach((j) => {
@@ -79,6 +80,35 @@ export async function generateRun(weekStart) {
   const payByTech = {}; (pays || []).forEach((p) => { payByTech[p.tech_id] = p; });
   const { data: techs } = await ctx.sb.from('techs').select('id, name');
   const nameById = {}; (techs || []).forEach((t) => { nameById[t.id] = t.name; });
+
+  // ── SPLIT COMMISSION (audit P2-8): a job worked by 2+ TECHS splits its commission EVENLY (50/50); a salary
+  // tech on the crew gets $0 extra and their share is NOT redistributed (exactly the Tech Sheet "Split" rule).
+  // Compute each JOB's commission ONCE and divide it among the commission crew → commByTech accumulates shares.
+  // Falls back cleanly (no segments table / solo jobs) to the lead getting the whole job commission. ──
+  const commByTech = {}, subPendByTech = {};
+  const segByJob = {};
+  try {
+    const jobIds = [...new Set(jobs.map((j) => j.id).filter(Boolean))];
+    for (let i = 0; i < jobIds.length; i += 300) {
+      const { data: segs } = await ctx.sb.from('job_segments').select('parent_job_id, assigned_tech_id, kind, status').in('parent_job_id', jobIds.slice(i, i + 300)).neq('status', 'cancelled');
+      (segs || []).forEach((s) => { if (s.assigned_tech_id && s.kind !== 'helper' && s.kind !== 'parts_run') (segByJob[s.parent_job_id] = segByJob[s.parent_job_id] || []).push(s.assigned_tech_id); });
+    }
+  } catch (_) { /* no segments table → every job is solo, lead gets full commission */ }
+  const isComm = (tid) => ['commission', 'hourly_comm'].includes(payByTech[tid]?.pay_type || 'commission');
+  for (const j of jobs) {
+    const leadId = j.tech_id; if (!leadId) continue;
+    const extraIds = [...new Set((segByJob[j.id] || []).filter((id) => id && String(id) !== String(leadId)))];
+    const crew = [{ id: leadId, kind: 'lead', pay_type: payByTech[leadId]?.pay_type || 'commission' },
+      ...extraIds.map((id) => ({ id, kind: 'second_tech', pay_type: payByTech[id]?.pay_type || 'commission' }))];
+    const commCrew = crew.filter((c) => isComm(c.id));
+    if (!commCrew.length) continue; // no commission techs on this job → no commission to split
+    // The job commission is computed at the LEAD's rate (the job owner); if the lead isn't commission, use the
+    // highest commission rate on the crew so a commission 2nd-tech still earns.
+    const pct = isComm(leadId) ? (Number(payByTech[leadId]?.commission_pct) || 0) : Math.max(...commCrew.map((c) => Number(payByTech[c.id]?.commission_pct) || 0));
+    const jobCost = { revenue_cents: Math.round((Number(j.amount) || 0) * 100), material_cost_cents: j.material_cost_cents, dispatch_fee_cents: j.dispatch_fee_cents, sub_cost_cents: j.sub_cost_cents, sub_verified: j.sub_verified };
+    const r = computeJobPay(jobCost, pct);
+    splitCommission(r.commission + r.premium, crew).forEach((sh) => { if (sh.id) { commByTech[sh.id] = (commByTech[sh.id] || 0) + sh.shareCents; if (r.subPending && !sh.isSalary) subPendByTech[sh.id] = true; } });
+  }
 
   // ── Absences P3 context: holiday pay (techs) + salary docking/proration. Best-effort — every piece is
   // fail-soft so a missing table never blocks the run. Keyed tech_id ↔ user_id via profiles. ──
@@ -97,20 +127,18 @@ export async function generateRun(weekStart) {
   } catch (_) { /* P3 context unavailable → lines just carry 0 holiday/dock */ }
   const isWorkday = (dstr) => { const [y, m, d] = dstr.split('-').map(Number); const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); return wd >= 1 && wd <= 5; };
 
-  const techIds = [...new Set([...Object.keys(byTech), ...Object.keys(payByTech)])];
+  const techIds = [...new Set([...Object.keys(byTech), ...Object.keys(payByTech), ...Object.keys(commByTech)])];
   const { data: run, error: rErr } = await ctx.sb.from('cb_payroll_runs').insert({ week_start: ws, week_end: weekEnd, status: 'draft', created_by: ctx.profile.name || ctx.user.email }).select('id').single();
   if (rErr) return { ok: false, msg: rErr.message };
 
   const lines = techIds.map((tid) => {
     const j = byTech[tid] || { name: '', count: 0, rev: 0, hours: 0, jobs: [] };
     const p = payByTech[tid] || { pay_type: 'commission', commission_pct: 0, hourly_rate: 0, weekly_salary: 0 };
-    // Commission on the CB NET base per job (revenue − dispatch − marked-up material − sub) + premium — the
-    // SAME lib/pay.js engine the tech's /pay screen uses, so payroll and /pay can't disagree. (Was gross × pct.)
-    let comm = 0, subPending = false;
-    if (['commission', 'hourly_comm'].includes(p.pay_type)) {
-      const pct = Number(p.commission_pct) || 0;
-      (j.jobs || []).forEach((job) => { const r = computeJobPay(job, pct); comm += r.commission + r.premium; if (r.subPending) subPending = true; });
-    }
+    // Commission on the CB NET base + premium — computed per-job above (with split-commission applied), the
+    // SAME lib/pay.js engine the tech's /pay screen uses, so payroll and /pay can't disagree. commByTech already
+    // holds this tech's total share (their solo jobs + their half of any split jobs).
+    const comm = ['commission', 'hourly_comm'].includes(p.pay_type) ? (commByTech[tid] || 0) : 0;
+    const subPending = !!subPendByTech[tid];
     const hours = Math.round((j.hours || 0) * 100) / 100;                  // auto on-site hours from job timeline
     const isSalary = p.pay_type === 'salary';
     const salaryBase = isSalary ? cents(p.weekly_salary) : 0;

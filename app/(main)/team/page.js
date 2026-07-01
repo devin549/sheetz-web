@@ -1,5 +1,5 @@
 import { getSupabaseAdmin, isAdminConfigured } from '@/lib/supabaseAdmin';
-import { requireHref } from '@/lib/guard';
+import { requireRole } from '@/lib/guard';
 import { ROLES, ROLE_IDS } from '@/lib/roles';
 import TeamManager from './TeamManager';
 
@@ -16,7 +16,9 @@ function ago(iso) {
 }
 
 export default async function Team() {
-  const { role: callerRole } = await requireHref('/team');
+  // Office management only (audit P2-1): this page lists every login (emails, roles, sign-in state). Field
+  // supervisors (fs/foreman/dispatcher) don't manage logins — restrict to owner/GM/OM/accounting.
+  const { role: callerRole } = await requireRole(['owner', 'admin', 'gm', 'om', 'accounting']);
 
   if (!isAdminConfigured) {
     return <div className="wrap"><div className="h1">🧑‍✈️ Team</div><div className="notice">Add <code>SUPABASE_SERVICE_ROLE_KEY</code> in Vercel to manage logins.</div></div>;

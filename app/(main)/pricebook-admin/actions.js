@@ -739,9 +739,12 @@ export async function saveBundleCopy(bundleId, form) {
 export async function searchCatalog(q) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err, items: [] };
   const term = clean(q, 80); if (!term) return { ok: true, items: [] };
+  // Only financial seats see cost/margin (audit P2-5): ctx() admits inventory/reports roles (shop/dispatcher)
+  // that must NOT see cost. Everyone else gets price only.
+  const showCost = canAny(c.profile.role, ['seeFinancials']);
   try {
-    const items = await searchItems(c.sb, term, { showCost: true, limit: 25 });
-    return { ok: true, items: items.map((i) => ({ id: i.id, name: i.name, sku: i.sku, price: i.price, cost: i.cost ?? null, marginPct: i.marginPct ?? null, photo: i.photo || null })) };
+    const items = await searchItems(c.sb, term, { showCost, limit: 25 });
+    return { ok: true, items: items.map((i) => ({ id: i.id, name: i.name, sku: i.sku, price: i.price, cost: showCost ? (i.cost ?? null) : null, marginPct: showCost ? (i.marginPct ?? null) : null, photo: i.photo || null })) };
   } catch (e) { return { ok: false, msg: String(e?.message || e), items: [] }; }
 }
 
