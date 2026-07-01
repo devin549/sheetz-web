@@ -8,11 +8,11 @@ import { savePayRate, generateRun, saveLine, approveRun, reopenRun } from './act
 const money = (c) => '$' + (Number(c || 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtD = (d) => { const [y, m, day] = d.split('-').map(Number); return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString([], { timeZone: 'UTC', month: 'short', day: 'numeric' }); };
 const input = { background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--fg-1)', borderRadius: 6, padding: '6px 8px', fontSize: 13, fontFamily: 'inherit', width: '100%' };
-// CB rule: commission techs get commission only; hourly excluded.
+// CB rule: commission techs get commission only; hourly excluded. P3: + holiday pay, − salary dock.
 function grossCents(line, payType) {
   const comm = ['commission', 'hourly_comm'].includes(payType) ? (line.commission_cents || 0) : 0;
   const base = (payType === 'salary' || ['hourly', 'hourly_comm'].includes(payType)) ? (line.hourly_cents || 0) : 0;
-  return comm + base + (line.bonus_cents || 0) + (line.adjust_cents || 0);
+  return comm + base + (line.bonus_cents || 0) + (line.holiday_cents || 0) - (line.dock_cents || 0) + (line.adjust_cents || 0);
 }
 
 function RateRow({ tech, pay }) {
@@ -40,13 +40,15 @@ function LineRow({ line, rate, locked }) {
   const [pending, start] = useTransition();
   const [hours, setHours] = useState(line.hours || 0);
   const [bonus, setBonus] = useState((line.bonus_cents || 0) / 100 || '');
+  const [holiday, setHoliday] = useState((line.holiday_cents || 0) / 100 || '');
+  const [dock, setDock] = useState((line.dock_cents || 0) / 100 || '');
   const [adjust, setAdjust] = useState((line.adjust_cents || 0) / 100 || '');
   const [note, setNote] = useState(line.note || '');
   const isSalary = line.pay_type === 'salary';
   const hourlyCents = isSalary ? (line.hourly_cents || 0) : Math.round((Number(hours) || 0) * (Number(rate) || 0) * 100);
-  const live = { ...line, hourly_cents: hourlyCents, bonus_cents: Math.round((Number(bonus) || 0) * 100), adjust_cents: Math.round((Number(adjust) || 0) * 100) };
+  const live = { ...line, hourly_cents: hourlyCents, bonus_cents: Math.round((Number(bonus) || 0) * 100), holiday_cents: Math.round((Number(holiday) || 0) * 100), dock_cents: Math.round((Number(dock) || 0) * 100), adjust_cents: Math.round((Number(adjust) || 0) * 100) };
   const gross = grossCents(live, line.pay_type);
-  const save = () => { const fd = new FormData(); fd.set('lineId', line.id); fd.set('hours', hours); fd.set('hourly', (hourlyCents / 100).toString()); fd.set('bonus', bonus || 0); fd.set('adjust', adjust || 0); fd.set('note', note); start(async () => { await saveLine(fd); router.refresh(); }); };
+  const save = () => { const fd = new FormData(); fd.set('lineId', line.id); fd.set('hours', hours); fd.set('hourly', (hourlyCents / 100).toString()); fd.set('bonus', bonus || 0); fd.set('holiday', holiday || 0); fd.set('dock', dock || 0); fd.set('adjust', adjust || 0); fd.set('note', note); start(async () => { await saveLine(fd); router.refresh(); }); };
   const showsComm = ['commission', 'hourly_comm'].includes(line.pay_type);
   const showsHours = ['hourly', 'hourly_comm'].includes(line.pay_type);
 
@@ -58,8 +60,10 @@ function LineRow({ line, rate, locked }) {
       <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--mono)', color: showsComm ? 'var(--green)' : 'var(--fg-3)' }}>{showsComm ? money(line.commission_cents) : '—'}</td>
       <td style={{ padding: '8px 10px', width: 64 }}>{showsHours && !locked ? <input value={hours} onChange={(e) => setHours(e.target.value)} inputMode="decimal" style={{ ...input, textAlign: 'right' }} /> : <span className="muted" style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{showsHours ? hours : '—'}</span>}</td>
       <td style={{ padding: '8px 10px', width: 70 }}>{!locked ? <input value={bonus} onChange={(e) => setBonus(e.target.value)} inputMode="decimal" placeholder="0" style={{ ...input, textAlign: 'right' }} /> : <span className="muted" style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{money(line.bonus_cents)}</span>}</td>
+      <td style={{ padding: '8px 10px', width: 70 }} title={isSalary ? 'Salary gets no holiday premium' : '8h × hourly per earned holiday'}>{isSalary ? <span className="muted" style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>—</span> : !locked ? <input value={holiday} onChange={(e) => setHoliday(e.target.value)} inputMode="decimal" placeholder="0" style={{ ...input, textAlign: 'right', color: 'var(--green)' }} /> : <span className="muted" style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--green)' }}>{money(line.holiday_cents)}</span>}</td>
+      <td style={{ padding: '8px 10px', width: 70 }} title="Salary docking: unpaid days (4-hr blocks) + proration">{!isSalary ? <span className="muted" style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>—</span> : !locked ? <input value={dock} onChange={(e) => setDock(e.target.value)} inputMode="decimal" placeholder="0" style={{ ...input, textAlign: 'right', color: 'var(--red)' }} /> : <span className="muted" style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--red)' }}>{money(line.dock_cents)}</span>}</td>
       <td style={{ padding: '8px 10px', width: 70 }}>{!locked ? <input value={adjust} onChange={(e) => setAdjust(e.target.value)} inputMode="decimal" placeholder="0" style={{ ...input, textAlign: 'right' }} title="+/- callbacks, holds, doc-fraud" /> : <span className="muted" style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>{money(line.adjust_cents)}</span>}</td>
-      <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 800, color: gross <= 0 ? 'var(--red)' : 'var(--fg-1)' }}>{money(gross)}{gross <= 0 && <span title="No pay — check this" style={{ marginLeft: 4 }}>⚠</span>}</td>
+      <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 800, color: gross <= 0 ? 'var(--red)' : 'var(--fg-1)' }}>{money(gross)}{gross <= 0 && <span title="No pay — check this" style={{ marginLeft: 4 }}>⚠</span>}{line.pto_note && <div className="muted" style={{ fontSize: 9.5, fontWeight: 400 }}>{line.pto_note}</div>}</td>
       {!locked && <td style={{ padding: '8px 6px' }}><button onClick={save} disabled={pending} className="pill" style={{ cursor: 'pointer' }}>{pending ? '…' : 'Save'}</button></td>}
     </tr>
   );
@@ -108,14 +112,14 @@ export default function PayrollClient({ week, weekEnd, today, prevWeek, nextWeek
           <div className="card" style={{ padding: 0, overflowX: 'auto', marginTop: 10 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead><tr>
-                {['Tech', 'Jobs', 'Revenue', 'Commission', 'Hours', 'Bonus', 'Adjust', 'Gross'].map((h, i) => <th key={h} style={{ padding: '8px 10px', textAlign: i === 0 ? 'left' : 'right', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--fg-3)', borderBottom: '1px solid var(--border)' }}>{h}</th>)}
+                {['Tech', 'Jobs', 'Revenue', 'Commission', 'Hours', 'Bonus', 'Holiday', 'Dock', 'Adjust', 'Gross'].map((h, i) => <th key={h} style={{ padding: '8px 10px', textAlign: i === 0 ? 'left' : 'right', fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--fg-3)', borderBottom: '1px solid var(--border)' }}>{h}</th>)}
                 {!locked && <th />}
               </tr></thead>
               <tbody>
                 {lines.map((l) => <LineRow key={l.id} line={l} rate={payByTech[l.tech_id]?.hourly_rate || 0} locked={locked} />)}
-                {!lines.length && <tr><td colSpan={9} style={{ padding: 16 }}><span className="muted">No techs with jobs or pay rates this week.</span></td></tr>}
+                {!lines.length && <tr><td colSpan={11} style={{ padding: 16 }}><span className="muted">No techs with jobs or pay rates this week.</span></td></tr>}
               </tbody>
-              {lines.length > 0 && <tfoot><tr style={{ borderTop: '2px solid var(--border-strong)' }}><td colSpan={7} style={{ padding: '10px', fontWeight: 800, textAlign: 'right' }}>Total gross</td><td style={{ padding: '10px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 800, fontSize: 15 }}>{money(total)}</td>{!locked && <td />}</tr></tfoot>}
+              {lines.length > 0 && <tfoot><tr style={{ borderTop: '2px solid var(--border-strong)' }}><td colSpan={9} style={{ padding: '10px', fontWeight: 800, textAlign: 'right' }}>Total gross</td><td style={{ padding: '10px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 800, fontSize: 15 }}>{money(total)}</td>{!locked && <td />}</tr></tfoot>}
             </table>
           </div>
 

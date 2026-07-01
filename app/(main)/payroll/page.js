@@ -26,7 +26,12 @@ export default async function Payroll({ searchParams }) {
   const run = runRes.data || null;
 
   let lines = [];
-  if (run) { const { data } = await sb.from('cb_payroll_lines').select('id, tech_id, tech_name, pay_type, jobs_count, revenue_cents, commission_cents, hours, hourly_cents, bonus_cents, adjust_cents, note').eq('run_id', run.id); lines = data || []; }
+  if (run) {
+    const BASE = 'id, tech_id, tech_name, pay_type, jobs_count, revenue_cents, commission_cents, hours, hourly_cents, bonus_cents, adjust_cents, note';
+    let { data, error } = await sb.from('cb_payroll_lines').select(BASE + ', holiday_cents, dock_cents, pto_note').eq('run_id', run.id);
+    if (error && /holiday_cents|dock_cents|pto_note|column|schema cache/i.test(error.message || '')) ({ data } = await sb.from('cb_payroll_lines').select(BASE).eq('run_id', run.id)); // pre-160
+    lines = data || [];
+  }
 
   const { data: techsData } = await sb.from('techs').select('id, name').order('name');
   const techs = techsData || [];

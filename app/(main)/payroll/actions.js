@@ -6,6 +6,8 @@ import { loadProfile } from '@/lib/profile';
 import { revalidatePath } from 'next/cache';
 import { nyDayWindow } from '@/lib/day';
 import { onsiteHours } from '@/lib/hours';
+import { computeP3 } from '@/lib/payrollAdjust';
+import { holidaysForYear } from '@/lib/holidays';
 
 const PAYROLL_ROLES = ['owner', 'admin', 'gm', 'om', 'accounting'];
 const APPROVE_ROLES = ['owner', 'admin', 'gm', 'om'];
@@ -60,10 +62,27 @@ export async function generateRun(weekStart) {
   const byTech = {};
   (jobs || []).forEach((j) => { const m = (byTech[j.tech_id] = byTech[j.tech_id] || { name: j.tech_name || '', count: 0, rev: 0, hours: 0 }); m.count++; m.rev += Number(j.amount) || 0; m.hours += onsiteHours(j.started_at, j.completed_at); if (j.tech_name) m.name = j.tech_name; });
 
-  const { data: pays } = await ctx.sb.from('pay_profiles').select('tech_id, pay_type, commission_pct, hourly_rate, weekly_salary');
+  const { data: pays } = await ctx.sb.from('pay_profiles').select('tech_id, pay_type, commission_pct, hourly_rate, weekly_salary, hire_date');
   const payByTech = {}; (pays || []).forEach((p) => { payByTech[p.tech_id] = p; });
   const { data: techs } = await ctx.sb.from('techs').select('id, name');
   const nameById = {}; (techs || []).forEach((t) => { nameById[t.id] = t.name; });
+
+  // ── Absences P3 context: holiday pay (techs) + salary docking/proration. Best-effort — every piece is
+  // fail-soft so a missing table never blocks the run. Keyed tech_id ↔ user_id via profiles. ──
+  const p3ctx = { userByTech: {}, unpaidByUser: {}, unexcusedByUser: {}, paidHolidaysInWeek: [], weekDates: [] };
+  try {
+    for (let i = 0; i < 7; i++) p3ctx.weekDates.push(addDays(ws, i));
+    const year = Number(ws.slice(0, 4));
+    p3ctx.paidHolidaysInWeek = holidaysForYear(year).filter((h) => h.paid && h.date >= ws && h.date <= weekEnd).map((h) => h.date);
+    let pq = await ctx.sb.from('profiles').select('user_id, tech_id').not('tech_id', 'is', null);
+    (pq.data || []).forEach((p) => { p3ctx.userByTech[p.tech_id] = p.user_id; });
+    const yStart = `${year}-01-01`, yEnd = `${year}-12-31`;
+    const off = await ctx.sb.from('time_off_requests').select('user_id, start_date, end_date, status, kind').eq('kind', 'unpaid').eq('status', 'approved').lte('start_date', weekEnd);
+    (off.data || []).forEach((r) => { (p3ctx.unpaidByUser[r.user_id] = p3ctx.unpaidByUser[r.user_id] || []).push(r); });
+    const abs = await ctx.sb.from('absences').select('user_id, absence_date, status').eq('status', 'unexcused').gte('absence_date', yStart).lte('absence_date', yEnd);
+    (abs.data || []).forEach((a) => { (p3ctx.unexcusedByUser[a.user_id] = p3ctx.unexcusedByUser[a.user_id] || []).push(a.absence_date); });
+  } catch (_) { /* P3 context unavailable → lines just carry 0 holiday/dock */ }
+  const isWorkday = (dstr) => { const [y, m, d] = dstr.split('-').map(Number); const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); return wd >= 1 && wd <= 5; };
 
   const techIds = [...new Set([...Object.keys(byTech), ...Object.keys(payByTech)])];
   const { data: run, error: rErr } = await ctx.sb.from('cb_payroll_runs').insert({ week_start: ws, week_end: weekEnd, status: 'draft', created_by: ctx.profile.name || ctx.user.email }).select('id').single();
@@ -74,15 +93,40 @@ export async function generateRun(weekStart) {
     const p = payByTech[tid] || { pay_type: 'commission', commission_pct: 0, hourly_rate: 0, weekly_salary: 0 };
     const comm = ['commission', 'hourly_comm'].includes(p.pay_type) ? Math.round((j.rev * (Number(p.commission_pct) || 0) / 100) * 100) : 0;
     const hours = Math.round((j.hours || 0) * 100) / 100;                  // auto on-site hours from job timeline
-    const salaryBase = p.pay_type === 'salary' ? cents(p.weekly_salary) : 0;
+    const isSalary = p.pay_type === 'salary';
+    const salaryBase = isSalary ? cents(p.weekly_salary) : 0;
     const hourlyCents = ['hourly', 'hourly_comm'].includes(p.pay_type) ? Math.round(hours * (Number(p.hourly_rate) || 0) * 100) : salaryBase;
+
+    // P3: holiday pay (techs) + salary docking/proration. Suggested — the approver can edit on the draft.
+    const uid = p3ctx.userByTech[tid];
+    const unpaid = new Set();
+    (p3ctx.unpaidByUser[uid] || []).forEach((r) => p3ctx.weekDates.forEach((d) => { if (isWorkday(d) && d >= r.start_date && d <= (r.end_date || r.start_date)) unpaid.add(d); }));
+    (p3ctx.unexcusedByUser[uid] || []).forEach((d) => { if (p3ctx.weekDates.includes(d) && isWorkday(d)) unpaid.add(d); });
+    let prorationDaysWorked = null;
+    if (isSalary && p.hire_date && p.hire_date > ws && p.hire_date <= weekEnd) prorationDaysWorked = p3ctx.weekDates.filter((d) => isWorkday(d) && d >= p.hire_date).length;
+    const p3 = computeP3({
+      isSalary, weeklySalaryCents: salaryBase, hourlyRateDollars: Number(p.hourly_rate) || 0,
+      unpaidDays: unpaid.size, holidayDates: isSalary ? [] : p3ctx.paidHolidaysInWeek,
+      unexcusedDatesYTD: p3ctx.unexcusedByUser[uid] || [], prorationDaysWorked,
+    });
+    const dock_cents = p3.dockCents + Math.max(0, -p3.prorationCents); // proration shortfall docks like unpaid time
+
     return {
       run_id: run.id, tech_id: tid, tech_name: j.name || nameById[tid] || 'Tech', pay_type: p.pay_type,
       jobs_count: j.count, revenue_cents: Math.round(j.rev * 100), commission_cents: comm,
       hours, hourly_cents: hourlyCents, bonus_cents: 0, adjust_cents: 0,
+      holiday_cents: p3.holidayCents, dock_cents, pto_note: p3.notes.join(' · ') || null,
     };
   });
-  if (lines.length) { const { error: lErr } = await ctx.sb.from('cb_payroll_lines').insert(lines); if (lErr) return { ok: false, msg: lErr.message }; }
+  if (lines.length) {
+    let { error: lErr } = await ctx.sb.from('cb_payroll_lines').insert(lines);
+    // Pre-160 (no holiday/dock/pto_note columns) → retry without them so the run still builds.
+    if (lErr && /holiday_cents|dock_cents|pto_note|column|schema cache/i.test(lErr.message || '')) {
+      const lite = lines.map(({ holiday_cents, dock_cents, pto_note, ...rest }) => rest);
+      ({ error: lErr } = await ctx.sb.from('cb_payroll_lines').insert(lite));
+    }
+    if (lErr) return { ok: false, msg: lErr.message };
+  }
   revalidatePath('/payroll');
   return { ok: true, runId: run.id, msg: `Draft built — ${lines.length} techs.` };
 }
@@ -98,13 +142,21 @@ export async function saveLine(formData) {
   const { data: run } = await ctx.sb.from('cb_payroll_runs').select('status').eq('id', line.run_id).maybeSingle();
   if (run?.status === 'approved') return { ok: false, msg: 'Run is approved — reopen to edit.' };
 
-  const { error } = await ctx.sb.from('cb_payroll_lines').update({
+  const patch = {
     hours: Math.max(0, Number(formData.get('hours')) || 0),
     hourly_cents: cents(formData.get('hourly')),
     bonus_cents: cents(formData.get('bonus')),
     adjust_cents: Math.round((Number(formData.get('adjust')) || 0) * 100), // signed (can be negative)
     note: clean(formData.get('note'), 300) || null,
-  }).eq('id', lineId);
+  };
+  // P3 line items (holiday +, dock −) — approver-editable positive magnitudes. Pre-160 columns absent → retry.
+  if (formData.get('holiday') != null) patch.holiday_cents = cents(formData.get('holiday'));
+  if (formData.get('dock') != null) patch.dock_cents = cents(formData.get('dock'));
+  let { error } = await ctx.sb.from('cb_payroll_lines').update(patch).eq('id', lineId);
+  if (error && /holiday_cents|dock_cents|column|schema cache/i.test(error.message || '')) {
+    const { holiday_cents, dock_cents, ...lite } = patch;
+    ({ error } = await ctx.sb.from('cb_payroll_lines').update(lite).eq('id', lineId));
+  }
   if (error) return { ok: false, msg: error.message };
   revalidatePath('/payroll');
   return { ok: true, msg: 'Saved.' };
