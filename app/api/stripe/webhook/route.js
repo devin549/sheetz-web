@@ -96,12 +96,15 @@ export async function POST(request) {
       } else if (event.type === 'checkout.session.async_payment_failed') {
         await note(sb, `⚠️ Bank payment FAILED${md.customer_name ? ` from ${md.customer_name}` : ''}${md.invoice_number ? ` on invoice ${md.invoice_number}` : ''} — invoice stays open, follow up.`);
       } else if (event.type === 'charge.refunded') {
-        // s = the charge; its metadata carries invoice_id (set via payment_intent_data.metadata). Re-open the
-        // invoice for the BASE portion refunded (exclude the card fee). Full refund → full base; partial →
-        // pro-rate the refund across the base/total split.
+        // s = the charge; s.amount_refunded is CUMULATIVE across every refund on this charge. Re-open the
+        // invoice ONLY for THIS refund's delta (audit P1-1: adding the cumulative each event double-credited
+        // AR — $50 then $30 re-opened $50+$80=$130). previous_attributes.amount_refunded = the prior total, so
+        // delta = new − prior; pro-rate the delta across the base/total split (exclude the card fee).
         const refunded = Number(s.amount_refunded) || 0, total = Number(s.amount) || 0;
+        const prevRefunded = Number(event.data?.previous_attributes?.amount_refunded) || 0;
+        const delta = Math.max(0, refunded - prevRefunded);
         const base = Number(md.base_cents) || total;
-        const baseRefunded = (total > 0 && refunded >= total) ? base : Math.round(refunded * (base / (total || 1)));
+        const baseRefunded = Math.round(delta * (base / (total || 1)));
         await reverseCharge(sb, md, baseRefunded, 'refund');
       } else if (event.type === 'charge.dispute.created') {
         // s = the dispute; pull our metadata off the underlying PaymentIntent, then re-open + flag the chargeback.

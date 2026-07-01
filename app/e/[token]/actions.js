@@ -199,7 +199,11 @@ export async function askQuestion(token, text) {
   if (!est) return { ok: false, msg: 'Estimate not found.' };
   const q = clean(text, 600);
   if (!q) return { ok: false, msg: 'Type your question first.' };
-  await sb.from('pricebook_estimates').update({ status: 'question', customer_question: q, responded_at: new Date().toISOString() }).eq('id', est.id);
+  // A question must NOT revert an already approved/declined estimate (audit P1-6: askQuestion wrote status
+  // unconditionally, re-opening a finalized outcome after its invoice/usage rows were written). Route through
+  // the same terminal lock the other close actions use.
+  const lock = await lockTo(sb, est, 'question', { customer_question: q, responded_at: new Date().toISOString() });
+  if (!lock.won) { revalidatePath(`/e/${est.token}`); return { ok: true, msg: est.status === 'declined' ? 'This estimate was declined — please reach out to our office.' : 'This estimate is already approved — our office will follow up with you.' }; }
   await logEvent(sb, est, 'question', { method: 'link', actor: est.customer_name || 'Customer', note: q });
   await notify(`❓ **Estimate question** — ${est.customer_name || 'Customer'}${est.job_number ? ` · job ${est.job_number}` : ''}: "${q.slice(0, 240)}" (for ${est.tech_name || ''}).`);
   revalidatePath(`/e/${est.token}`);

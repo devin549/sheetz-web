@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { loadProfile } from '@/lib/profile';
-import { canUploadPhotos } from '../jobAccess';
+import { canUploadPhotos, loadJob, canViewJob } from '../jobAccess';
 
 const clean = (v, n = 120) => String(v == null ? '' : v).trim().slice(0, n);
 const intOrNull = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
@@ -46,10 +46,15 @@ export async function saveEquipment(jobId, plate = {}, type = '') {
   const profile = await loadProfile(user);
   if (!canUploadPhotos(profile.role)) return { ok: false, msg: 'Your role can’t save equipment.' };
   const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
 
-  // Resolve the customer from the job so the record follows the address, not the visit.
-  let customerId = null;
-  try { const { data: j } = await sb.from('jobs').select('customer_id').eq('id', jobId).maybeSingle(); customerId = j?.customer_id || null; } catch (_) {}
+  // SECURITY (audit P1-2): scope to a job the caller can actually see. Otherwise a tech could write equipment
+  // — including fuel_type — to ANY customer via a foreign jobId, which also POISONS the gas↔propane safety
+  // cross-check below (a planted record could suppress the STOP warning on a legitimate later job).
+  const { data: job } = await loadJob(sb, jobId);
+  if (!job) return { ok: false, msg: 'Job not found.' };
+  if (!(await canViewJob(sb, user, profile, profile.role, job))) return { ok: false, msg: 'That job isn’t assigned to you.' };
+  const customerId = job.customer_id || null; // the job's OWN customer — never a re-queried foreign id
   // Type comes from the APPLIANCE the AI detected — never the job description (that's the "Drain unclog · kitchen"
   // bug). Fall back to a passed type → generic "Equipment".
   const apptype = clean(type, 60) || APPLIANCE_LABEL[plate.appliance] || 'Equipment';

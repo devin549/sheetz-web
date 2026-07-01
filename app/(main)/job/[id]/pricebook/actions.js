@@ -51,8 +51,10 @@ export async function recordSale(jobId, lines = [], opts = {}) {
   const nowISO = new Date().toISOString();
   const rows = lines.map((l) => {
     const it = byId[l.itemId] || {};
-    const qty = Number(l.quantity) || 1;
-    const sold = Number(l.soldPrice) || 0;
+    // SECURITY/MONEY (audit P1-7): a negative value is truthy, so `Number(v) || default` let a client book a
+    // negative price/qty → inverted/under-total invoices. Clamp price ≥ 0 and quantity ≥ 1 server-side.
+    const qty = Math.max(1, Math.floor(Number(l.quantity)) || 1);
+    const sold = Math.max(0, Number(l.soldPrice) || 0);
     const cost = Number(it.estimated_material_cost) || 0;
     return {
       job_id: jobId, job_number: job.job_number || null, customer_id: job.customer_id || null, tech_id: job.tech_id || null,

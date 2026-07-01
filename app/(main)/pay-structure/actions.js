@@ -14,7 +14,10 @@ async function ownerCtx() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, msg: 'Sign in required.' };
   const profile = await loadProfile(user);
-  if (!can(profile.role, 'manageUsers') && !can(profile.role, 'seeFinancials')) return { ok: false, msg: 'Owner / GM / accounting only.' };
+  // SECURITY (audit P1-4): editing the pay structure re-bases EVERYONE's commission math, so it is an
+  // owner-level WRITE — gate on manageUsers only. The old `|| seeFinancials` let a read-only viewer (which
+  // HAS seeFinancials, and is the default no-profile fallback role) zero markups/premiums for the whole company.
+  if (String(profile.role || '').toLowerCase() === 'viewer' || !can(profile.role, 'manageUsers')) return { ok: false, msg: 'Owner / GM only — this changes everyone’s pay math.' };
   const sb = getSupabaseAdmin();
   if (!sb) return { ok: false, msg: 'Server not configured.' };
   return { ok: true, sb };

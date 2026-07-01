@@ -113,17 +113,18 @@ export async function createEstimate(jobId, lines = [], opts = {}) {
     // name/description/price the tech typed; no cost/margin/min exists for it). itemId stays null.
     if (l.custom) {
       const name = clean(l.name, 160); if (!name) return null;
-      return { itemId: null, quantity: num(l.quantity) || 1, name, description: clean(l.description, 600), price: num(l.soldPrice), photo: null, gallery: [], warranty: '', pdf: null, custom: true };
+      // clamp price ≥ 0 and qty ≥ 1 — a negative snapshot price flowed into the invoice (audit P1-7).
+      return { itemId: null, quantity: Math.max(1, num(l.quantity) || 1), name, description: clean(l.description, 600), price: Math.max(0, num(l.soldPrice)), photo: null, gallery: [], warranty: '', pdf: null, custom: true };
     }
     const it = byId[l.itemId]; if (!it) return null;
     const gallery = (mediaByItem[l.itemId] || []).filter((m) => m.media_type === 'photo').map((m) => m.url);
     const pdf = it.pdf_url || (mediaByItem[l.itemId] || []).find((m) => m.media_type === 'pdf' || m.media_type === 'manufacturer_link')?.url || null;
     return {
       itemId: it.id,                 // hidden ref for approval → usage rows; never rendered to the customer
-      quantity: num(l.quantity) || 1,
+      quantity: Math.max(1, num(l.quantity) || 1),
       name: it.customer_name || it.name,
       description: it.customer_description || it.short_description || '',
-      price: num(l.soldPrice) || num(it.retail_price),
+      price: Math.max(0, num(l.soldPrice) || num(it.retail_price)), // clamp ≥ 0 (audit P1-7)
       photo: it.primary_photo_url || gallery[0] || null,
       gallery,
       warranty: it.warranty_text || '',
@@ -275,6 +276,9 @@ async function loadSendCtx(token) {
   const tk = clean(token, 64); if (!tk) return { err: 'No estimate.' };
   const { data: est } = await c.sb.from('pricebook_estimates').select('id, token, job_id, job_number, customer_id, customer_name, headline, subtotal, tech_name').eq('token', tk).maybeSingle();
   if (!est) return { err: 'Estimate not found.' };
+  // SECURITY (audit P1-3): scope to the estimate's job. Without this a tech holding one token could send a
+  // DIFFERENT customer's estimate (off-job SMS/email) and read their contact/consent fields.
+  const s = await scopeJob(c, est.job_id); if (s.err) return { err: s.err };
   let cust = {};
   if (est.customer_id) {
     try { let { data, error } = await c.sb.from('customers').select('name, phone, phones, email, email2, sms_consent').eq('id', est.customer_id).maybeSingle(); if (error) ({ data } = await c.sb.from('customers').select('name, phone, phones, email, sms_consent').eq('id', est.customer_id).maybeSingle()); cust = data || {}; } catch (_) {}
@@ -336,8 +340,9 @@ export async function getEstimateStatus(token) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err };
   const tk = clean(token, 64); if (!tk) return { ok: false, msg: 'No estimate.' };
   try {
-    const { data: est } = await c.sb.from('pricebook_estimates').select('status, selected_tier_key, tier_key, approval_channel, approved_name, responded_at, viewed_at, subtotal').eq('token', tk).maybeSingle();
+    const { data: est } = await c.sb.from('pricebook_estimates').select('job_id, status, selected_tier_key, tier_key, approval_channel, approved_name, responded_at, viewed_at, subtotal').eq('token', tk).maybeSingle();
     if (!est) return { ok: false, msg: 'Estimate not found.' };
+    const s = await scopeJob(c, est.job_id); if (s.err) return { ok: false, msg: s.err }; // audit P1-3
     const status = est.status || 'sent';
     const terminal = ['approved', 'declined'].includes(status);
     return {
@@ -403,6 +408,7 @@ export async function logManualApproval(token, opts = {}) {
 export async function listJobEstimates(jobId) {
   const c = await ctx(); if (c.err) return { ok: false, msg: c.err, estimates: [] };
   if (!jobId) return { ok: false, msg: 'No job.', estimates: [] };
+  const s = await scopeJob(c, jobId); if (s.err) return { ok: false, msg: s.err, estimates: [] }; // audit P1-3: don't leak another job's estimates (consent_text/approved_name/subtotal)
   try {
     const { data: rows } = await c.sb.from('pricebook_estimates').select('token, headline, subtotal, status, approved_name, approval_method, witnessed_by_name, consent_text, responded_at, viewed_at, created_at').eq('job_id', jobId).order('created_at', { ascending: false }).limit(20);
     const estimates = rows || [];
