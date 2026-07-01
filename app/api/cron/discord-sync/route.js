@@ -13,10 +13,14 @@ import { nextSegmentNo } from '@/lib/segments';
 async function whoAndJob(sb, fromName) {
   const from = String(fromName || '').trim();
   if (!from) return { tech: null, job: null };
+  // SECURITY (audit P2-14): from_name is attacker-controllable (a Discord display name). Building a .or()
+  // filter string interpolated it raw into PostgREST's parser (filter injection). Use two value-parameterized
+  // .ilike queries instead (the value is properly encoded), and strip filter metacharacters as belt-and-suspenders.
+  const like = `%${from.replace(/[%,()*.\\]/g, '')}%`;
   let tech = null;
   try {
-    let q = await sb.from('techs').select('id, name').or(`discord_name.ilike.%${from}%,name.ilike.%${from}%`).limit(1).maybeSingle();
-    if (q.error) q = await sb.from('techs').select('id, name').ilike('name', `%${from}%`).limit(1).maybeSingle();
+    let q = await sb.from('techs').select('id, name').ilike('discord_name', like).limit(1).maybeSingle();
+    if (!q.data) q = await sb.from('techs').select('id, name').ilike('name', like).limit(1).maybeSingle();
     tech = q.data || null;
   } catch (_) {}
   let job = null;

@@ -157,10 +157,11 @@ export async function saveLine(formData) {
   let ctx; try { ctx = await gate(); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
   const lineId = clean(formData.get('lineId'), 80);
   if (!lineId) return { ok: false, msg: 'No line.' };
-  const { data: line } = await ctx.sb.from('cb_payroll_lines').select('run_id').eq('id', lineId).maybeSingle();
+  const { data: line } = await ctx.sb.from('cb_payroll_lines').select('run_id, tech_id, tech_name').eq('id', lineId).maybeSingle();
   if (!line) return { ok: false, msg: 'Line not found.' };
   const { data: run } = await ctx.sb.from('cb_payroll_runs').select('status').eq('id', line.run_id).maybeSingle();
   if (run?.status === 'approved') return { ok: false, msg: 'Run is approved — reopen to edit.' };
+  const selfEdit = !!ctx.profile.tech_id && String(line.tech_id) === String(ctx.profile.tech_id); // editing own pay
 
   const patch = {
     hours: Math.max(0, Number(formData.get('hours')) || 0),
@@ -178,15 +179,24 @@ export async function saveLine(formData) {
     ({ error } = await ctx.sb.from('cb_payroll_lines').update(lite).eq('id', lineId));
   }
   if (error) return { ok: false, msg: error.message };
+  // AUDIT (audit P2-7): payroll had NO audit trail. Log every line edit; flag when someone edits their OWN pay
+  // line (conflict of interest is now visible, not silent). Best-effort.
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile.name || ctx.user.email, role: ctx.profile.role, action: selfEdit ? 'payroll.self_line_edit' : 'payroll.line_edit', entity: 'cb_payroll_line', entity_id: lineId, detail: { run_id: line.run_id, tech: line.tech_name, self: selfEdit, bonus: patch.bonus_cents, adjust: patch.adjust_cents } }); } catch (_) {}
   revalidatePath('/payroll');
-  return { ok: true, msg: 'Saved.' };
+  return { ok: true, msg: selfEdit ? 'Saved — note: you edited your own pay line (logged).' : 'Saved.' };
 }
 
 // Approve the run (locks it). Never sends pay — export to the payroll file is a separate step.
 export async function approveRun(runId) {
   let ctx; try { ctx = await gate(true); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
-  const { error } = await ctx.sb.from('cb_payroll_runs').update({ status: 'approved', approved_by: ctx.profile.name || ctx.user.email, approved_at: new Date().toISOString() }).eq('id', clean(runId, 80));
+  const rid = clean(runId, 80);
+  // Does this run include the approver's OWN pay line? Not blocked (a working owner is often the approver) but
+  // recorded, so self-approval is auditable (audit P2-7).
+  let selfIncluded = false;
+  try { if (ctx.profile.tech_id) { const { data } = await ctx.sb.from('cb_payroll_lines').select('id').eq('run_id', rid).eq('tech_id', ctx.profile.tech_id).limit(1); selfIncluded = !!(data && data.length); } } catch (_) {}
+  const { error } = await ctx.sb.from('cb_payroll_runs').update({ status: 'approved', approved_by: ctx.profile.name || ctx.user.email, approved_at: new Date().toISOString() }).eq('id', rid);
   if (error) return { ok: false, msg: error.message };
+  try { await ctx.sb.from('audit_log').insert({ actor_id: ctx.user.id, actor_name: ctx.profile.name || ctx.user.email, role: ctx.profile.role, action: 'payroll.approved', entity: 'cb_payroll_run', entity_id: rid, detail: { self_included: selfIncluded } }); } catch (_) {}
   revalidatePath('/payroll');
   return { ok: true, msg: 'Payroll approved. Export to your payroll file when ready.' };
 }

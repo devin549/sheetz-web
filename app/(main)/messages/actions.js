@@ -10,7 +10,7 @@ import { requiredNames } from '@/lib/meetings';
 import { askHankCore, runHank } from '@/lib/hank';
 import { detectRescheduleProposals, rescheduleDraft } from '@/lib/hankActions';
 import { sendSms } from '@/lib/twilio';
-import { sendOne, isEmailConfigured } from '@/lib/email';
+import { sendOne, isEmailConfigured, esc } from '@/lib/email';
 import { revalidatePath } from 'next/cache';
 
 const MANAGE = ['owner', 'admin', 'gm', 'om', 'csr', 'dispatcher', 'marketing', 'sales', 'accounting', 'fs', 'foreman'];
@@ -242,7 +242,7 @@ export async function sendRescheduleNotice(actionId) {
   const log = (channel, to, r) => { try { return sb.from('cb_comms').insert({ channel, direction: 'out', to_addr: to, customer_id: job && job.customer_id, job_id: a.job_id, body, status: r.ok ? 'sent' : 'failed', error: r.ok ? null : (r.msg || r.error), sent_by: g.who }); } catch (_) {} };
   if (phone && c.sms_consent) { const r = await sendSms(phone, body); await log('sms', (r && r.to) || phone, r); bits.push(r.ok ? 'text sent' : `text not sent (${r.msg})`); }
   else if (phone) bits.push('no text consent');
-  if (email) { const r = isEmailConfigured ? await sendOne({ to: email, cc: email2 || undefined, subject: 'Appointment update — Clog Busterz Plumbing', html: `<p>${body}</p>`, meta: { customerId: job && job.customer_id, purpose: 'reschedule', ref: a.job_id } }) : { ok: false, error: 'no email key' }; await log('email', email2 ? `${email}, ${email2}` : email, r); bits.push(r.ok ? 'email sent' : 'email not sent'); }
+  if (email) { const r = isEmailConfigured ? await sendOne({ to: email, cc: email2 || undefined, subject: 'Appointment update — Clog Busterz Plumbing', html: `<p>${esc(body).replace(/\n/g, '<br>')}</p>`, meta: { customerId: job && job.customer_id, purpose: 'reschedule', ref: a.job_id } }) : { ok: false, error: 'no email key' }; await log('email', email2 ? `${email}, ${email2}` : email, r); bits.push(r.ok ? 'email sent' : 'email not sent'); }
   if (!phone && !email) bits.push('no phone/email on file');
   revalidatePath('/messages');
   return { ok: bits.some((b) => b.includes('sent')), msg: bits.join(', ') };
@@ -258,9 +258,13 @@ export async function employeeCard(name) {
   const sb = g.sb;
   const out = { ok: true, name: who };
 
-  // The roster row (match by name or discord_name).
+  // The roster row (match by name or discord_name). SECURITY (audit P2-14): `who` is client-supplied — don't
+  // interpolate it into a .or() filter string (PostgREST filter injection). Value-parameterized .ilike, two
+  // tries, with metacharacters stripped.
   try {
-    const { data } = await sb.from('techs').select('*').or(`name.ilike.${who},discord_name.ilike.${who}`).limit(1);
+    const safe = who.replace(/[%,()*.\\]/g, '');
+    let { data } = await sb.from('techs').select('*').ilike('name', safe).limit(1);
+    if (!data || !data.length) ({ data } = await sb.from('techs').select('*').ilike('discord_name', safe).limit(1));
     const t = (data || [])[0];
     if (t) {
       out.name = t.name || who;

@@ -4,7 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { createClient } from '@/lib/supabase/server';
 import { loadProfile } from '@/lib/profile';
 import { sendSms } from '@/lib/twilio';
-import { sendOne, isEmailConfigured } from '@/lib/email';
+import { sendOne, isEmailConfigured, esc } from '@/lib/email';
 import { revalidatePath } from 'next/cache';
 
 const VIEW = ['owner', 'admin', 'gm', 'om', 'csr', 'dispatcher', 'marketing', 'sales'];
@@ -38,7 +38,7 @@ export async function sendReminder(jobId) {
   } else if (phone) bits.push('no text consent');
   if (email) {
     const subject = 'Appointment reminder — Clog Busterz Plumbing';
-    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif"><p>Hi ${c.name || 'there'},</p><p>Reminder: your <strong>${job.job_type || 'appointment'}</strong> with Clog Busterz Plumbing is <strong>${whenStr}</strong>.</p><p>Reply to this email to reschedule.</p></body></html>`;
+    const html = `<!doctype html><html><body style="font-family:Arial,sans-serif"><p>Hi ${esc(c.name || 'there')},</p><p>Reminder: your <strong>${esc(job.job_type || 'appointment')}</strong> with Clog Busterz Plumbing is <strong>${esc(whenStr)}</strong>.</p><p>Reply to this email to reschedule.</p></body></html>`;
     const r = isEmailConfigured ? await sendOne({ to: email, subject, html }) : { ok: false, error: 'no email key' };
     await log('email', email, subject, r);
     bits.push(r.ok ? 'email sent' : 'email not sent');
