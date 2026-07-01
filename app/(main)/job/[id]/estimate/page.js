@@ -5,8 +5,11 @@ import EstimateProofPanel from '../pricebook/EstimateProofPanel';
 import EstimatePresent from './EstimatePresent';
 import CloseoutCheckout from '../CloseoutCheckout';
 import WorkSummaryCoach from '../WorkSummaryCoach';
+import CompletionSignature from '../CompletionSignature';
+import SendInvoice from './SendInvoice';
 import { can } from '@/lib/roles';
 import { isStripeConfigured } from '@/lib/stripe';
+import { getLegalTerms } from '@/lib/estimateTerms';
 
 export const dynamic = 'force-dynamic';
 const money = (n) => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -32,7 +35,7 @@ export default async function QuoteTab({ params }) {
   // Sent estimates for this job + their proof timeline (Pricebook builds, this tab tracks). Best-effort.
   let estimates = [];
   try {
-    const { data: rows } = await sb.from('pricebook_estimates').select('token, headline, subtotal, status, approved_name, approval_method, witnessed_by_name, responded_at, viewed_at, created_at').eq('job_id', c.job.id).order('created_at', { ascending: false }).limit(20);
+    const { data: rows } = await sb.from('pricebook_estimates').select('token, headline, subtotal, lines, status, approved_name, approval_method, witnessed_by_name, responded_at, viewed_at, created_at').eq('job_id', c.job.id).order('created_at', { ascending: false }).limit(20);
     const list = rows || [];
     const tokens = list.map((e) => e.token);
     const byTok = {};
@@ -61,6 +64,16 @@ export default async function QuoteTab({ params }) {
   const stripeReady = isStripeConfigured();
   const canCollect = can(c.role, 'collectPayment') || can(c.role, 'changeStatus');
   const canEditSummary = can(c.role, 'changeStatus');
+
+  // Line items + running totals for the close flow (from the approved estimate → the invoice snapshot).
+  const approvedEst = estimates.find((e) => e.status === 'approved') || latest;
+  const items = Array.isArray(approvedEst?.lines) ? approvedEst.lines : [];
+  const subtotal = Number(approvedEst?.subtotal) || items.reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.quantity) || 1), 0) || (c.job.amount || 0);
+  const paidSoFar = Math.max(0, subtotal - balance);
+  // Completion signature (the "satisfied with the work" sign-off) + its counsel-drafted terms.
+  let closeout = null;
+  try { const { data } = await sb.from('job_closeout').select('completion_signature, completion_signed_name, completion_signed_at').eq('job_id', String(params.id)).maybeSingle(); closeout = data || null; } catch (_) {}
+  const completionTerms = await getLegalTerms(sb, 'completion_acceptance');
 
   // Lifecycle badge.
   const approved = latest?.status === 'approved' || invoices.length > 0;
@@ -95,31 +108,51 @@ export default async function QuoteTab({ params }) {
         </div>
       )}
 
-      {/* ── INVOICE & PAYMENT — appears once the estimate is approved (or an invoice exists) ── */}
+      {/* ── CLOSE-OUT FLOW — top to bottom: items · summary · collect · sign · preview · email ── */}
       {showInvoice && (
         <>
-          {canEditSummary && <WorkSummaryCoach jobId={params.id} jobType={c.job.job_type || ''} initial={workSummary} />}
+          {/* 1️⃣ ITEMS — what was done / what's on the invoice */}
           <div className="card" style={{ marginTop: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{ fontWeight: 800 }}>💳 Invoice · this job</span>
-              <span className="pill" style={{ marginLeft: 'auto', color: balance > 0 ? 'var(--red)' : 'var(--green)' }}>{balance > 0 ? `${money(balance)} due` : invoices.length ? 'paid' : 'becomes an invoice on accept'}</span>
-            </div>
-            {invoices.length ? invoices.map((v, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: '1px solid var(--border)' }}>
-                <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 13 }}>Invoice {v.invoice_number || ''}</div><div className="muted" style={{ fontSize: 11 }}>{v.status || ''}</div></div>
-                <div style={{ textAlign: 'right' }}><div style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }}>{money(v.total)}</div>{(Number(v.balance) || 0) > 0 && <div style={{ fontSize: 11, color: 'var(--red)' }}>{money(v.balance)} owed</div>}</div>
+            <div style={{ fontWeight: 800, marginBottom: 6 }}>🧾 Items</div>
+            {items.length ? (
+              <div style={{ display: 'grid', gap: 2 }}>
+                {items.map((l, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, fontSize: 13, padding: '5px 0', borderTop: i ? '1px solid var(--border)' : 'none' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>{l.name || 'Item'}{Number(l.quantity) > 1 ? ` ×${l.quantity}` : ''}{l.description ? <div className="muted" style={{ fontSize: 11 }}>{l.description}</div> : null}</div>
+                    <div style={{ fontFamily: 'var(--mono, monospace)', fontWeight: 700 }}>{money((Number(l.price) || 0) * (Number(l.quantity) || 1))}</div>
+                  </div>
+                ))}
               </div>
-            )) : <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>Approved — the invoice builds from this estimate. Collect below, or send it.</div>}
-            <div style={{ marginTop: 8 }}>
-              <Link href={`/job/${params.id}/invoice/summary`} className="pill" style={{ color: 'var(--amber)', border: '1px solid var(--amber-dim)' }}>📄 View / print invoice summary →</Link>
-            </div>
-            {custId && (
-              <div style={{ marginTop: 8 }}>
-                <Link href={`/invoices?customer=${custId}`} className="pill">All of {c.customer?.name || 'this customer'}’s invoices →</Link>
-              </div>
-            )}
+            ) : <div className="muted" style={{ fontSize: 12.5 }}>Approved — line items build from the estimate. <Link href={`/job/${params.id}/pricebook`} style={{ color: 'var(--amber)' }}>Edit in the Pricebook →</Link></div>}
           </div>
+
+          {/* 2️⃣ SUMMARY — totals */}
+          <div className="card" style={{ marginTop: 10 }}>
+            {invoices[0]?.invoice_number && <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>Invoice {invoices[0].invoice_number}</div>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '3px 0' }}><span className="muted">Subtotal</span><span style={{ fontFamily: 'var(--mono, monospace)' }}>{money(subtotal)}</span></div>
+            {paidSoFar > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '3px 0', color: 'var(--green)' }}><span>Paid so far</span><span style={{ fontFamily: 'var(--mono, monospace)' }}>−{money(paidSoFar)}</span></div>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 15, padding: '6px 0 0', borderTop: '1px solid var(--border)', marginTop: 4, color: balance > 0 ? 'var(--red)' : 'var(--green)' }}><span>{balance > 0 ? 'Balance due' : 'Paid in full'}</span><span style={{ fontFamily: 'var(--mono, monospace)' }}>{money(balance)}</span></div>
+          </div>
+
+          {canEditSummary && <WorkSummaryCoach jobId={params.id} jobType={c.job.job_type || ''} initial={workSummary} />}
+
+          {/* 3️⃣ COLLECTION — cash · card · financing · Net-30 (office-billed customers show the bill-to-office banner) */}
           {canCollect && <CloseoutCheckout jobId={params.id} suggested={amount} tel={dial(c.customer.phone)} customerEmail={c.customer.email || ''} hasReader={hasReader} stripeReady={stripeReady} officeBilled={officeBilled} netDays={netDays} />}
+
+          {/* 4️⃣ SIGNATURE — final acceptance ("satisfied with the work") */}
+          <CompletionSignature jobId={params.id} terms={completionTerms.content} signedName={closeout?.completion_signed_name} signedAt={closeout?.completion_signed_at} />
+
+          {/* 5️⃣ PREVIEW INVOICE */}
+          <Link href={`/job/${params.id}/invoice/summary`} className="card" style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit' }}>
+            <span style={{ fontSize: 20 }}>📄</span>
+            <div style={{ flex: 1 }}><div style={{ fontWeight: 800, fontSize: 13 }}>Preview / print invoice</div><div className="muted" style={{ fontSize: 11.5 }}>Full invoice — items, totals, both signatures + terms.</div></div>
+            <span style={{ color: 'var(--amber)', fontWeight: 800 }}>›</span>
+          </Link>
+
+          {/* 6️⃣ EMAIL — send the invoice (or paid receipt) to the customer + a different address */}
+          {canCollect && <SendInvoice jobId={params.id} customerEmail={c.customer.email || ''} paid={paid} balance={balance} />}
+
+          {custId && <div style={{ marginTop: 8 }}><Link href={`/invoices?customer=${custId}`} className="pill">All of {c.customer?.name || 'this customer'}’s invoices →</Link></div>}
         </>
       )}
 
