@@ -9,9 +9,24 @@ import { revalidatePath } from 'next/cache';
 import { CANCEL_REASONS } from './boardTokens';
 import { techUnavailabilityReason } from '@/lib/techAvailability';
 import { nextSegmentNo } from '@/lib/segments';
+import { sendOne, renderEmailHtml, isEmailConfigured } from '@/lib/email';
 
 // ET date string (YYYY-MM-DD) of an instant — the day the office is actually putting the job on.
 const nyDateOf = (iso) => { try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date(iso)); } catch { return null; } };
+const nyTimeOf = (iso) => { try { return new Date(iso).toLocaleString('en-US', { timeZone: 'America/New_York', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return ''; } };
+
+// 📣 Email a tech about a board move (assign / reassign-away). EMAIL-NOW is the iPad-board design — SMS
+// joins when the A2P registration clears. Resolves the tech's login email via profiles. Best-effort:
+// a notify failure never blocks the move itself.
+async function emailTech(sb, techId, subject, body) {
+  try {
+    if (!isEmailConfigured || !techId) return;
+    const { data: prof } = await sb.from('profiles').select('email').eq('tech_id', techId).limit(1).maybeSingle();
+    const to = String(prof?.email || '').trim();
+    if (!/.+@.+\..+/.test(to)) return;
+    await sendOne({ to, subject, html: renderEmailHtml({ subject, body }), meta: { purpose: 'tech_assign' } });
+  } catch (_) { /* best-effort */ }
+}
 
 // Re-check the caller's perms on every call — a server action is a public RPC, so guarding only
 // the page/nav isn't enough. Role + scope come from the profile (server-authoritative).
@@ -134,9 +149,17 @@ export async function assignTech(jobId, techId, scheduledISO) {
   if (!jobId) return { ok: false, msg: 'No job.' };
 
   // Load current state → guard completed/cancelled jobs + capture the "from" side for the move audit.
-  const { data: job } = await sb.from('jobs').select('status, tech_id, tech_name, scheduled_at').eq('id', jobId).maybeSingle();
+  const { data: job } = await sb.from('jobs').select('status, tech_id, tech_name, scheduled_at, job_number, customers(name, address)').eq('id', jobId).maybeSingle();
   if (!job) return { ok: false, msg: 'Job not found.' };
   if (['done', 'cancelled'].includes(job.status)) return { ok: false, msg: `Can’t move a ${job.status} job.` };
+  // 🚧 MOVE GUARD (the iPad-board rule, now server-side): a job whose tech is ROLLING or ON SITE cannot be
+  // handed to someone else — both techs would think they own it (double-visit / dropped customer).
+  const wantsTechChange = String(job.tech_id || '') !== String(techId || '');
+  if (wantsTechChange && /enroute|rolling|on_site|onsite/.test(String(job.status || ''))) {
+    return { ok: false, msg: `Can’t reassign — ${job.tech_name || 'the tech'} is already ${/on_site|onsite/.test(job.status) ? 'ON SITE' : 'EN ROUTE'}. Have them step off the job first.` };
+  }
+  // Reject a malformed drop time instead of silently keeping the old slot (dispatcher thinks it moved).
+  if (scheduledISO && Number.isNaN(Date.parse(scheduledISO))) return { ok: false, msg: 'That drop time didn’t read — drag it again.' };
 
   let techName = null;
   if (techId) {
@@ -173,6 +196,20 @@ export async function assignTech(jobId, techId, scheduledISO) {
       scheduled_at: patch.scheduled_at || job.scheduled_at || null, by_email: email,
     });
   } catch (_) {}
+
+  // 📣 TELL THE PEOPLE IT AFFECTS (email-now; the assignment-loop gap): the NEW tech gets the job details,
+  // and on a reassign the OLD tech learns it left their board — no more finding out at the curb.
+  const cust = (job.customers && job.customers.name) || 'Customer';
+  const when = nyTimeOf(patch.scheduled_at || job.scheduled_at);
+  const jn = job.job_number ? `#${job.job_number}` : 'job';
+  if (changedTech && techId) {
+    await emailTech(sb, techId, `🚚 Job assigned to you — ${jn} · ${cust}`,
+      `You've got a job:\n\n${cust}${(job.customers && job.customers.address) ? `\n📍 ${job.customers.address}` : ''}${when ? `\n🗓 ${when}` : '\n🗓 time TBD — watch your My Day'}\n\nIt's on your My Day now. Assigned by ${email}.`);
+  }
+  if (changedTech && job.tech_id) {
+    await emailTech(sb, job.tech_id, `↩️ Job moved off your board — ${jn} · ${cust}`,
+      `${jn} (${cust}) was ${techId ? `reassigned to ${techName || 'another tech'}` : 'unassigned'} by ${email}. It's off your My Day — nothing needed from you.`);
+  }
   revalidatePath('/board');
   return { ok: true };
 }

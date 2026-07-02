@@ -60,11 +60,16 @@ export default async function Board({ searchParams }) {
   if (res.error && /column .* does not exist/i.test(res.error.message || '')) res = await run('');
   const rawJobs = res.data || [];
 
-  // Field-assignable roster only — office titles excluded (set on /team). Graceful pre-migration.
-  let tRes = await sb.from('techs').select('id, name, crew, position').in('position', FIELD_POSITIONS).order('name');
+  // Field-assignable roster only — office titles excluded (set on /team). CASE-INSENSITIVE on position:
+  // a row saved as 'Tech' (vs 'tech') silently vanished from the assign roster with the old .in() filter.
+  // Fetch all + filter in JS (a 14-row table). Graceful pre-migration.
+  let tRes = await sb.from('techs').select('id, name, crew, position').order('name');
   if (tRes.error) tRes = await sb.from('techs').select('id, name, crew').order('name');
   if (tRes.error) tRes = await sb.from('techs').select('id, name').order('name');
-  const techs = (tRes.data || []).map((t) => ({ id: t.id, name: t.name, crew: t.crew || 'Crew' }));
+  const fieldSet = new Set(FIELD_POSITIONS.map((p) => String(p).toLowerCase()));
+  const techs = (tRes.data || [])
+    .filter((t) => !('position' in t) || t.position == null || fieldSet.has(String(t.position).trim().toLowerCase()))
+    .map((t) => ({ id: t.id, name: t.name, crew: t.crew || 'Crew' }));
 
   // photo counts per job for the card badges (guarded — table may be absent on older DBs)
   const photoCount = {};

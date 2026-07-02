@@ -6,13 +6,15 @@ import { useRouter } from 'next/navigation';
 import { updateJobStatus, assignTech } from './actions';
 import { priorityOf, fmtTime, statusKey } from './boardTokens';
 
-// Status banners — exact colors from the live board (dispatchboard_panel.html JP_BANNERS).
+// Status banners — tinted band + colored border, but the TEXT is theme-aware (var(--fg-1)). The old
+// pale-green/pale-blue text (#a5d6a7/#90caf9) assumed a dark background and was unreadable in the light
+// theme — the same disease as the old light-green cash band Devin caught.
 const BANNERS = {
-  late: { bg: 'rgba(255,46,61,0.15)', bd: '#ff2e3d', fg: '#ff8a80', icon: '🔴', text: 'Late — tech is running behind' },
-  onsite: { bg: 'rgba(46,125,50,0.16)', bd: '#66bb6a', fg: '#a5d6a7', icon: '🏠', text: 'On site' },
-  enroute: { bg: 'rgba(33,150,243,0.15)', bd: '#64b5f6', fg: '#90caf9', icon: '🚗', text: 'En route' },
+  late: { bg: 'rgba(255,46,61,0.15)', bd: '#ff2e3d', fg: 'var(--fg-1)', icon: '🔴', text: 'Late — tech is running behind' },
+  onsite: { bg: 'rgba(46,125,50,0.16)', bd: '#66bb6a', fg: 'var(--fg-1)', icon: '🏠', text: 'On site' },
+  enroute: { bg: 'rgba(33,150,243,0.15)', bd: '#64b5f6', fg: 'var(--fg-1)', icon: '🚗', text: 'En route' },
   done: { bg: 'var(--surface-2)', bd: 'var(--border-strong)', fg: 'var(--fg-3)', icon: '✓', text: 'Completed' },
-  hold: { bg: 'rgba(255,179,0,0.12)', bd: '#e0a800', fg: '#e0a800', icon: '⏸', text: 'On hold' },
+  hold: { bg: 'rgba(255,179,0,0.12)', bd: '#e0a800', fg: 'var(--fg-1)', icon: '⏸', text: 'On hold' },
   scheduled: { bg: 'rgba(255,107,0,0.10)', bd: 'var(--accent)', fg: 'var(--accent)', icon: '🗓', text: 'Scheduled' },
 };
 

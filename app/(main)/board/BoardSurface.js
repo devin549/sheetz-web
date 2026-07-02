@@ -8,7 +8,8 @@
 //   4. View tabs    — Time grid / Map / Roster / Week / Capacity
 // Search + chips filter the jobs/tray passed down to the grid and the secondary views.
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import BoardGrid from './BoardGrid';
 import JobPanel from './JobPanel';
 import { MapView, RosterView, WeekView, CapacityView } from './BoardViews';
@@ -40,10 +41,19 @@ function matchQuery(j, q, techName) {
 }
 
 export default function BoardSurface({ techs, jobs, tray, techStatus, canAssign, canStatus, dateStr }) {
+  const router = useRouter();
   const [view, setView] = useState('grid');
   const [sel, setSel] = useState(null);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+
+  // 🔄 LIVE BOARD — server-rendered data went stale the moment it loaded (a tech marks DONE and dispatch
+  // doesn't see it until someone touches something). Re-pull every 45s; skip when the tab is hidden.
+  // router.refresh() preserves client state (open panel, search, drag) — only the data refreshes.
+  useEffect(() => {
+    const id = setInterval(() => { if (typeof document === 'undefined' || !document.hidden) router.refresh(); }, 45000);
+    return () => clearInterval(id);
+  }, [router]);
 
   const techsWithStatus = useMemo(() => techs.map((t) => ({ ...t, status: techStatus[t.id] || 'scheduled' })), [techs, techStatus]);
   const techNameById = useMemo(() => { const m = {}; techs.forEach((t) => { m[t.id] = t.name; }); return m; }, [techs]);
