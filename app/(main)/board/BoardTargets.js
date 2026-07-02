@@ -16,31 +16,23 @@ export default function BoardTargets({ goals, actuals }) {
   const pending = goals.filter((g) => actuals[g.key] === undefined);
   if (!missions.length) return null;
 
+  // ONE slim strip, not a band — the board's real estate belongs to the grid (Devin: "seems like a lot
+  // all scattered"). Each target is a compact chip with a hairline progress bar under its numbers.
   return (
-    <div className="card" style={{ marginTop: 10, borderTop: `2px solid ${ACCENT}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <Trophy size={16} style={{ color: ACCENT }} />
-        <span style={{ fontWeight: 800, fontSize: 13 }}>Today&apos;s Game Plan</span>
-        <span className="muted" style={{ fontSize: 11 }}>· hit the targets</span>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-        {missions.map((m) => (
-          <div key={m.key}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700 }}>{m.label}</span>
-              {m.done && <span style={{ color: 'var(--green)', fontSize: 12, fontWeight: 800 }}>✓</span>}
-            </div>
-            <div style={{ height: 6, background: 'var(--surface-2)', borderRadius: 3, overflow: 'hidden', margin: '5px 0 4px' }}>
-              <div style={{ height: '100%', width: `${m.pct}%`, background: m.done ? 'var(--green)' : ACCENT, opacity: 0.85 }} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span className="muted" style={{ fontSize: 11 }}>{m.assignee || ''}</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: m.done ? 'var(--green)' : 'var(--fg-2)' }}>{m.sub}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-      {pending.length > 0 && <div className="muted" style={{ fontSize: 10.5, marginTop: 10 }}>Coming with call/review tracking: {pending.map((g) => g.label).join(' · ')}</div>}
+    <div className="card" style={{ marginTop: 10, padding: '8px 14px', borderLeft: `3px solid ${ACCENT}`, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 800, fontSize: 12, color: ACCENT, flexShrink: 0 }}><Trophy size={14} /> GAME PLAN</span>
+      {missions.map((m) => (
+        <span key={m.key} title={`${m.label}${m.assignee ? ` · ${m.assignee}` : ''}`} style={{ display: 'inline-flex', flexDirection: 'column', gap: 3, minWidth: 110 }}>
+          <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11, lineHeight: 1 }}>
+            <span className="muted" style={{ fontWeight: 700 }}>{m.label}</span>
+            <span style={{ fontWeight: 800, fontFamily: 'var(--mono)', color: m.done ? 'var(--green)' : 'var(--fg-1)', whiteSpace: 'nowrap' }}>{m.done ? '✓ ' : ''}{m.sub}</span>
+          </span>
+          <span style={{ height: 3, background: 'var(--surface-2)', borderRadius: 2, overflow: 'hidden' }}>
+            <span style={{ display: 'block', height: '100%', width: `${m.pct}%`, background: m.done ? 'var(--green)' : ACCENT }} />
+          </span>
+        </span>
+      ))}
+      {pending.length > 0 && <span className="muted" style={{ fontSize: 10, marginLeft: 'auto' }}>coming: {pending.map((g) => g.label).join(' · ')}</span>}
     </div>
   );
 }

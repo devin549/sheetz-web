@@ -9,7 +9,6 @@ import { unavailableTechIdsOn } from '@/lib/techAvailability';
 import LiveClock from './LiveClock';
 import DateNav from './DateNav';
 import EtaBanner from './EtaBanner';
-import BoardCommand from './BoardCommand';
 import BoardTargets from './BoardTargets';
 import { loadCloseoutBatch } from '@/lib/qa';
 import { FIELD_POSITIONS } from '@/lib/positions';
@@ -148,19 +147,17 @@ export default async function Board({ searchParams }) {
   const closeoutByJob = await loadCloseoutBatch(sb, gridJobs.map((j) => ({ id: j.id, job_type: j.job_type })));
   gridJobs.forEach((j) => { j.closeout = closeoutByJob[j.id] || null; });
 
-  // Today's Fire — what needs attention right now (all real data).
+  // Hot numbers that AREN'T already on the grid's own status strip — they live as compact header chips
+  // now (the old "Today's Fire" band duplicated the Late/Unassigned chips right below it, and LOW STOCK
+  // moved to the SHOP dashboard + Reed's morning Discord digest — dispatch doesn't restock vans).
   const nowMs = Date.now();
   const fire = {
-    late: gridJobs.filter((j) => !['enroute', 'onsite', 'done'].includes(j.statusKey) && j.scheduledISO && new Date(j.scheduledISO).getTime() < nowMs).length,
-    unassigned: tray.filter((j) => !j.techId).length,
     qa: gridJobs.filter((j) => j.closeout && j.closeout.available !== false && (j.closeout.openFails > 0 || (j.statusKey === 'done' && !j.closeout.readyToClose))).length,
-    ar90: 0, lowStock: 0,
+    ar90: 0,
   };
   const cutoff = new Date(nowMs - 90 * 86400000).toISOString().slice(0, 10);
   const arRes = await sb.from('invoices').select('balance').gt('balance', 0).lt('invoice_date', cutoff).limit(1000);
   if (!arRes.error) fire.ar90 = (arRes.data || []).reduce((s, i) => s + (Number(i.balance) || 0), 0);
-  const lsRes = await sb.from('truck_inventory').select('qty, reorder_point').limit(2000);
-  if (!lsRes.error) fire.lowStock = (lsRes.data || []).filter((r) => Number(r.qty) <= Number(r.reorder_point || 0)).length;
 
   // Office goals + the actuals we can compute now (booked / avg ticket / QA holds).
   let goals = [];
@@ -211,10 +208,12 @@ export default async function Board({ searchParams }) {
         <div className="h1" style={{ margin: 0, color: ACCENT }}>Dispatch Live</div>
         <LiveClock />
         <DateNav date={dateStr} today={nyTodayStr()} />
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
-          <span className="muted" style={{ fontSize: 12 }}>Booked: <strong style={{ color: 'var(--green)' }}>{money(dayRevenue)}</strong></span>
-          {oppCount > 0 && <Link href="/opportunities" className="pill" title="Win-back money — tech recs + declined estimates waiting on a follow-up" style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', border: '1px solid var(--amber-dim)', textDecoration: 'none' }}>🎯 {oppCount} opportunit{oppCount === 1 ? 'y' : 'ies'}</Link>}
-          {qaHoldCount > 0 && <Link href="/corrections" className="pill" title="Failed closeout photos — re-shoot or book a correction visit with the customer" style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', border: '1px solid var(--red)', textDecoration: 'none' }}>📸 {qaHoldCount} QA hold{qaHoldCount === 1 ? '' : 's'}</Link>}
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="pill" style={{ fontSize: 12, fontWeight: 800, color: 'var(--green)', border: '1px solid var(--green)' }} title="Booked revenue on this day">💵 {money(dayRevenue)}</span>
+          {oppCount > 0 && <Link href="/opportunities" className="pill" title="Win-back money — tech recs + declined estimates waiting on a follow-up" style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', border: '1px solid var(--amber-dim)', textDecoration: 'none' }}>🎯 {oppCount}</Link>}
+          {qaHoldCount > 0 && <Link href="/corrections" className="pill" title="Failed closeout photos — re-shoot or book a correction visit" style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', border: '1px solid var(--red)', textDecoration: 'none' }}>📸 {qaHoldCount} QA</Link>}
+          {fire.qa > 0 && <Link href="/supervisor/jobs" className="pill" title="Done jobs blocked on closeout / failed proof — supervisor pass" style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', border: '1px solid var(--amber-dim)', textDecoration: 'none' }}>📋 {fire.qa} to clear</Link>}
+          {can(role, 'seeFinancials') && fire.ar90 > 0 && <Link href="/past-due" className="pill" title="Receivables 90+ days old — the collections screen" style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', border: '1px solid var(--red)', textDecoration: 'none' }}>💰 {money(fire.ar90)} AR 90+</Link>}
           <Link href="/my-day" className="muted" style={{ fontSize: 12 }}>My Day →</Link>
         </span>
       </div>
@@ -222,8 +221,6 @@ export default async function Board({ searchParams }) {
       <BoardTargets goals={goals} actuals={actuals} />
 
       <EtaBanner reports={etaReports} jobInfo={jobInfo} canContact={canContact} />
-
-      <BoardCommand fire={fire} role={role} />
 
       <HoldingTray jobs={heldWithSuggestions} canAssign={canAssign} />
 

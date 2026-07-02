@@ -11,6 +11,7 @@
     { "path": "/api/cron/competitors", "schedule": "0 15 * * 1" },
     { "path": "/api/cron/territory", "schedule": "0 16 * * 1" },
     { "path": "/api/cron/pricebook", "schedule": "0 8 * * *" },
-    { "path": "/api/cron/ar", "schedule": "0 13 * * *" }
+    { "path": "/api/cron/ar", "schedule": "0 13 * * *" },
+    { "path": "/api/cron/restock", "schedule": "30 11 * * *" }
   ]
 }

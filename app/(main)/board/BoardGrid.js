@@ -241,6 +241,10 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
     const canResize = (canStatus || canAssign) && j.statusKey !== 'done';
     const late = isLate(j);
     const hiding = moveDrag && moveDrag.jobId === j.id; // original hides while its ghost drags
+    // Status IS the color (Devin: board felt generic/boring) — amber scheduled · blue rolling · green
+    // on-site · red late · muted-✓ done. One glance = the day's shape, matching the status-dot legend.
+    const done = j.statusKey === 'done';
+    const tone = late ? 'var(--red)' : (STATUS_DOT[j.statusKey] || 'var(--accent)');
     return (
       <div
         onMouseDown={canAssign ? (e) => startMove(e, j) : undefined}
@@ -251,10 +255,12 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
         onMouseLeave={() => setHover(null)}
         style={{
           position: 'absolute', left, top: 5, height: ROW_H - 14, width,
-          background: live ? 'color-mix(in oklab, var(--accent) 14%, var(--surface-2))' : (late ? 'color-mix(in oklab, var(--red) 14%, var(--surface-2))' : 'var(--surface-2)'),
-          borderLeft: `3px solid ${late ? 'var(--red)' : (pr ? pr.color : STATUS_DOT[j.statusKey])}`,
-          borderRadius: 4, padding: '3px 5px', overflow: 'hidden', cursor: canAssign ? 'grab' : 'pointer', zIndex: live ? 5 : 2,
-          opacity: hiding ? 0 : 1,
+          background: live ? 'color-mix(in oklab, var(--accent) 16%, var(--surface-2))' : `color-mix(in oklab, ${tone} ${done ? 6 : 14}%, var(--surface-2))`,
+          borderLeft: `3px solid ${late ? 'var(--red)' : (pr ? pr.color : tone)}`,
+          border: `1px solid color-mix(in oklab, ${late ? 'var(--red)' : tone} ${done ? 18 : 38}%, var(--border))`,
+          borderLeftWidth: 3, borderLeftColor: late ? 'var(--red)' : (pr ? pr.color : tone),
+          borderRadius: 5, padding: '3px 5px', overflow: 'hidden', cursor: canAssign ? 'grab' : 'pointer', zIndex: live ? 5 : 2,
+          opacity: hiding ? 0 : (done ? 0.65 : 1),
         }}
       >
         {late && <span className="alert-dot" style={{ position: 'absolute', top: 4, right: 4, margin: 0 }} aria-hidden="true" />}
@@ -309,6 +315,24 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
 
   return (
     <>
+      {/* 📥 JOBS TO PLACE — the dispatcher's actual work, so it sits ABOVE the grid as a horizontal shelf
+          (it used to hide below the fold: "24 unassigned" you had to scroll to find). Drag a card straight
+          down onto a tech's row. Unassigned = red edge · assigned-but-no-time = amber edge. */}
+      {tray.length > 0 && (
+        <div style={{ marginBottom: 10, border: '1px solid color-mix(in oklab, var(--red) 30%, var(--border))', borderRadius: 12, background: 'color-mix(in oklab, var(--red) 4%, var(--surface-1))', padding: '8px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <Inbox size={14} style={{ color: 'var(--red)' }} />
+            <span style={{ fontWeight: 800, fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em' }}>Jobs to place · {tray.length}</span>
+            <span className="muted" style={{ fontSize: 11 }}>{canAssign ? 'drag a card down onto a tech’s row' : ''}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, opacity: pending ? 0.6 : 1 }}>
+            {[...tray.filter((j) => !j.techId), ...tray.filter((j) => j.techId && !j.scheduledISO)].map((j) => (
+              <div key={j.id} style={{ flex: '0 0 210px' }}><TrayCard j={j} /></div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div ref={gridRef} style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
         <div style={{ minWidth: TECH_COL + GRID_W }}>
           {/* hour header */}
@@ -325,9 +349,12 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
           <div ref={bodyRef} onDragOver={onDragOver} onDrop={onDrop} onDragLeave={() => setDrop(null)} style={{ position: 'relative' }}>
             {rows.map((row, i) => {
               if (row.kind === 'crew') {
+                // CB-amber team band — the crew name reads like a section banner. Height stays ROW_H:
+                // the drag/drop indicators position by rowIdx × ROW_H, so every row must be that tall.
+                const cc = crewColor(row.name);
                 return (
-                  <div key={'c' + i} style={{ display: 'flex', height: ROW_H, alignItems: 'center', background: 'var(--surface-1)', borderBottom: '1px solid var(--border)', borderLeft: `3px solid ${crewColor(row.name)}` }}>
-                    <div style={{ width: TECH_COL, flexShrink: 0, position: 'sticky', left: 0, background: 'var(--surface-1)', zIndex: 3, padding: '0 10px', fontSize: 11, fontWeight: 800, color: crewColor(row.name) }}>▾ {row.name}</div>
+                  <div key={'c' + i} style={{ display: 'flex', height: ROW_H, alignItems: 'center', background: `color-mix(in oklab, ${cc} 9%, var(--surface-1))`, borderBottom: `1px solid color-mix(in oklab, ${cc} 35%, var(--border))`, borderLeft: `3px solid ${cc}` }}>
+                    <div style={{ width: TECH_COL, flexShrink: 0, position: 'sticky', left: 0, background: 'transparent', zIndex: 3, padding: '0 10px', fontSize: 11, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: cc, whiteSpace: 'nowrap' }}>▾ {row.name}</div>
                     <div style={{ flex: 1 }} />
                   </div>
                 );
@@ -362,11 +389,11 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
               return <div className="cb-breathe" style={{ position: 'absolute', pointerEvents: 'none', top: rowIdx * ROW_H + 4, left: TECH_COL + moveHover.startHour * PX_PER_HOUR, width: durH * PX_PER_HOUR - 2, height: ROW_H - 8, border: `1.5px dashed ${ACCENT}`, borderRadius: 6, zIndex: 5 }} />;
             })()}
 
-            {/* NOW line */}
+            {/* NOW line — the board's heartbeat; thick enough to find from across the office. */}
             {nowHour >= 0 && nowHour <= 24 && (
-              <div style={{ position: 'absolute', top: 0, bottom: 0, left: TECH_COL + nowHour * PX_PER_HOUR, width: 2, background: ACCENT, zIndex: 5, pointerEvents: 'none' }}>
-                <span style={{ position: 'absolute', top: -1, left: -4, width: 9, height: 9, borderRadius: '50%', background: ACCENT }} />
-                <span style={{ position: 'absolute', top: 2, left: 7, fontSize: 9, fontWeight: 800, color: '#fff', background: ACCENT, padding: '1px 4px', borderRadius: 4, whiteSpace: 'nowrap' }}>now</span>
+              <div style={{ position: 'absolute', top: 0, bottom: 0, left: TECH_COL + nowHour * PX_PER_HOUR, width: 2.5, background: ACCENT, boxShadow: `0 0 8px 1px color-mix(in oklab, ${ACCENT} 55%, transparent)`, zIndex: 5, pointerEvents: 'none' }}>
+                <span style={{ position: 'absolute', top: -1, left: -4, width: 10, height: 10, borderRadius: '50%', background: ACCENT, boxShadow: `0 0 7px ${ACCENT}` }} />
+                <span style={{ position: 'absolute', top: 2, left: 8, fontSize: 9, fontWeight: 800, color: '#fff', background: ACCENT, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>now</span>
               </div>
             )}
             {!techs.length && <div className="muted" style={{ padding: 14, fontSize: 12 }}>No techs yet — add them on the Team screen (role = tech) so they show as rows here.</div>}
@@ -374,23 +401,8 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
         </div>
       </div>
 
-      {/* JOBS TRAY — split into action buckets, not one pile */}
-      <h3 style={{ margin: '18px 0 8px', fontSize: 12, color: ACCENT, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 6 }}>
-        <Inbox size={14} /> Jobs Tray <span className="muted" style={{ fontWeight: 400 }}>· {tray.length}{canAssign ? ' · drag onto a tech' : ''}</span>
-      </h3>
-      {!tray.length && <div className="card"><span className="muted">Tray is empty — every job is on a tech&apos;s schedule.</span></div>}
-      {[
-        { key: 'unassigned', label: 'Unassigned', hint: canAssign ? 'drag onto a tech' : '', items: tray.filter((j) => !j.techId) },
-        { key: 'notime', label: 'No time set', hint: 'assigned, needs a slot', items: tray.filter((j) => j.techId && !j.scheduledISO) },
-      ].filter((b) => b.items.length).map((b) => (
-        <div key={b.key} style={{ marginBottom: 12 }}>
-          <div className="muted" style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700, margin: '4px 0 6px' }}>{b.label} · {b.items.length}{b.hint ? ` · ${b.hint}` : ''}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10, opacity: pending ? 0.6 : 1 }}>
-            {b.items.map((j) => <TrayCard key={j.id} j={j} />)}
-          </div>
-        </div>
-      ))}
-      {tray.length > 0 && <div className="muted" style={{ fontSize: 11 }}>Needs-reschedule + blocked-closeout buckets light up with the supervisor QA pass (Phase B).</div>}
+      {/* (Jobs tray moved ABOVE the grid — the "Jobs to place" shelf. Nothing renders down here now.) */}
+      {!tray.length && <div className="muted" style={{ fontSize: 11.5, marginTop: 10 }}>📥 Every job is placed — nothing waiting for a tech or a time.</div>}
 
       {/* floating drag ghost — positioned imperatively (ref) so it tracks the cursor 1:1 with no lag */}
       {moveDrag && (() => {
