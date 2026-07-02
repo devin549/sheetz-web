@@ -120,6 +120,22 @@ async function useOne(sb, me, p, job) {
   return { ok: true, name: p.name, left, low, costCents, msg: `✓ 1× ${p.name}${costCents ? ` · $${(costCents / 100).toFixed(2)}` : ''} → this ticket · ${left} left${low ? ' ⚠ LOW' : ''}` };
 }
 
+// 🏪 VENDOR CHECK — the last rung of the ladder (van → shop → other vans → STORES). On-demand only (a
+// deliberate tap, ~1 SerpAPI search) — never fired on every keystroke. Location-pinned to CB's turf
+// (serpVendor), so prices are stores a tech can actually drive to. Listed price ≈ availability PROXY —
+// the UI says "call to confirm shelf stock" and the hours strip above has the ☎.
+export async function vendorCheck(query) {
+  const me = await whoami();
+  if (!me) return { ok: false, msg: 'Not signed in.', sellers: [] };
+  const q = clean(query, 80);
+  if (q.length < 2) return { ok: false, msg: 'Type a part first.', sellers: [] };
+  const { vendorPrices, serpVendorConfigured } = await import('@/lib/serpVendor');
+  if (!serpVendorConfigured()) return { ok: false, msg: 'Store search isn’t configured.', sellers: [] };
+  const r = await vendorPrices(q, { limit: 6 });
+  if (!r.ok) return { ok: false, msg: r.msg || 'Store check failed.', sellers: [] };
+  return { ok: true, sellers: r.sellers, cheapest: r.cheapest };
+}
+
 // ➖ Use a part from the van ON a job (moment-of-use): decrement van stock by 1 + log it to the job so it
 // bills + feeds the most-used signal. The other half of the scan loop (load-out adds, use subtracts).
 export async function useFromVan(partId, jobId) {
