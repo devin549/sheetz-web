@@ -10,6 +10,7 @@ import LiveClock from './LiveClock';
 import DateNav from './DateNav';
 import EtaBanner from './EtaBanner';
 import BoardTargets from './BoardTargets';
+import MassReschedule from './MassReschedule';
 import { loadCloseoutBatch } from '@/lib/qa';
 import { FIELD_POSITIONS } from '@/lib/positions';
 import { ACCENT, statusKey, money } from './boardTokens';
@@ -208,6 +209,7 @@ export default async function Board({ searchParams }) {
         <div className="h1" style={{ margin: 0, color: ACCENT }}>Dispatch Live</div>
         <LiveClock />
         <DateNav date={dateStr} today={nyTodayStr()} />
+        {canAssign && <MassReschedule dateStr={dateStr} />}
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <span className="pill" style={{ fontSize: 12, fontWeight: 800, color: 'var(--green)', border: '1px solid var(--green)' }} title="Booked revenue on this day">💵 {money(dayRevenue)}</span>
           {oppCount > 0 && <Link href="/opportunities" className="pill" title="Win-back money — tech recs + declined estimates waiting on a follow-up" style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', border: '1px solid var(--amber-dim)', textDecoration: 'none' }}>🎯 {oppCount}</Link>}

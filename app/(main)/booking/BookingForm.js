@@ -290,7 +290,7 @@ export default function BookingForm({ techs }) {
             <div><span style={label}>How did they hear about us?{howHeard === 'Repeat customer' && <span style={{ color: 'var(--green)', textTransform: 'none', fontWeight: 700 }}> · auto</span>}</span>
               <select name="howHeard" value={howHeard} onChange={(e) => setHowHeard(e.target.value)} style={input}><option value="">— ask the caller —</option>{HOW_HEARD.map((h) => <option key={h} value={h}>{h}</option>)}</select>
             </div>
-            <div><span style={label}>Referral code</span><input name="referralCode" placeholder="which customer sent them?" style={input} autoComplete="off" /></div>
+            <div><span style={label}>Referral code <span style={{ color: 'var(--green)', textTransform: 'none', fontWeight: 700 }}>· pays $15/$15</span></span><input name="referralCode" placeholder="tech’s code or the customer who sent them" style={input} autoComplete="off" /></div>
           </div>
         </div>
       )}

@@ -49,6 +49,61 @@ async function assertStatusChanger() {
   return { sb, email: (user.email || ''), profile };
 }
 
+// 🌧 MASS RESCHEDULE (bad weather / truck down): move EVERY still-open job on one day to another day,
+// same clock time, and EMAIL each affected customer (email-only until A2P clears — never an auto-text).
+// Requires a reason (it goes in the customer email + audit). Done/cancelled jobs stay put. Capped at 60.
+export async function massReschedule(fromDate, toDate, reason) {
+  let sb, email;
+  try { ({ sb, email } = await assertAssigner()); } catch (e) { return { ok: false, msg: String(e.message || e) }; }
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(String(fromDate)) ? fromDate : null;
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(String(toDate)) ? toDate : null;
+  const why = String(reason || '').trim().slice(0, 200);
+  if (!from || !to) return { ok: false, msg: 'Pick both days.' };
+  if (from === to) return { ok: false, msg: 'That’s the same day.' };
+  if (!why) return { ok: false, msg: 'Give the customers a reason (goes in their email).' };
+
+  // The ET day window for `from` + the day-shift in whole days (time-of-day is preserved exactly).
+  const startISO = new Date(`${from}T00:00:00-04:00`).toISOString();
+  const endISO = new Date(new Date(startISO).getTime() + 86400000).toISOString();
+  const dayShiftMs = (new Date(`${to}T12:00:00Z`) - new Date(`${from}T12:00:00Z`));
+
+  const { data: jobs, error } = await sb.from('jobs')
+    .select('id, job_number, scheduled_at, arrival_window, status, customer_id, tech_id, tech_name, customers(name, email, email2)')
+    .gte('scheduled_at', startISO).lt('scheduled_at', endISO)
+    .not('status', 'in', '(done,cancelled)')
+    .limit(61);
+  if (error) return { ok: false, msg: error.message };
+  const list = jobs || [];
+  if (!list.length) return { ok: false, msg: `No open jobs on ${from}.` };
+  if (list.length > 60) return { ok: false, msg: 'Over 60 jobs on that day — move it in two passes.' };
+
+  const prettyTo = new Date(`${to}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  let moved = 0, emailed = 0;
+  for (const j of list) {
+    const newISO = new Date(new Date(j.scheduled_at).getTime() + dayShiftMs).toISOString();
+    const u = await sb.from('jobs').update({ scheduled_at: newISO }).eq('id', j.id);
+    if (u.error) continue;
+    moved++;
+    try { await sb.from('job_moves').insert({ job_id: j.id, action: 'reschedule', from_tech_id: j.tech_id || null, from_tech_name: j.tech_name || null, to_tech_id: j.tech_id || null, to_tech_name: j.tech_name || null, scheduled_at: newISO, by_email: email }); } catch (_) {}
+    // Customer email — best-effort, never blocks the move.
+    try {
+      const cust = j.customers || {};
+      const emails = [...new Set([cust.email, cust.email2].map((x) => String(x || '').trim().toLowerCase()).filter((x) => /.+@.+\..+/.test(x)))];
+      if (emails.length && isEmailConfigured) {
+        const first = String(cust.name || 'there').trim().split(/\s+/)[0] || 'there';
+        const when = nyTimeOf(newISO);
+        const body = `Hi ${first},\n\nWe need to move your Clog Busterz Plumbing appointment${j.job_number ? ` (job #${j.job_number})` : ''} — ${why}.\n\nYour new time: ${when}${j.arrival_window ? ` (arrival window ${j.arrival_window})` : ''}.\n\nIf that doesn’t work for you, just reply to this email or call the office and we’ll find a time that does. Sorry for the shuffle — we’ll see you ${prettyTo}!`;
+        const r = await sendOne({ to: emails[0], cc: emails.slice(1).join(',') || undefined, subject: `Appointment moved to ${prettyTo} — Clog Busterz Plumbing`, html: renderEmailHtml({ subject: 'Appointment update', body }), meta: { customerId: j.customer_id, purpose: 'reschedule', ref: j.job_number || null } });
+        if (r.ok) emailed++;
+      }
+    } catch (_) {}
+  }
+  try { await sb.from('audit_log').insert({ actor_name: email, role: 'office', action: 'jobs.mass_reschedule', entity: 'day', entity_id: from, detail: { to, reason: why, moved, emailed } }); } catch (_) {}
+  try { const { postToDiscord } = await import('@/lib/discord'); await postToDiscord(`🌧 **Mass reschedule** — ${moved} job${moved === 1 ? '' : 's'} moved ${from} → ${to} (“${why}”) by ${email}. ${emailed} customer${emailed === 1 ? '' : 's'} emailed; call the ones without email on file.`, { to: 'office' }); } catch (_) {}
+  revalidatePath('/board');
+  return { ok: true, moved, emailed, noEmail: moved - emailed, msg: `Moved ${moved} job${moved === 1 ? '' : 's'} to ${to} — ${emailed} customer${emailed === 1 ? '' : 's'} emailed${moved - emailed > 0 ? `, ${moved - emailed} have no email (call them)` : ''}.` };
+}
+
 // Cancel a job WITH a reason → status=cancelled + log to cancellations (feeds the AI win-back
 // watcher). Mirrors cbDispatchBoard_cancelJob. Role-gated.
 export async function cancelJob(jobId, reasonCode, reasonNote) {
