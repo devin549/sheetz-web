@@ -228,7 +228,9 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   const Dot = ({ k }) => <span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_DOT[k] || 'var(--fg-3)', display: 'inline-block' }} />;
 
   // A job is LATE if its start time has passed and it isn't rolling/on-site/done/cancelled.
-  const isLate = (j) => !['enroute', 'on_site', 'done', 'cancelled'].includes(j.statusKey) && startHourOf(j.scheduledISO) < nowHour;
+  // statusKey normalizes to 'onsite' (no underscore, boardTokens) — the old 'on_site' here never matched,
+  // so an ON-SITE job got a red LATE badge while the tech was standing in the house (Devin's screenshot).
+  const isLate = (j) => !['enroute', 'onsite', 'done', 'cancelled'].includes(j.statusKey) && startHourOf(j.scheduledISO) < nowHour;
 
   function JobBlock({ j, draggable }) {
     const pr = priorityOf(j.priority);
