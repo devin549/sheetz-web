@@ -11,8 +11,17 @@ import { Wrench, MapPin, Camera, Inbox } from 'lucide-react';
 
 // Layout — absolute px-per-hour grid, the same model the live board uses so the now-line and
 // drop-targeting are computed straight from mouse position.
-const TECH_COL = 150, HEADER_H = 30, ROW_H = 50, PX_PER_HOUR = 58, HOURS = 24;
-const GRID_W = HOURS * PX_PER_HOUR;
+// 🔍 THE WIDTH SECRET (Fable prototype port): render ONLY the working day (6a–9p), not 24 hours — the
+// old grid burned half its pixels on midnight-to-dawn where a job never lives. Blocks got ~70% wider
+// for free. Jobs outside the window clamp to the edges (rare after-hours emergencies still visible).
+const TECH_COL = 150, HEADER_H = 30;
+const DAY_START = 6, DAY_END = 21; // 6am → 9pm
+// Density presets (Fable): dispatcher-controlled zoom, persisted per browser.
+const DENSITY = {
+  compact: { px: 80, row: 44 },
+  balanced: { px: 110, row: 56 },
+  spacious: { px: 150, row: 72 },
+};
 
 // fractional hour (0–24) of an ISO time, in the VIEWER's local timezone (so placement matches the
 // times shown on the cards — both use the browser clock, not Vercel's UTC).
@@ -23,6 +32,16 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   const [nowHour, setNowHour] = useState(() => { const n = new Date(); return n.getHours() + n.getMinutes() / 60; });
   useEffect(() => { const id = setInterval(() => { const n = new Date(); setNowHour(n.getHours() + n.getMinutes() / 60); }, 30000); return () => clearInterval(id); }, []);
   const router = useRouter();
+
+  // Dispatcher zoom (Fable density presets) — shadows the old module consts so every hour-math line
+  // below keeps working. Persisted per browser.
+  const [density, setDensity] = useState('balanced');
+  useEffect(() => { try { const d = localStorage.getItem('cb-board-density'); if (DENSITY[d]) setDensity(d); } catch (_) {} }, []);
+  const pickDensity = (d) => { setDensity(d); try { localStorage.setItem('cb-board-density', d); } catch (_) {} };
+  const { px: PX_PER_HOUR, row: ROW_H } = DENSITY[density];
+  const GRID_W = (DAY_END - DAY_START) * PX_PER_HOUR;
+  // hour ↔ x helpers: hours stay ABSOLUTE (0–24) everywhere; only render/pointer math shifts by DAY_START.
+  const hx = (h) => (Math.max(DAY_START, Math.min(DAY_END, h)) - DAY_START) * PX_PER_HOUR;
   const gridRef = useRef(null);
   const bodyRef = useRef(null);
   const [pending, start] = useTransition();
@@ -77,7 +96,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
     return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
-  }, [router]);
+  }, [router, PX_PER_HOUR]); // PX in deps — a density change rebinds the resize math (no stale px)
 
   // right-click menu actions
   const STATUS_OF = { enroute: 'enroute', onsite: 'on_site', done: 'done' };
@@ -117,6 +136,8 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
   // index grid jobs by techId
   const byTech = {};
   jobs.forEach((j) => { (byTech[j.techId] = byTech[j.techId] || []).push(j); });
+  // zebra order (tech rows only — crew banners don't count)
+  const techOrder = {}; { let ti = 0; rows.forEach((r) => { if (r.kind === 'tech') techOrder[r.tech.id] = ti++; }); }
 
   // auto-center on "now" once on mount
   const didScroll = useRef(false);
@@ -126,7 +147,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
     didScroll.current = true;
     const n = new Date(); const h = n.getHours() + n.getMinutes() / 60;
     const laneW = g.clientWidth - TECH_COL;
-    g.scrollLeft = Math.max(0, (h - 1) * PX_PER_HOUR - laneW / 3);
+    g.scrollLeft = Math.max(0, hx(h - 1) - laneW / 3);
   }, []);
 
   function locate(e) {
@@ -138,7 +159,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
     const rowIdx = Math.floor(y / ROW_H);
     const tech = techAtRow(rowIdx);
     if (!tech) return null;
-    const hour = Math.max(0, Math.min(23.75, Math.round((x / PX_PER_HOUR) * 4) / 4)); // snap 15-min
+    const hour = Math.max(DAY_START, Math.min(DAY_END - 0.25, DAY_START + Math.round((x / PX_PER_HOUR) * 4) / 4)); // snap 15-min, window-relative
     return { rowIdx, hour, techId: tech.id };
   }
   function onDragOver(e) { e.preventDefault(); const loc = locate(e); setDrop(loc ? { rowIdx: loc.rowIdx, hour: loc.hour } : null); }
@@ -198,8 +219,8 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
       const laneX = mx - r.left - TECH_COL - mm.offsetX;
       const tech = nearestTechRow(Math.floor((my - r.top) / ROW_H));
       if (!tech) { if (hoverRef.current) { hoverRef.current = null; setMoveHover(null); } return; }
-      const snapped = Math.round((laneX / PX_PER_HOUR) * 4) / 4;
-      const startHour = Math.max(0, Math.min(24 - mm.durationHours, snapped));
+      const snapped = DAY_START + Math.round((laneX / PX_PER_HOUR) * 4) / 4;
+      const startHour = Math.max(DAY_START, Math.min(DAY_END - mm.durationHours, snapped));
       const prev = hoverRef.current;
       if (!prev || prev.techId !== tech.id || prev.startHour !== startHour) {
         const hv = { techId: tech.id, startHour }; hoverRef.current = hv; setMoveHover(hv); // re-render ONLY when the slot changes
@@ -223,30 +244,39 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
     window.addEventListener('mouseup', onUp);
   }
 
-  // hour lines only — the 15-min slot lines are hidden for a cleaner grid
-  const laneBg = `repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px ${PX_PER_HOUR}px)`;
+  // hour lines strong + 15-min ticks faint (Fable) — the snap grid is visible, so drops feel precise.
+  const laneBg = `repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px ${PX_PER_HOUR}px), repeating-linear-gradient(to right, color-mix(in oklab, var(--border) 45%, transparent) 0 1px, transparent 1px ${PX_PER_HOUR / 4}px)`;
   const Dot = ({ k }) => <span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_DOT[k] || 'var(--fg-3)', display: 'inline-block' }} />;
 
-  // A job is LATE if its start time has passed and it isn't rolling/on-site/done/cancelled.
-  // statusKey normalizes to 'onsite' (no underscore, boardTokens) — the old 'on_site' here never matched,
-  // so an ON-SITE job got a red LATE badge while the tech was standing in the house (Devin's screenshot).
-  const isLate = (j) => !['enroute', 'onsite', 'done', 'cancelled'].includes(j.statusKey) && startHourOf(j.scheduledISO) < nowHour;
+  // GRADED late (Fable): scheduled gets 6 min of grace, EN ROUTE gets 18 (they're moving — don't nag),
+  // ON SITE never flags (Devin's rule: the blink dies when the tech's in the house). Returns minutes late.
+  const lateMins = (j) => {
+    if (!j.scheduledISO || ['onsite', 'done', 'cancelled'].includes(j.statusKey)) return 0;
+    const grace = j.statusKey === 'enroute' ? 0.3 : 0.1;
+    const s = startHourOf(j.scheduledISO);
+    return nowHour > s + grace ? Math.round((nowHour - s) * 60) : 0;
+  };
+  const isLate = (j) => lateMins(j) > 0;
+  const lateChip = (m) => (m > 60 ? 'MISSED' : `+${m}m`);
 
   function JobBlock({ j, draggable }) {
     const pr = priorityOf(j.priority);
-    const left = startHourOf(j.scheduledISO) * PX_PER_HOUR;
+    const left = hx(startHourOf(j.scheduledISO)); // clamped to the 6a–9p window
     const live = resizeView && resizeView.jobId === j.id;
     const dur = live ? resizeView.curDur : (j.duration_min || 60);
     const width = Math.max(22, (dur / 60) * PX_PER_HOUR - 2);
     const canResize = (canStatus || canAssign) && j.statusKey !== 'done';
-    const late = isLate(j);
+    const mins = lateMins(j);
+    const late = mins > 0;
     const hiding = moveDrag && moveDrag.jobId === j.id; // original hides while its ghost drags
     // Status IS the color (Devin: board felt generic/boring) — amber scheduled · blue rolling · green
     // on-site · red late · muted-✓ done. One glance = the day's shape, matching the status-dot legend.
     const done = j.statusKey === 'done';
+    const enroute = j.statusKey === 'enroute' && !late;
     const tone = late ? 'var(--red)' : (STATUS_DOT[j.statusKey] || 'var(--accent)');
     return (
       <div
+        className={late ? 'cb-late-blink' : undefined}
         onMouseDown={canAssign ? (e) => startMove(e, j) : undefined}
         onClick={() => { if (didResize.current) { didResize.current = false; return; } if (didMove.current) { didMove.current = false; return; } setSel(j); }}
         onContextMenu={(e) => openMenu(e, j)}
@@ -261,14 +291,19 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
           borderLeftWidth: 3, borderLeftColor: late ? 'var(--red)' : (pr ? pr.color : tone),
           borderRadius: 5, padding: '3px 5px', overflow: 'hidden', cursor: canAssign ? 'grab' : 'pointer', zIndex: live ? 5 : 2,
           opacity: hiding ? 0 : (done ? 0.65 : 1),
+          // Fable settle: a moved/re-timed block glides into its slot instead of teleporting. Off while
+          // live-resizing (the width must track the cursor 1:1).
+          transition: live ? 'none' : 'left .18s cubic-bezier(.2,.9,.3,1.1), width .18s ease',
         }}
       >
-        {late && <span className="alert-dot" style={{ position: 'absolute', top: 4, right: 4, margin: 0 }} aria-hidden="true" />}
-        <div style={{ fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: late ? 'var(--red)' : 'var(--fg-1)' }}>
-          {pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.dns && <span title="Do not service">🚫 </span>}{j.member && <span title="Member">⭐ </span>}{j.mustTell && <span title={j.mustTell}>🚨 </span>}{j.customer}
+        {/* En-route: animated stripes — the board visibly MOVES while trucks do. */}
+        {enroute && <div className="cb-stripes" aria-hidden="true" style={{ position: 'absolute', inset: 0, color: tone, pointerEvents: 'none', borderRadius: 5 }} />}
+        <div style={{ position: 'relative', zIndex: 1, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: late ? 'var(--red)' : 'var(--fg-1)', textDecoration: done ? 'line-through' : 'none' }}>
+          {pr && <span style={{ color: pr.color, fontWeight: 800 }}>{pr.short} </span>}{j.dns && <span title="Do not service">🚫 </span>}{j.member && <span title="Member">⭐ </span>}{j.mustTell && <span title={j.mustTell}>🚨 </span>}{done && '✓ '}{j.customer}
         </div>
-        <div className="muted" style={{ fontSize: 9, display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div className="muted" style={{ position: 'relative', zIndex: 1, fontSize: 9, display: 'flex', alignItems: 'center', gap: 4 }}>
           <span>{fmtTime(j.scheduledISO)}{live ? ` · ${dur}m` : (j.amount ? ' · ' + money(j.amount) : '')}</span>
+          {late && <span style={{ fontFamily: 'var(--mono)', fontWeight: 800, color: 'var(--red)', border: '1px solid var(--red)', borderRadius: 3, padding: '0 3px', fontSize: 8.5, letterSpacing: '.04em' }}>{lateChip(mins)}</span>}
           {j.photoCount > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}><Camera size={9} />{j.photoCount}</span>}
         </div>
         {canResize && (
@@ -335,13 +370,21 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
 
       <div ref={gridRef} style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
         <div style={{ minWidth: TECH_COL + GRID_W }}>
-          {/* hour header */}
+          {/* hour header — working-day window + the density zoom control */}
           <div style={{ display: 'flex', height: HEADER_H, borderBottom: '1px solid var(--border)' }}>
-            <div style={{ width: TECH_COL, flexShrink: 0, position: 'sticky', left: 0, background: 'var(--bg)', zIndex: 3, fontSize: 11, fontWeight: 700, color: 'var(--fg-3)', display: 'flex', alignItems: 'center', padding: '0 10px' }}>Tech</div>
+            <div style={{ width: TECH_COL, flexShrink: 0, position: 'sticky', left: 0, background: 'var(--bg)', zIndex: 3, fontSize: 11, fontWeight: 700, color: 'var(--fg-3)', display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px' }}>
+              <span>Tech</span>
+              {/* density: ▂ ▄ █ — dispatcher zoom, persisted */}
+              <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 2 }}>
+                {[['compact', '▂'], ['balanced', '▄'], ['spacious', '█']].map(([d, g]) => (
+                  <button key={d} onClick={() => pickDensity(d)} title={`${d} view`} style={{ border: 'none', background: density === d ? 'var(--amber)' : 'transparent', color: density === d ? '#1a1206' : 'var(--fg-3)', borderRadius: 4, fontSize: 9, padding: '1px 5px', cursor: 'pointer', lineHeight: 1.6 }}>{g}</button>
+                ))}
+              </span>
+            </div>
             <div style={{ position: 'relative', width: GRID_W }}>
-              {Array.from({ length: HOURS }, (_, h) => (
-                <div key={h} style={{ position: 'absolute', left: h * PX_PER_HOUR, top: 0, bottom: 0, width: PX_PER_HOUR, textAlign: 'center', fontSize: 10, color: h === Math.floor(nowHour) ? ACCENT : 'var(--fg-3)', fontWeight: h === Math.floor(nowHour) ? 800 : 400, lineHeight: `${HEADER_H}px`, borderLeft: '1px solid var(--border)' }}>{hourLabel(h)}</div>
-              ))}
+              {Array.from({ length: DAY_END - DAY_START }, (_, i) => { const h = DAY_START + i; return (
+                <div key={h} style={{ position: 'absolute', left: hx(h), top: 0, bottom: 0, width: PX_PER_HOUR, textAlign: 'center', fontSize: 10, fontFamily: 'var(--mono)', color: h === Math.floor(nowHour) ? ACCENT : 'var(--fg-3)', fontWeight: h === Math.floor(nowHour) ? 800 : 400, lineHeight: `${HEADER_H}px`, borderLeft: '1px solid var(--border)' }}>{hourLabel(h)}</div>
+              ); })}
             </div>
           </div>
 
@@ -360,16 +403,29 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
                 );
               }
               const t = row.tech; const st = techStatus[t.id];
+              const tJobs = byTech[t.id] || [];
+              const maxLate = tJobs.reduce((m, j) => Math.max(m, lateMins(j)), 0); // the tech's worst late job
+              const bookedH = Math.round(tJobs.reduce((s, j) => s + (Number(j.duration_min) || 60), 0) / 6) / 10;
+              const zebra = techOrder[t.id] % 2 === 1;
               return (
                 <div key={t.id} style={{ display: 'flex', height: ROW_H, borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ width: TECH_COL, flexShrink: 0, position: 'sticky', left: 0, background: 'var(--bg)', zIndex: 3, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px', borderRight: '1px solid var(--border)' }}>
-                    <PersonCard name={t.name}><span style={{ width: 26, height: 26, borderRadius: '50%', background: crewColor(t.crew || 'Crew'), color: '#fff', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{initials(t.name)}</span></PersonCard>
-                    <span style={{ minWidth: 0 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
-                      <span style={{ fontSize: 9, display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--fg-3)' }}>{st ? <><Dot k={st} /> {st}</> : 'idle'}</span>
+                  <div style={{ width: TECH_COL, flexShrink: 0, position: 'sticky', left: 0, background: maxLate ? 'color-mix(in oklab, var(--red) 8%, var(--bg))' : 'var(--bg)', zIndex: 3, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px', borderRight: '1px solid var(--border)' }}>
+                    {/* Late alarm lives on the PERSON (Fable): red bar + +Xm/MISSED chip — WHO's bleeding, not just what. */}
+                    {maxLate > 0 && <span className="cb-late-blink" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: 'var(--red)', borderRadius: 0 }} aria-hidden="true" />}
+                    {/* Status ring: green steady = ON SITE · blue pulse = ROLLING — who's moving, at a glance. */}
+                    <PersonCard name={t.name}><span className={st === 'onsite' ? 'cb-ring-onsite' : st === 'enroute' ? 'cb-ring-enroute' : undefined} style={{ width: 26, height: 26, borderRadius: '50%', background: crewColor(t.crew || 'Crew'), color: '#fff', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{initials(t.name)}</span></PersonCard>
+                    <span style={{ minWidth: 0, flex: 1 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
+                        {maxLate > 0 && <span style={{ fontFamily: 'var(--mono)', fontWeight: 800, color: 'var(--red)', border: '1px solid var(--red)', borderRadius: 3, padding: '0 3px', fontSize: 8.5, letterSpacing: '.04em', flexShrink: 0 }}>{lateChip(maxLate)}</span>}
+                      </span>
+                      <span style={{ fontSize: 9, display: 'flex', alignItems: 'center', gap: 4, color: 'var(--fg-3)' }}>
+                        {st ? <><Dot k={st} /> {st}</> : 'idle'}
+                        {tJobs.length > 0 && <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)' }}>{tJobs.length}j · {bookedH}h</span>}
+                      </span>
                     </span>
                   </div>
-                  <div style={{ position: 'relative', width: GRID_W, backgroundImage: laneBg }}>
+                  <div style={{ position: 'relative', width: GRID_W, backgroundImage: laneBg, backgroundColor: zebra ? 'color-mix(in oklab, var(--fg-1) 2.5%, transparent)' : undefined }}>
                     {(byTech[t.id] || []).map((j) => <JobBlock key={j.id} j={j} draggable={canAssign} />)}
                   </div>
                 </div>
@@ -378,7 +434,7 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
 
             {/* drop indicator (tray → grid) */}
             {drop && (
-              <div style={{ position: 'absolute', pointerEvents: 'none', top: drop.rowIdx * ROW_H + 4, left: TECH_COL + drop.hour * PX_PER_HOUR, width: PX_PER_HOUR * 0.92, height: ROW_H - 8, border: `2px dashed ${ACCENT}`, borderRadius: 4, background: 'color-mix(in oklab, ' + ACCENT + ' 12%, transparent)', zIndex: 4 }} />
+              <div style={{ position: 'absolute', pointerEvents: 'none', top: drop.rowIdx * ROW_H + 4, left: TECH_COL + hx(drop.hour), width: PX_PER_HOUR * 0.92, height: ROW_H - 8, border: `2px dashed ${ACCENT}`, borderRadius: 4, background: 'color-mix(in oklab, ' + ACCENT + ' 12%, transparent)', zIndex: 4 }} />
             )}
 
             {/* move-drag: breathing snap target at the slot the ghost will land on */}
@@ -386,12 +442,12 @@ export default function BoardGrid({ techs, jobs, tray, techStatus, canAssign, ca
               const rowIdx = rows.findIndex((rw) => rw.kind === 'tech' && rw.tech.id === moveHover.techId);
               if (rowIdx < 0) return null;
               const durH = moveRef.current ? moveRef.current.durationHours : 1;
-              return <div className="cb-breathe" style={{ position: 'absolute', pointerEvents: 'none', top: rowIdx * ROW_H + 4, left: TECH_COL + moveHover.startHour * PX_PER_HOUR, width: durH * PX_PER_HOUR - 2, height: ROW_H - 8, border: `1.5px dashed ${ACCENT}`, borderRadius: 6, zIndex: 5 }} />;
+              return <div className="cb-breathe" style={{ position: 'absolute', pointerEvents: 'none', top: rowIdx * ROW_H + 4, left: TECH_COL + hx(moveHover.startHour), width: durH * PX_PER_HOUR - 2, height: ROW_H - 8, border: `1.5px dashed ${ACCENT}`, borderRadius: 6, zIndex: 5 }} />;
             })()}
 
             {/* NOW line — the board's heartbeat; thick enough to find from across the office. */}
-            {nowHour >= 0 && nowHour <= 24 && (
-              <div style={{ position: 'absolute', top: 0, bottom: 0, left: TECH_COL + nowHour * PX_PER_HOUR, width: 2.5, background: ACCENT, boxShadow: `0 0 8px 1px color-mix(in oklab, ${ACCENT} 55%, transparent)`, zIndex: 5, pointerEvents: 'none' }}>
+            {nowHour >= DAY_START && nowHour <= DAY_END && (
+              <div style={{ position: 'absolute', top: 0, bottom: 0, left: TECH_COL + hx(nowHour), width: 2.5, background: ACCENT, boxShadow: `0 0 8px 1px color-mix(in oklab, ${ACCENT} 55%, transparent)`, zIndex: 5, pointerEvents: 'none' }}>
                 <span style={{ position: 'absolute', top: -1, left: -4, width: 10, height: 10, borderRadius: '50%', background: ACCENT, boxShadow: `0 0 7px ${ACCENT}` }} />
                 <span style={{ position: 'absolute', top: 2, left: 8, fontSize: 9, fontWeight: 800, color: '#fff', background: ACCENT, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>now</span>
               </div>

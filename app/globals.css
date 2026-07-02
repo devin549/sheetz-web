@@ -183,6 +183,31 @@ html.cb-tech .topbar { display: none; }
 /* Board: breathing snap-target while dragging a job (ported from the live board's .drop-breathe). */
 @keyframes cbBreathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 .cb-breathe { animation: cbBreathe 1s ease-in-out infinite; }
+
+/* 🔴 LATE job block — BLINKS until the tech moves (Devin's rule: "the late needs to be blinking and if
+   a tech is on site the blink goes away"). isLate() already excludes enroute/onsite/done, so the class
+   simply falls off the block the moment the tech rolls — no extra state. Red throb, urgent not seizure. */
+@keyframes cbLateThrob {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,83,80,.55); border-color: var(--red); }
+  50%      { box-shadow: 0 0 0 6px rgba(239,83,80,.10); border-color: rgba(239,83,80,.45); }
+}
+.cb-late-blink { animation: cbLateThrob 1.15s ease-in-out infinite, cbBlink 2.3s infinite; }
+/* Tech avatar status rings — the rail shows WHO's moving at a glance: green steady ring = on site,
+   blue pulsing ring = rolling. */
+@keyframes cbRingBlue { 0%, 100% { box-shadow: 0 0 0 2px #4f9bff, 0 0 0 2px rgba(79,155,255,0); } 50% { box-shadow: 0 0 0 2px #4f9bff, 0 0 0 7px rgba(79,155,255,.18); } }
+.cb-ring-onsite  { box-shadow: 0 0 0 2px #43a047, 0 0 9px rgba(67,160,71,.55); }
+.cb-ring-enroute { animation: cbRingBlue 1.4s ease-in-out infinite; }
+/* 🚚 En-route job blocks — slow-moving diagonal stripes (Fable): the board visibly MOVES while trucks do. */
+@keyframes cbStripesMove { to { background-position: 28px 0; } }
+.cb-stripes {
+  background-image: repeating-linear-gradient(135deg, transparent 0 8px, currentColor 8px 10px);
+  opacity: 0.14;
+  animation: cbStripesMove 1.4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cb-late-blink, .cb-ring-enroute, .cb-stripes { animation: none; }
+  .cb-late-blink { box-shadow: 0 0 0 3px rgba(239,83,80,.4); }
+}
 @keyframes cbSpin { to { transform: rotate(360deg); } }
 .cb-spin { animation: cbSpin .8s linear infinite; }
 
