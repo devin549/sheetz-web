@@ -161,6 +161,15 @@ export async function reportEta(jobId, minutes, note, needsHelp, newEtaISO) {
     ({ error } = await sb.from('job_eta_updates').update({ ...fields, created_at: new Date().toISOString() }).eq('id', existingId));
   } else {
     ({ error } = await sb.from('job_eta_updates').insert({ job_id: String(jobId), ...fields }));
+    // Race window (double-tap): two rapid reports both see "no open row" and both insert — the office got
+    // two identical banners. Mig 170's partial unique index rejects the second; treat that as "revise" and
+    // update the row that won.
+    if (error && /duplicate|unique|23505/i.test(error.message || '')) {
+      try {
+        const { data: open } = await sb.from('job_eta_updates').select('id').eq('job_id', String(jobId)).is('ack_at', null).limit(1).maybeSingle();
+        if (open) ({ error } = await sb.from('job_eta_updates').update({ ...fields, created_at: new Date().toISOString() }).eq('id', open.id));
+      } catch (_) {}
+    }
   }
   if (error) return { ok: false, msg: error.message };
   try {
