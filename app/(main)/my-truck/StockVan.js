@@ -33,11 +33,13 @@ export default function StockVan({ defaultTech = '', canTargetOthers = false }) 
         <form action={submit} ref={formRef} style={{ marginTop: 12, display: 'grid', gap: 10 }}>
           {canTargetOthers && <div><label style={lbl}>Which van (tech)</label><input name="tech_name" autoComplete="off" defaultValue={defaultTech} placeholder="tech name" style={{ ...inp, width: '100%' }} /></div>}
           <div><label style={lbl}>Scan barcode or type part name</label><input name="name" autoComplete="off" autoFocus placeholder="Wax ring (Korky)" style={{ ...inp, width: '100%' }} /></div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 90px 80px', gap: 8 }}>
             <div><label style={lbl}>SKU / barcode</label><input name="sku" autoComplete="off" placeholder="041499010205" style={{ ...inp, width: '100%' }} /></div>
             <div><label style={lbl}>Qty</label><input name="qty" inputMode="numeric" defaultValue="1" style={{ ...inp, width: '100%' }} /></div>
+            <div><label style={lbl}>Cost ea ($)</label><input name="cost" inputMode="decimal" placeholder="1.89" style={{ ...inp, width: '100%' }} /></div>
             <div><label style={lbl}>Bin (opt)</label><input name="bin" autoComplete="off" placeholder="A3" style={{ ...inp, width: '100%' }} /></div>
           </div>
+          <div className="muted" style={{ fontSize: 10.5, marginTop: -4 }}>Cost-each is what a scan bills onto the job when this part gets used — worth filling at load-out.</div>
           <button type="submit" disabled={pending} className="btn" style={{ opacity: pending ? 0.6 : 1 }}>{pending ? 'Adding…' : '📦 Add to van'}</button>
           {msg && <div style={{ fontSize: 12.5, fontWeight: 700, color: msg.ok ? 'var(--green)' : 'var(--red)' }}>{msg.msg}</div>}
         </form>

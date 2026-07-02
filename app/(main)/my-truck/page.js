@@ -12,6 +12,7 @@ import ShopSelfCheckout from './ShopSelfCheckout';
 import StockVan from './StockVan';
 import TruckWideSearch from './TruckWideSearch';
 import UsePartBtn from './UsePartBtn';
+import UseScanBox from './UseScanBox';
 import EquipmentScan from './EquipmentScan';
 import { fleetSummary } from '@/lib/assetLearn';
 
@@ -126,6 +127,10 @@ export default async function MyTruck({ searchParams }) {
   let fleet = [];
   if (sub === 'equip') { try { fleet = await fleetSummary(sb); } catch (_) {} }
 
+  // 🕒 Supplier open-now strip (Find-a-Part sub only) — cached hours, live open/closed. Fail-soft → [].
+  let supplierCards = [];
+  if (sub === 'search') { try { const { supplierStatuses } = await import('@/lib/serpExtra'); supplierCards = await supplierStatuses(sb); } catch (_) {} }
+
   // 🔍 ID Part sub-tab needs the tech's active job (so a found fix drops onto it) + whether they see cost.
   let activeJob = null;
   if (profile?.tech_id) {
@@ -196,6 +201,9 @@ export default async function MyTruck({ searchParams }) {
           </div>
         )}
 
+        {/* 🔫 On a job right now? Scan parts straight onto that ticket (cost billed, stock drops). */}
+        {activeJob && role === 'tech' && <UseScanBox jobId={activeJob.id} jobNumber={activeJob.job_number || ''} />}
+
         <div style={{ marginTop: 10 }}><TruckScan /></div>
 
         {/* 📦 Load-out: scan parts onto the van (how van stock fills — receipts only track $). */}
@@ -230,6 +238,25 @@ export default async function MyTruck({ searchParams }) {
 
       {/* ───────── FIND A PART (inline truck-wide search + transfer; full map locator one tap away) ───────── */}
       {sub === 'search' && (<>
+        {/* 🕒 SUPPLIERS RIGHT NOW — open/closed + closing time + phone, so nobody drives to a closed
+            counter at 4:50. Weekly hours cache 3 days (kv_cache, mig 168); open-now computes live. */}
+        {supplierCards.length > 0 && (
+          <div className="card" style={{ marginBottom: 10 }}>
+            <div style={{ fontWeight: 800, fontSize: 12, color: 'var(--amber-dim)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>🕒 Suppliers right now</div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {supplierCards.map((s) => (
+                <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, flexWrap: 'wrap' }}>
+                  <strong style={{ minWidth: 86 }}>{s.label}</strong>
+                  {s.open === true && <span style={{ color: 'var(--green)', fontWeight: 800 }}>✅ Open{s.until ? ` · closes ${s.until}` : ''}</span>}
+                  {s.open === false && <span style={{ color: 'var(--red)', fontWeight: 800 }}>⛔ Closed{s.opensAt ? ` · opens ${s.opensAt}` : ''}</span>}
+                  {s.open == null && <span className="muted">{s.todayRaw || 'hours unknown'}</span>}
+                  {s.phone && <a href={`tel:${s.phone.replace(/[^\d+]/g, '')}`} className="pill" style={{ marginLeft: 'auto', fontSize: 11, textDecoration: 'none' }}>☎ Call</a>}
+                  {s.address && <a href={mapsUrl(s.address)} target="_blank" rel="noreferrer" className="pill" style={{ fontSize: 11, textDecoration: 'none' }}>📍 Go</a>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <TruckWideSearch />
         <Link href="/tools" className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: 'inherit', marginTop: 10, borderLeft: '3px solid var(--amber)' }}>
           <span style={{ fontSize: 26 }}>🗺️</span>

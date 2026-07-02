@@ -4,6 +4,7 @@ import JobParts from '../JobParts';
 import JobCosts from '../JobCosts';
 import ScanReceipt from '../ScanReceipt';
 import JobReceipts from '../JobReceipts';
+import UseScanBox from '../../../my-truck/UseScanBox';
 import { getParts } from '@/lib/qa';
 import { can } from '@/lib/roles';
 import { canUploadPhotos } from '../jobAccess';
@@ -52,6 +53,8 @@ export default async function PartsTab({ params }) {
     <div className="wrap" style={{ maxWidth: 760 }}>
       <JobHeader job={c.job} customer={c.customer} tab="Parts/PO" />
       <div className="muted" style={{ fontSize: 12, margin: '10px 0 0' }}>Parts, receipts &amp; cost for this job only — material feeds your pay margin.</div>
+      {/* 🔫 Scan-to-use — pull it off the van, zap it, it's on this ticket with cost + van stock drops. */}
+      {canCosts && <UseScanBox jobId={params.id} jobNumber={c.job.job_number || ''} />}
       <JobParts jobId={params.id} parts={parts} canReturn={canReturn} />
       {!parts.items?.length && <div className="card" style={{ marginTop: 10 }}><span className="muted">No parts issued to this job yet. Pull from the shop counter → they land here on this job number.</span></div>}
       {canCosts && <ScanReceipt jobId={params.id} dispatchCents={c.job.dispatch_fee_cents} />}

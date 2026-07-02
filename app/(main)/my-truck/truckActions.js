@@ -28,6 +28,9 @@ export async function scanOntoVan(formData) {
   const qty = Math.max(1, Number(formData.get('qty')) || 1);
   const unit = clean(formData.get('unit'), 12) || 'ea';
   const bin = clean(formData.get('bin'), 40) || null;
+  // Optional cost-each ($) at load-out — this is what moment-of-use bills onto the job's PO (mig 169).
+  const costD = Number(formData.get('cost'));
+  const unitCostCents = Number.isFinite(costD) && costD > 0 ? Math.round(costD * 100) : null;
   // Managers/shop can stock any tech's van; a field tech only stocks their own.
   const canTargetOthers = can(profile.role, 'manageInventory') || can(profile.role, 'seeCrew') || can(profile.role, 'manageUsers');
   const targetTech = (canTargetOthers && clean(formData.get('tech_name'), 80)) || profile.name || user.email;
@@ -39,12 +42,18 @@ export async function scanOntoVan(formData) {
     find = sku ? find.eq('sku', sku) : find.ilike('name', name);
     const { data: hit } = await find.maybeSingle();
     if (hit) {
-      const { error } = await sb.from('truck_inventory').update({ qty: (Number(hit.qty) || 0) + qty, updated_at: new Date().toISOString() }).eq('id', hit.id);
-      if (error) throw error;
+      const patch = { qty: (Number(hit.qty) || 0) + qty, updated_at: new Date().toISOString() };
+      if (unitCostCents != null) patch.unit_cost_cents = unitCostCents; // newest cost wins (prices drift)
+      let u = await sb.from('truck_inventory').update(patch).eq('id', hit.id);
+      if (u.error && /unit_cost|column|schema cache/i.test(u.error.message || '')) { const { unit_cost_cents, ...lite } = patch; u = await sb.from('truck_inventory').update(lite).eq('id', hit.id); } // pre-169
+      if (u.error) throw u.error;
       revalidatePath('/my-truck');
       return { ok: true, msg: `+${qty} ${name || sku} on ${targetTech}'s van (now ${(Number(hit.qty) || 0) + qty}).` };
     }
-    const { error } = await sb.from('truck_inventory').insert({ tech_name: targetTech, name: name || sku, sku: sku || null, qty, unit, bin, reorder_point: 3 });
+    const row = { tech_name: targetTech, name: name || sku, sku: sku || null, qty, unit, bin, reorder_point: 3, ...(unitCostCents != null ? { unit_cost_cents: unitCostCents } : {}) };
+    let ins = await sb.from('truck_inventory').insert(row);
+    if (ins.error && /unit_cost|column|schema cache/i.test(ins.error.message || '')) { const { unit_cost_cents, ...lite } = row; ins = await sb.from('truck_inventory').insert(lite); } // pre-169
+    const { error } = ins;
     if (error) throw error;
     revalidatePath('/my-truck');
     return { ok: true, msg: `Added ${qty}× ${name || sku} to ${targetTech}'s van.` };
@@ -85,6 +94,32 @@ export async function truckWideSearch(query) {
   return { ok: true, shops, vans };
 }
 
+// Resolve what a van part COSTS so moment-of-use bills real dollars (was hardcoded $0 — audit fix):
+// the part's own load-out cost (mig 169) → else the last shop-issue price for the same SKU/name → else 0.
+async function vanPartCostCents(sb, p) {
+  if (Number(p.unit_cost_cents) > 0) return Number(p.unit_cost_cents);
+  try {
+    let q = sb.from('shop_issues').select('unit_cost_cents').gt('unit_cost_cents', 0).order('created_at', { ascending: false }).limit(1);
+    q = p.sku ? q.eq('sku', p.sku) : q.ilike('item_name', p.name);
+    const { data } = await q.maybeSingle();
+    if (data && Number(data.unit_cost_cents) > 0) return Number(data.unit_cost_cents);
+  } catch (_) {}
+  return 0;
+}
+
+// Shared moment-of-use: decrement 1 + bill it onto the job's PO with cost + feed most-used. Returns the
+// rich result the scan loop shows ("✓ PEX Elbow · $1.89 → job · 6 left ⚠").
+async function useOne(sb, me, p, job) {
+  if ((Number(p.qty) || 0) <= 0) return { ok: false, msg: `None left on the van — ${p.name} shows 0.` };
+  await sb.from('truck_inventory').update({ qty: Number(p.qty) - 1, updated_at: new Date().toISOString() }).eq('id', p.id);
+  const costCents = await vanPartCostCents(sb, p);
+  try { await sb.from('shop_issues').insert({ job_id: job, item_name: p.name, sku: p.sku || null, qty: 1, unit: 'ea', unit_cost_cents: costCents, total_cost_cents: costCents, kind: 'issue', status: 'out', issued_to: me.name, issued_by: me.name, note: '➖ used from van' }); } catch (_) {}
+  const left = Number(p.qty) - 1;
+  const low = left <= (p.reorder_point != null ? Number(p.reorder_point) : 3);
+  revalidatePath('/my-truck');
+  return { ok: true, name: p.name, left, low, costCents, msg: `✓ 1× ${p.name}${costCents ? ` · $${(costCents / 100).toFixed(2)}` : ''} → this ticket · ${left} left${low ? ' ⚠ LOW' : ''}` };
+}
+
 // ➖ Use a part from the van ON a job (moment-of-use): decrement van stock by 1 + log it to the job so it
 // bills + feeds the most-used signal. The other half of the scan loop (load-out adds, use subtracts).
 export async function useFromVan(partId, jobId) {
@@ -95,14 +130,42 @@ export async function useFromVan(partId, jobId) {
   const job = clean(jobId, 40);
   if (!job) return { ok: false, msg: 'No active job to use it on.' };
   try {
-    const { data: p } = await sb.from('truck_inventory').select('id, name, sku, qty').eq('id', partId).maybeSingle();
+    let sel = await sb.from('truck_inventory').select('id, name, sku, qty, reorder_point, unit_cost_cents').eq('id', partId).maybeSingle();
+    if (sel.error && /unit_cost|column|schema cache/i.test(sel.error.message || '')) sel = await sb.from('truck_inventory').select('id, name, sku, qty, reorder_point').eq('id', partId).maybeSingle(); // pre-169
+    const p = sel.data;
     if (!p) return { ok: false, msg: 'Part not found on the van.' };
-    if ((Number(p.qty) || 0) <= 0) return { ok: false, msg: 'None left on the van.' };
-    await sb.from('truck_inventory').update({ qty: Number(p.qty) - 1, updated_at: new Date().toISOString() }).eq('id', p.id);
-    // Record on the job (feeds billing + most-used). Best-effort — never block the decrement.
-    try { await sb.from('shop_issues').insert({ job_id: job, item_name: p.name, sku: p.sku || null, qty: 1, unit: 'ea', unit_cost_cents: 0, total_cost_cents: 0, kind: 'issue', status: 'out', issued_to: me.name, issued_by: me.name, note: '➖ used from van' }); } catch (_) {}
-    revalidatePath('/my-truck');
-    return { ok: true, msg: `Used 1× ${p.name} → job #${job} (van now ${Number(p.qty) - 1}).` };
+    return await useOne(sb, me, p, job);
+  } catch (e) {
+    return { ok: false, msg: String(e?.message || e).slice(0, 160) };
+  }
+}
+
+// 🔫 SCAN-TO-USE — the tech's picture: grab material off the van, zap the barcode, it lands on the ticket
+// with cost and the van count drops. Matches by exact SKU first (the barcode), then name-contains (typed).
+// Only THIS tech's van — you can't scan parts off someone else's truck onto your job.
+export async function scanUseFromVan(code, jobId) {
+  const me = await whoami();
+  if (!me) return { ok: false, msg: 'Not signed in.' };
+  const sb = getSupabaseAdmin();
+  if (!sb) return { ok: false, msg: 'Server not configured.' };
+  const job = clean(jobId, 40);
+  const q = clean(code, 80).replace(/[%,]/g, ' ').trim();
+  if (!job) return { ok: false, msg: 'No job to bill it to — open the job first.' };
+  if (q.length < 2) return { ok: false, msg: 'Scan a barcode or type a part name.' };
+  const COLS = 'id, name, sku, qty, reorder_point, unit_cost_cents';
+  const COLS_LITE = 'id, name, sku, qty, reorder_point';
+  const pick = async (cols) => {
+    const bySku = await sb.from('truck_inventory').select(cols).ilike('tech_name', me.name).eq('sku', q).gt('qty', 0).limit(1).maybeSingle();
+    if (bySku.error) return bySku;
+    if (bySku.data) return bySku;
+    return sb.from('truck_inventory').select(cols).ilike('tech_name', me.name).ilike('name', `%${q}%`).gt('qty', 0).order('qty', { ascending: false }).limit(1).maybeSingle();
+  };
+  try {
+    let sel = await pick(COLS);
+    if (sel.error && /unit_cost|column|schema cache/i.test(sel.error.message || '')) sel = await pick(COLS_LITE); // pre-169
+    const p = sel.data;
+    if (!p) return { ok: false, msg: `“${q}” isn’t on your van — check Find a Part (shop/other vans have it?).` };
+    return await useOne(sb, me, p, job);
   } catch (e) {
     return { ok: false, msg: String(e?.message || e).slice(0, 160) };
   }

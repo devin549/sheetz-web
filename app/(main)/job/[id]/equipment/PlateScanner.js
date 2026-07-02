@@ -6,7 +6,7 @@
 // the plate to the equipment registry stays on the existing EquipmentSnap.
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { scanDataPlate } from './visionActions';
+import { scanDataPlate, lookupManuals } from './visionActions';
 import { saveEquipment } from './equipActions';
 
 function fileToScaledDataUrl(file, max = 1100) {
@@ -35,6 +35,9 @@ export default function PlateScanner({ jobType = '', jobId = '' }) {
   const [err, setErr] = useState(null);
   const [saved, setSaved] = useState(null);
   const [savedWarn, setSavedWarn] = useState(null);
+  const [manuals, setManuals] = useState(null); // { ok, links } after the 📖 tap
+
+  const getManuals = () => start(async () => { setManuals(await lookupManuals(plate?.brand, plate?.model)); });
 
   const save = () => start(async () => {
     const r = await saveEquipment(jobId, plate, jobType);
@@ -88,6 +91,24 @@ export default function PlateScanner({ jobType = '', jobId = '' }) {
             ))}
           </div>
           {plate.notes && <div className="muted" style={{ fontSize: 11, marginTop: 8, fontStyle: 'italic' }}>📝 {plate.notes}</div>}
+
+          {/* 📖 Manual + parts list for THIS model — one tap, manufacturer/PDF links first. */}
+          {(plate.brand || plate.model) && !manuals && (
+            <button onClick={getManuals} disabled={pending} style={{ width: '100%', marginTop: 10, padding: '10px', borderRadius: 9, border: '1px solid var(--purple)', background: 'color-mix(in oklab, var(--purple) 10%, var(--surface-1))', color: 'var(--purple)', fontWeight: 800, fontSize: 13, cursor: pending ? 'default' : 'pointer' }}>
+              {pending ? '…' : `📖 Find the manual + parts list — ${[plate.brand, plate.model].filter(Boolean).join(' ')}`}
+            </button>
+          )}
+          {manuals && (manuals.ok && manuals.links.length ? (
+            <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--purple)' }}>📖 MANUALS &amp; PARTS LISTS</div>
+              {manuals.links.map((l, i) => (
+                <a key={i} href={l.link} target="_blank" rel="noreferrer" style={{ display: 'block', padding: '8px 10px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--border)', textDecoration: 'none', color: 'inherit' }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--amber)' }}>{l.pdf ? '📄 ' : '🔗 '}{l.title}</div>
+                  {l.snippet && <div className="muted" style={{ fontSize: 10.5, marginTop: 2 }}>{l.snippet}</div>}
+                </a>
+              ))}
+            </div>
+          ) : <div className="muted" style={{ fontSize: 11.5, marginTop: 8 }}>Couldn’t find a manual for that model — try the brand’s site directly.</div>)}
           {!saved ? (
             <button onClick={save} disabled={pending} style={{ width: '100%', marginTop: 10, padding: '10px', borderRadius: 9, border: '1px solid var(--green)', background: 'rgba(76,175,80,.1)', color: 'var(--green)', fontWeight: 800, fontSize: 13, cursor: pending ? 'default' : 'pointer' }}>
               💾 Save to this location’s equipment
